@@ -70,7 +70,7 @@ export default function DisciplinePage() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-10">
         
         {/* FORMULAIRE (Surveillant) */}
-        <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm h-fit xl:sticky top-10">
+        <div className="bg-white dark:bg-slate-800 p-6 md:p-8 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm dark:shadow-slate-900/50 h-fit xl:sticky top-10 transition-colors">
           <h2 className="text-xl font-bold mb-6 text-slate-900 flex items-center gap-2">
             <PlusCircle size={20} className="text-green-600" /> Signaler un incident
           </h2>
@@ -132,7 +132,7 @@ export default function DisciplinePage() {
           {loading ? (
             <div className="flex justify-center p-10"><Loader2 className="animate-spin text-green-600" /></div>
           ) : incidents.length === 0 ? (
-            <div className="bg-white p-20 text-center rounded-[2rem] border border-dashed text-slate-400 font-medium">
+            <div className="bg-white dark:bg-slate-800 p-20 text-center rounded-[2rem] border border-dashed border-slate-200 dark:border-slate-600 text-slate-400 dark:text-slate-500 font-medium transition-colors">
                 Aucun incident signalé récemment.
             </div>
           ) : (

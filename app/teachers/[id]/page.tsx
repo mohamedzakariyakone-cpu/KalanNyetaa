@@ -27,7 +27,32 @@ export default function TeacherProfilePage() {
     const { data, error } = await supabase.from('teachers').select('*').eq('id', id).single();
     if (error) router.push('/teachers');
     else setTeacher(data);
+    loading.false;
     setLoading(false);
+  };
+
+  // Fonction pour formater le prix à l'affichage (ex: 500000 -> 500 000)
+  const formatMoney = (value: any) => {
+    if (!value) return '';
+    const num = parseInt(value.toString().replace(/\s/g, ''), 10);
+    if (isNaN(num)) return value;
+    return new Intl.NumberFormat('fr-FR').format(num).replace(/,/g, ' ');
+  };
+
+  // Gestion de la saisie avec séparateur automatique pour le salaire
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (activeModal === 'salary') {
+      const cleanValue = val.replace(/\D/g, ''); // Supprime tout ce qui n'est pas un chiffre
+      if (cleanValue === '') {
+        setInputValue('');
+        return;
+      }
+      const formatted = new Intl.NumberFormat('fr-FR').format(parseInt(cleanValue, 10)).replace(/,/g, ' ');
+      setInputValue(formatted);
+    } else {
+      setInputValue(val);
+    }
   };
 
   const handleUpdate = async () => {
@@ -35,7 +60,11 @@ export default function TeacherProfilePage() {
     let columnToUpdate = {};
     
     // Mapping des champs vers la base de données
-    if (activeModal === 'salary') columnToUpdate = { salary: inputValue };
+    if (activeModal === 'salary') {
+      // On retire tous les espaces avant d'enregistrer dans Supabase
+      const cleanSalary = inputValue.replace(/\s/g, '');
+      columnToUpdate = { salary: cleanSalary };
+    }
     if (activeModal === 'classes') columnToUpdate = { assigned_classes: inputValue };
     if (activeModal === 'hours') columnToUpdate = { weekly_hours: parseInt(inputValue) || 0 };
     if (activeModal === 'availability') columnToUpdate = { availability: inputValue };
@@ -87,10 +116,10 @@ export default function TeacherProfilePage() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           
           {/* CARTE : SALAIRE */}
-          <div onClick={() => { setActiveModal('salary'); setInputValue(teacher.salary || ''); }} className="bg-white p-6 md:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all cursor-pointer group">
+          <div onClick={() => { setActiveModal('salary'); setInputValue(formatMoney(teacher.salary || '')); }} className="bg-white p-6 md:p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl transition-all cursor-pointer group">
               <div className="h-12 w-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><Banknote size={24}/></div>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Rémunération</p>
-              <h4 className="text-2xl font-black text-slate-900">{teacher.salary ? `${teacher.salary} FCFA` : 'À définir'}</h4>
+              <h4 className="text-2xl font-black text-slate-900">{teacher.salary ? `${formatMoney(teacher.salary)} FCFA` : 'À définir'}</h4>
           </div>
 
           {/* CARTE : HEURES SEMAINE */}
@@ -162,10 +191,10 @@ export default function TeacherProfilePage() {
                         <label className="text-[10px] font-black uppercase text-slate-400 ml-4 italic">Nouvelle valeur</label>
                         <input 
                           type="text" 
-                          placeholder={activeModal === 'hours' ? 'Ex: 20' : 'Entrez les infos...'} 
+                          placeholder={activeModal === 'hours' ? 'Ex: 20' : activeModal === 'salary' ? 'Ex: 500 000' : 'Entrez les infos...'} 
                           className="w-full p-6 bg-slate-50 rounded-[2rem] border-none outline-none font-bold text-xl focus:ring-2 focus:ring-green-500 transition-all shadow-inner" 
                           value={inputValue}
-                          onChange={(e) => setInputValue(e.target.value)}
+                          onChange={handleInputChange}
                           autoFocus
                         />
                     </div>

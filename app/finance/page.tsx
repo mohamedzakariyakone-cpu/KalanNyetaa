@@ -3,10 +3,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/utils/supabase';
 import { useYear } from '@/context/YearContext';
-import NumericInput from '@/components/NumericInput';
 import {
   Target, Loader2, MessageSquare, Search, BellRing, AlertTriangle,
-  Zap, Users, Landmark, ArrowUpRight, PieChart, Lock, Calendar, Plus, X, Trash2, TrendingDown, Wallet
+  Zap, Users, Landmark, ArrowUpRight, PieChart, Lock, Calendar, Plus, X, Trash2, TrendingDown, Wallet, Users2
 } from 'lucide-react';
 
 // --- Composants UI Internes Optimisés ---
@@ -57,6 +56,13 @@ interface Expense {
   description?: string;
 }
 
+interface Teacher {
+  id: string;
+  first_name: string;
+  last_name: string;
+  salary?: string | number;
+}
+
 interface Settings {
   current_month_index?: number;
 }
@@ -80,6 +86,8 @@ interface Analytics {
   healthScore: number;
   runway: number;
   totalExpenses: number;
+  monthlySalaries: number;
+  annualSalaries: number;
   netCash: number;
   classPerformance: ClassPerformance[];
   processedStudents: ProcessedStudent[];
@@ -88,22 +96,35 @@ interface Analytics {
 export default function CFODashboardUltraResponsive() {
   const [students, setStudents] = useState<Student[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
   const [expDesc, setExpDesc] = useState('');
+  
+  // Géré en string pour afficher les espaces en temps réel
   const [expAmount, setExpAmount] = useState('');
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [expenseSearchTerm, setExpenseSearchTerm] = useState('');
-  
-  // Onglet ou vue active sur mobile pour diviser proprement Dépenses et Registre Élèves
   const [activeTab, setActiveTab] = useState<'students' | 'expenses'>('students');
   const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
   const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
-
-  // Hook pour l'année scolaire
   const { selectedYearId, isReadOnly, isLoading: yearLoading, selectedYear } = useYear();
+
+  // Fonction de formatage en direct (ajoute des espaces tous les 3 chiffres)
+  const formatNumberInput = (value: string) => {
+    // Supprime tout ce qui n'est pas un chiffre
+    const cleanValue = value.replace(/\D/g, '');
+    if (!cleanValue) return '';
+    // Formate avec le séparateur de milliers (espace)
+    return new Intl.NumberFormat('fr-FR').format(parseInt(cleanValue, 10));
+  };
+
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatNumberInput(e.target.value);
+    setExpAmount(formatted);
+  };
 
   const fetchData = useCallback(async () => {
     if (!selectedYearId) return;
@@ -132,21 +153,19 @@ export default function CFODashboardUltraResponsive() {
       
       setSettings(sData || { current_month_index: new Date().getMonth() + 1 });
 
-      const { data: stData, error: stErr } = await supabase
-        .from('students')
-        .select('*, payments(amount, created_at), classes(name)')
-        .eq('academic_year_id', selectedYearId);
-      if (stErr) throw stErr;
+      const [studentsRes, expensesRes, teachersRes] = await Promise.all([
+        supabase.from('students').select('*, payments(amount, created_at), classes(name)').eq('academic_year_id', selectedYearId),
+        supabase.from('expenses').select('*').eq('academic_year_id', selectedYearId).order('created_at', { ascending: false }),
+        supabase.from('teachers').select('id, first_name, last_name, salary').eq('academic_year_id', selectedYearId)
+      ]);
 
-      const { data: exData, error: exErr } = await supabase
-        .from('expenses')
-        .select('*')
-        .eq('academic_year_id', selectedYearId)
-        .order('created_at', { ascending: false });
-      if (exErr) throw exErr;
+      if (studentsRes.error) throw studentsRes.error;
+      if (expensesRes.error) throw expensesRes.error;
+      if (teachersRes.error) throw teachersRes.error;
 
-      setStudents((stData as Student[]) || []);
-      setExpenses((exData as Expense[]) || []);
+      setStudents((studentsRes.data as Student[]) || []);
+      setExpenses((expensesRes.data as Expense[]) || []);
+      setTeachers((teachersRes.data as Teacher[]) || []);
     } catch (err: unknown) {
       console.error("Erreur de chargement:", err);
       setError(err instanceof Error ? err.message : String(err));
@@ -163,10 +182,13 @@ export default function CFODashboardUltraResponsive() {
 
   const analytics = useMemo(() => {
     const totalExp = expenses.reduce((sum: number, e: Expense) => sum + (Number(e.amount) || 0), 0);
-    
+    const monthlySalaries = teachers.reduce((sum: number, t: Teacher) => sum + (Number(t.salary) || 0), 0);
+    const annualSalaries = monthlySalaries * 10; 
+
     if (!students.length) return { 
       totalPotential: 0, collected: 0, expectedMonth: 0, 
-      collectedMonth: 0, healthScore: 0, runway: 0, totalExpenses: totalExp, netCash: -totalExp,
+      collectedMonth: 0, healthScore: 0, runway: 0, totalExpenses: totalExp, 
+      monthlySalaries, annualSalaries, netCash: -totalExp,
       classPerformance: [], processedStudents: []
     };
 
@@ -184,15 +206,16 @@ export default function CFODashboardUltraResponsive() {
       const fee = Number(s.annual_fee) || 0;
       const pays = s.payments || [];
       const totalPaid = pays.reduce((sum: number, p: Payment) => sum + (Number(p.amount) || 0), 0);
-      const className = Array.isArray(s.classes) ? (s.classes[0]?.name || "Sans Classe") : (s.classes?.name || "Sans Classe");
+      const className = Array.isArray(s.classes) 
+        ? (s.classes[0]?.name || "Sans Classe") 
+        : (s.classes?.name || "Sans Classe");
       
       totalPotential += fee;
       collected += Math.min(totalPaid, fee);
-
       const tranches = Number(s.payment_plan_tranches) || 1;
       if (tranches === 9 && currentMonth <= 9) expectedMonth += (fee / 9);
       else if (tranches === 3 && [1, 5, 9].includes(currentMonth)) expectedMonth += (fee / 3);
-
+      
       const paidMonth = pays.filter((p: Payment) => {
         const d = new Date(p.created_at);
         return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
@@ -202,11 +225,10 @@ export default function CFODashboardUltraResponsive() {
       if (!classStats[className]) classStats[className] = { total: 0, paid: 0 };
       classStats[className].total += fee;
       classStats[className].paid += totalPaid;
-
       return { ...s, totalPaid, className, annual_fee: fee };
     });
 
-    const burnRate = expenses.length > 0 ? totalExp / 6 : 1; 
+    const burnRate = (totalExp / 6) + monthlySalaries;
     const runway = (collected - totalExp) / (burnRate || 1);
     const netCash = collected - totalExp;
 
@@ -216,6 +238,8 @@ export default function CFODashboardUltraResponsive() {
       expectedMonth,
       collectedMonth,
       totalExpenses: totalExp,
+      monthlySalaries,
+      annualSalaries,
       netCash,
       runway: Math.max(0, runway),
       healthScore: totalPotential > 0 ? Math.round((collected / totalPotential) * 100) : 0,
@@ -225,11 +249,15 @@ export default function CFODashboardUltraResponsive() {
       })).sort((a, b) => b.percent - a.percent),
       processedStudents
     } as Analytics;
-  }, [students, expenses, settings]);
+  }, [students, expenses, teachers, settings]);
 
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!expDesc || !expAmount || !selectedYearId) {
+    
+    // Nettoyage de la valeur : on retire tous les espaces pour avoir le vrai nombre entier
+    const numericAmount = parseInt(expAmount.replace(/\s/g, ''), 10);
+
+    if (!expDesc || isNaN(numericAmount) || numericAmount <= 0 || !selectedYearId) {
       alert('Tous les champs sont requis');
       return;
     }
@@ -241,10 +269,9 @@ export default function CFODashboardUltraResponsive() {
     setIsSubmittingExpense(true);
     const { error } = await supabase.from('expenses').insert([{ 
       description: expDesc, 
-      amount: parseFloat(expAmount),
+      amount: numericAmount, // Envoi du nombre propre à Supabase
       academic_year_id: selectedYearId
     }]);
-
     setIsSubmittingExpense(false);
     if (error) {
       alert(`Erreur : ${error.message}`);
@@ -289,10 +316,9 @@ export default function CFODashboardUltraResponsive() {
 
   return (
     <div className="min-h-screen bg-slate-50 w-full overflow-x-hidden pb-12">
-      {/* Container fluide pleine surface sur Mobile, max-7xl sur PC */}
       <div className="w-full max-w-7xl mx-auto px-0 sm:px-6 lg:px-8 pt-4 sm:pt-6">
         
-        {/* Header Responsif */}
+        {/* Header */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 px-4 sm:px-0">
           <div className="w-full md:w-auto">
             <div className="flex items-center gap-2 mb-1">
@@ -308,7 +334,7 @@ export default function CFODashboardUltraResponsive() {
               </p>
             )}
           </div>
-          
+  
           <div className="flex gap-2 w-full md:w-auto">
             {isReadOnly && (
               <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 rounded-xl text-[11px] font-bold">
@@ -327,17 +353,14 @@ export default function CFODashboardUltraResponsive() {
           </div>
         )}
 
-        {/* Grille Principale de KPIs Financiers - Grid 2 col sur mobile, adaptable PC */}
+        {/* Grille Principale */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-12 gap-3 sm:gap-6 px-4 sm:px-0">
-          
-          {/* Bloc Score de Santé */}
           <div className="col-span-2 lg:col-span-3 bg-slate-900 rounded-2xl p-5 text-white flex flex-col items-center justify-center shadow-sm text-center">
             <div className="text-3xl sm:text-4xl font-black italic text-green-400">{analytics.healthScore}%</div>
             <div className="text-[9px] font-bold uppercase mt-1 opacity-60 tracking-widest">Recouvrement Annuel</div>
             <ProgressBar progress={analytics.healthScore} color="bg-green-400" />
           </div>
-          
-          {/* Solde Net en Caisse */}
+        
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between col-span-1 lg:col-span-3">
             <div>
               <p className="text-[9px] font-black uppercase text-slate-400 tracking-tight">Trésorerie Actuelle</p>
@@ -350,10 +373,9 @@ export default function CFODashboardUltraResponsive() {
             </div>
           </div>
 
-          {/* Total Dépenses de l'école */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between col-span-1 lg:col-span-3">
             <div>
-              <p className="text-[9px] font-black uppercase text-rose-400 tracking-tight">Total Sorties</p>
+              <p className="text-[9px] font-black uppercase text-rose-400 tracking-tight">Total Sorties (Dépenses)</p>
               <div className="text-base sm:text-xl font-black italic text-rose-600 mt-1 truncate">
                 {analytics.totalExpenses.toLocaleString()} F
               </div>
@@ -363,14 +385,38 @@ export default function CFODashboardUltraResponsive() {
             </div>
           </div>
 
-          {/* Autonomie (Runway) */}
           <GlassCard title="Autonomie (Runway)" icon={Landmark} className="col-span-2 lg:col-span-3">
             <div className="text-xl font-black italic text-slate-900">{analytics.runway.toFixed(1)} <span className="text-xs uppercase font-semibold">Mois</span></div>
             <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase italic">Survie de la caisse</p>
           </GlassCard>
         </div>
 
-        {/* Section Objectifs Mensuels */}
+        {/* Charges Salariales */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 sm:mt-6 px-4 sm:px-0">
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-wider">Masse Salariale Mensuelle</p>
+              <div className="text-xl sm:text-2xl font-black italic text-indigo-600">{analytics.monthlySalaries.toLocaleString()} F</div>
+              <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Salaires bruts cumulés / mois</p>
+            </div>
+            <div className="p-3.5 bg-indigo-50 rounded-2xl text-indigo-600 hidden sm:block">
+              <Users2 size={24} />
+            </div>
+          </div>
+
+          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-wider">Masse Salariale Annuelle</p>
+              <div className="text-xl sm:text-2xl font-black italic text-indigo-800">{analytics.annualSalaries.toLocaleString()} F</div>
+              <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Projection sur 10 mois de cours</p>
+            </div>
+            <div className="p-3.5 bg-indigo-50 rounded-2xl text-indigo-800 hidden sm:block">
+              <Calendar size={24} />
+            </div>
+          </div>
+        </div>
+
+        {/* Objectifs Mensuels */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4 sm:mt-6 px-4 sm:px-0">
           <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm">
             <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Encaissé ce Mois</p>
@@ -393,7 +439,7 @@ export default function CFODashboardUltraResponsive() {
           </div>
         </div>
 
-        {/* SECTEUR MOBILE : Sélecteur d'onglets pour une ergonomie native d'application smartphone */}
+        {/* Onglets Mobile */}
         <div className="flex border-b border-slate-200 mt-6 sm:hidden bg-white sticky top-0 z-20 shadow-xs">
           <button 
             onClick={() => setActiveTab('students')}
@@ -409,13 +455,13 @@ export default function CFODashboardUltraResponsive() {
           </button>
         </div>
 
-        {/* BLOC DES CONTENUS : Double affichage Mobile vs PC pour une UI/UX parfaite */}
+        {/* Blocs de contenu */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-4 sm:mt-6">
           
-          {/* ==================== SECTION 1 : EXPENSES (DEPENSES) ==================== */}
+          {/* SECTION 1 : EXPENSES */}
           <div className={`lg:col-span-4 flex flex-col gap-6 px-4 sm:px-0 ${activeTab === 'expenses' ? 'block' : 'hidden sm:block'}`}>
             
-            {/* Formulaire Mobile de Dépense via Bouton Flottant/En-tête */}
+            {/* Formulaire avec sépérateur natif en temps réel */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-[10px] font-black uppercase text-slate-400 italic tracking-widest">Enregistrer une Sortie</h3>
@@ -425,7 +471,7 @@ export default function CFODashboardUltraResponsive() {
                 <div>
                   <label className="block text-[9px] font-black uppercase text-slate-400 mb-1">Motif de la dépense</label>
                   <input 
-                    type="text" placeholder="Ex: Fournitures, Facture Électricité, Salaires..."
+                    type="text" placeholder="Ex: Fournitures, Facture Électricité, Maintenance..."
                     className="w-full p-3 bg-slate-50 rounded-xl border-0 text-xs font-bold outline-none focus:ring-2 ring-indigo-100 disabled:opacity-50"
                     value={expDesc} onChange={(e) => setExpDesc(e.target.value)}
                     disabled={isReadOnly}
@@ -434,11 +480,13 @@ export default function CFODashboardUltraResponsive() {
                 </div>
                 <div>
                   <label className="block text-[9px] font-black uppercase text-slate-400 mb-1">Montant (FCFA)</label>
-                  <NumericInput
+                  {/* Input HTML classique mais géré avec notre fonction de formatage en direct */}
+                  <input 
+                    type="text" 
                     placeholder="Montant décaissé..."
                     className="w-full p-3 bg-slate-50 rounded-xl border-0 text-xs font-black text-rose-600 outline-none focus:ring-2 ring-indigo-100 disabled:opacity-50"
-                    value={expAmount === '' ? undefined : Number(expAmount)}
-                    onChange={(v) => setExpAmount(v === null || v === undefined ? '' : String(v))}
+                    value={expAmount}
+                    onChange={handleAmountChange}
                     disabled={isReadOnly}
                     required
                   />
@@ -449,7 +497,7 @@ export default function CFODashboardUltraResponsive() {
               </form>
             </div>
 
-            {/* Liste/Audit des Dépenses avec l'affichage clair des DATES */}
+            {/* Historique */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex-1">
               <div className="flex flex-col gap-2 mb-4">
                 <h3 className="text-[10px] font-black uppercase text-slate-400 italic tracking-widest">Historique Journalier des Dépenses</h3>
@@ -463,7 +511,6 @@ export default function CFODashboardUltraResponsive() {
                 </div>
               </div>
 
-              {/* Fiches tactiles des Dépenses */}
               <div className="space-y-2 max-h-[450px] overflow-y-auto no-scrollbar pr-1">
                 {filteredExpenses.length === 0 ? (
                   <p className="text-[11px] font-semibold text-slate-400 text-center py-4">Aucune dépense répertoriée.</p>
@@ -492,7 +539,7 @@ export default function CFODashboardUltraResponsive() {
               </div>
             </div>
 
-            {/* Performance des classes intégrée à gauche sur PC */}
+            {/* Performance */}
             <GlassCard title="Performance de collecte par Classe" icon={Users} className="hidden lg:block">
               <div className="space-y-3.5">
                 {analytics.classPerformance.map((c: ClassPerformance, i: number) => (
@@ -506,12 +553,10 @@ export default function CFODashboardUltraResponsive() {
             </GlassCard>
           </div>
 
-          {/* ==================== SECTION 2 : REGISTRE ETUDIANTS ==================== */}
+          {/* SECTION 2 : REGISTRE ETUDIANTS */}
           <div className={`lg:col-span-8 px-4 sm:px-0 ${activeTab === 'students' ? 'block' : 'hidden sm:block'}`}>
-            
             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm w-full">
               
-              {/* Barre de recherche d'élèves */}
               <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
                 <div>
                   <h3 className="text-sm sm:text-base font-black uppercase tracking-tight text-slate-900">Registre Global de Scolarité</h3>
@@ -527,7 +572,7 @@ export default function CFODashboardUltraResponsive() {
                 </div>
               </div>
 
-              {/* 📱 VUE SMARTPHONE ÉLEVÉS : Fiches fluides sans tableau */}
+              {/* VUE SMARTPHONE */}
               <div className="block sm:hidden divide-y divide-slate-100">
                 {analytics.processedStudents
                   .filter((s: ProcessedStudent) => `${s.first_name} ${s.last_name}`.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
@@ -549,13 +594,11 @@ export default function CFODashboardUltraResponsive() {
                               window.open(`https://wa.me/${s.parent_phone?.replace(/\D/g,'')}?text=${msg}`, '_blank');
                             }}
                             className="p-2 bg-indigo-50 text-indigo-600 rounded-xl active:scale-90 transition-transform shrink-0"
-                            title="Relancer sur WhatsApp"
                           >
                             <MessageSquare size={14} />
                           </button>
                         </div>
 
-                        {/* Données de paiement tactiles */}
                         <div className="grid grid-cols-3 gap-2 text-[10px] bg-slate-50 p-2 rounded-xl">
                           <div>
                             <span className="text-slate-400 text-[8px] block uppercase font-bold">Scolarité</span>
@@ -577,7 +620,7 @@ export default function CFODashboardUltraResponsive() {
                   })}
               </div>
 
-              {/* 🖥️ VUE DESKTOP ÉLEVÉS : Tableau classique complet */}
+              {/* VUE DESKTOP */}
               <div className="hidden sm:block w-full overflow-x-auto">
                 <table className="w-full text-left min-w-full">
                   <thead>
@@ -639,26 +682,23 @@ export default function CFODashboardUltraResponsive() {
 
             </div>
 
-          {/* Relance groupée via Liste de Diffusion WhatsApp */}
+            {/* Campagne WhatsApp */}
             <div className="bg-indigo-600 rounded-2xl p-5 text-white shadow-md relative overflow-hidden mt-6 mx-4 sm:mx-0">
               <div className="relative z-10 w-full">
                 <h3 className="text-base sm:text-lg font-black italic uppercase mb-1">Campagne de Rappels Globale</h3>
                 <p className="text-indigo-100 text-[10px] mb-4 opacity-90 leading-relaxed">
-                  Pour relancer tous les parents en retard en un seul clic sans bloquer votre numéro :
+                  Pour relancer tous les parents en retard en un seul clic :
                 </p>
-                
-                {/* Micro-guide d'utilisation pour l'administrateur */}
                 <div className="space-y-2 mb-4 bg-indigo-700/50 p-3 rounded-xl border border-indigo-500/30">
                   <div className="flex items-start gap-2">
                     <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white text-[9px] font-black text-indigo-600">1</span>
-                    <p className="text-[10px] font-medium text-indigo-50">Créez ou sélectionnez votre liste de diffusion <strong>"Parents en Retard"</strong> dans WhatsApp.</p>
+                    <p className="text-[10px] font-medium text-indigo-50">Créez votre liste de diffusion <strong>"Parents en Retard"</strong> dans WhatsApp.</p>
                   </div>
                   <div className="flex items-start gap-2">
                     <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white text-[9px] font-black text-indigo-600">2</span>
-                    <p className="text-[10px] font-medium text-indigo-50">Cliquez sur le bouton ci-dessous pour ouvrir votre application et collez-y votre message général.</p>
+                    <p className="text-[10px] font-medium text-indigo-50">Ouvrez l'application pour y coller votre message.</p>
                   </div>
                 </div>
-
                 <button 
                   onClick={() => window.open('whatsapp://', '_blank')}
                   className="w-full sm:w-auto px-5 py-2.5 bg-white text-indigo-600 rounded-xl text-[10px] font-black uppercase shadow-xs active:scale-95 transition-transform text-center block"

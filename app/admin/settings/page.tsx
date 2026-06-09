@@ -1,42 +1,63 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '@/utils/supabase';
 import NumericInput from '@/components/NumericInput';
 import { 
   Save, Calendar, ShieldCheck, Store, 
-  Loader2, Clock, GraduationCap, AlertCircle, Plus, Check
+  Loader2, Clock, Plus, Check
 } from 'lucide-react';
-import { label } from 'framer-motion/client';
 
 const MOIS = [
   "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", 
   "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
 ];
 
+interface AcademicYear {
+  id: string;
+  name: string;
+  label?: string;
+  start_date: string;
+  end_date: string;
+  is_current: boolean;
+}
+
+interface SchoolConfig {
+  id: number;
+  school_name: string;
+  current_academic_year: string;
+  current_month_index: number;
+  registration_fee_default?: number;
+  outfit_fee_default?: number;
+  passing_grade?: number;
+  is_registration_open?: boolean;
+  [key: string]: any; 
+}
+
 export default function GlobalSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [config, setConfig] = useState<any>(null);
+  const [config, setConfig] = useState<SchoolConfig | null>(null);
   
   // États pour la gestion de la table academic_years
-  const [academicYears, setAcademicYears] = useState<any[]>([]);
+  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
   const [newYear, setNewYear] = useState({ label: '', start_date: '', end_date: '' });
   const [showForm, setShowForm] = useState(false);
 
   useEffect(() => { 
-    fetchSettings(); 
-    fetchAcademicYears();
+    async function initPage() {
+      await Promise.all([fetchSettings(), fetchAcademicYears()]);
+    }
+    initPage();
   }, []);
 
   async function fetchSettings() {
-    setLoading(true);
-    let { data, error } = await supabase.from('school_settings').select('*').eq('id', 1).single();
+    let { data, error } = await supabase.from('school_settings').select('*').eq('id', 1).maybeSingle();
     
     if (error || !data) {
       const initialConfig = { id: 1, school_name: "La Source", current_month_index: 1, current_academic_year: "" };
-      const { data: newData } = await supabase.from('school_settings').insert(initialConfig).select().single();
-      setConfig(newData);
+      const { data: newData, error: insertError } = await supabase.from('school_settings').insert(initialConfig).select().single();
+      if (!insertError && newData) setConfig(newData);
     } else {
       setConfig(data);
     }
@@ -47,7 +68,7 @@ export default function GlobalSettingsPage() {
   async function fetchAcademicYears() {
     const { data, error } = await supabase.from('academic_years').select('*').order('created_at', { ascending: false });
     if (data) {
-      setAcademicYears(data);
+      setAcademicYears(data as AcademicYear[]);
     }
     if (error) {
       console.error("Erreur lors de la récupération des années scolaires:", error);
@@ -59,11 +80,16 @@ export default function GlobalSettingsPage() {
     e.preventDefault();
     if (!newYear.label || !newYear.start_date || !newYear.end_date) return;
 
-    const { data, error } = await supabase
+    // Correspondance avec le schéma de ta base : la colonne s'appelle 'name'
+    const payload = {
+      name: newYear.label,
+      start_date: newYear.start_date,
+      end_date: newYear.end_date
+    };
+
+    const { error } = await supabase
       .from('academic_years')
-      .insert([newYear])
-      .select()
-      .single();
+      .insert([payload]);
 
     if (error) {
       alert("Erreur lors de l'ajout de l'année scolaire : " + error.message);
@@ -71,28 +97,28 @@ export default function GlobalSettingsPage() {
       alert("✅ Année scolaire ajoutée avec succès !");
       setNewYear({ label: '', start_date: '', end_date: '' });
       setShowForm(false);
-      fetchAcademicYears(); // Recharger la liste
+      fetchAcademicYears(); 
     }
   }
 
   // Activer une année scolaire
-  async function toggleActiveYear(year: { id: any; label: any; }) {
-    // Mettre à jour l'état actif dans la table academic_years
-    // Optionnel : Désactiver les autres
+  async function toggleActiveYear(year: AcademicYear) {
+    // Désactiver toutes les autres années et activer la nouvelle
     await supabase.from('academic_years').update({ is_current: false }).neq('id', year.id);
     const { error } = await supabase.from('academic_years').update({ is_current: true }).eq('id', year.id);
 
-    if (!error) {
+    if (!error && config) {
       // Mettre à jour également l'année sélectionnée dans la config globale
-      setConfig({ ...config, current_academic_year: year.label });
+      setConfig({ ...config, current_academic_year: year.name });
       fetchAcademicYears();
-      alert(`Année ${year.label} activée !`);
+      alert(`Année ${year.name} activée !`);
     } else {
       alert("Erreur lors de l'activation.");
     }
   }
 
   async function saveSettings() {
+    if (!config) return;
     setSaving(true);
     
     const updates = {
@@ -126,28 +152,28 @@ export default function GlobalSettingsPage() {
   }
 
   if (loading || !config) return (
-    <div className="flex flex-col items-center justify-center h-screen gap-4">
+    <div className="flex flex-col items-center justify-center h-screen gap-4 bg-slate-50">
       <Loader2 className="animate-spin text-green-600" size={50}/>
-      <p className="font-black italic uppercase text-slate-400 animate-pulse">Initialisation du Cockpit...</p>
+      <p className="font-black italic uppercase text-slate-400 animate-pulse text-xs tracking-widest">Initialisation du Cockpit...</p>
     </div>
   );
 
   return (
-    <div className="max-w-6xl mx-auto pb-20 px-4 space-y-10">
+    <div className="max-w-6xl mx-auto pb-20 px-4 space-y-10 bg-slate-50 min-h-screen">
       
       {/* HEADER DYNAMIQUE */}
-      <div className="mt-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+      <div className="pt-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
             <h1 className="text-3xl sm:text-5xl font-black italic uppercase tracking-tighter text-slate-900">
               Cockpit <span className="text-green-600">Système</span>
             </h1>
             <p className="text-slate-400 font-bold italic uppercase text-[10px] tracking-widest mt-2">
-              Configuration active : {config.school_name} | {config.current_academic_year}
+              Configuration active : {config.school_name} | {config.current_academic_year || 'Aucune année active'}
             </p>
         </div>
         <button 
           onClick={saveSettings} disabled={saving}
-          className="bg-slate-900 text-white px-6 sm:px-10 py-3 sm:py-5 rounded-[2rem] font-black uppercase italic flex items-center gap-3 hover:bg-green-600 transition-all shadow-2xl active:scale-95 disabled:opacity-50 w-full sm:w-auto justify-center"
+          className="bg-slate-900 text-white px-6 sm:px-10 py-3 sm:py-5 rounded-[2rem] font-black uppercase italic flex items-center gap-3 hover:bg-green-600 transition-all shadow-xl active:scale-95 disabled:opacity-50 w-full sm:w-auto justify-center"
         >
           {saving ? <Loader2 className="animate-spin" size={20}/> : <Save size={20} />}
           Appliquer les changements
@@ -157,23 +183,23 @@ export default function GlobalSettingsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
         {/* SECTION : IDENTITÉ ÉCOLE ET ANNÉE ACTIVE */}
-        <div className="lg:col-span-4 bg-white p-6 md:p-8 rounded-[3.5rem] border border-slate-100 shadow-sm space-y-6">
+        <div className="lg:col-span-4 bg-white p-6 md:p-8 rounded-[3.5rem] border border-slate-100 shadow-xs space-y-6">
             <div className="flex items-center gap-3 border-b pb-4">
                 <Store className="text-blue-600" size={20} />
                 <h3 className="font-black uppercase italic text-sm text-slate-800">Établissement</h3>
             </div>
             <div className="space-y-4">
               <div>
-                  <label className="text-[9px] font-black uppercase text-slate-400 ml-2">Nom de l'école</label>
+                  <label className="text-[9px] font-black uppercase text-slate-400 ml-2 block mb-1">Nom de l'école</label>
                   <input 
-                      type="text" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none focus:ring-2 ring-green-500"
+                      type="text" className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none focus:ring-2 ring-green-500 text-slate-900 border-0 text-sm"
                       value={config.school_name || ''} onChange={(e)=>setConfig({...config, school_name: e.target.value})}
                   />
               </div>
               <div>
-                  <label className="text-[9px] font-black uppercase text-slate-400 ml-2">Année scolaire active</label>
+                  <label className="text-[9px] font-black uppercase text-slate-400 ml-2 block mb-1">Année scolaire active</label>
                   <select 
-                    className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none focus:ring-2 ring-green-500 text-sm"
+                    className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none focus:ring-2 ring-green-500 text-sm text-slate-900 border-0"
                     value={config.current_academic_year || ''} 
                     onChange={(e)=>setConfig({...config, current_academic_year: e.target.value})}
                   >
@@ -187,7 +213,7 @@ export default function GlobalSettingsPage() {
         </div>
 
         {/* SECTION : GESTION DES ANNÉES SCOLAIRES */}
-        <div className="lg:col-span-8 bg-white p-6 md:p-10 rounded-[3.5rem] border border-slate-100 shadow-sm space-y-8">
+        <div className="lg:col-span-8 bg-white p-6 md:p-10 rounded-[3.5rem] border border-slate-100 shadow-xs space-y-8">
           <div className="flex justify-between items-center border-b pb-6">
             <div className="flex items-center gap-3">
               <Calendar className="text-green-600" />
@@ -196,7 +222,7 @@ export default function GlobalSettingsPage() {
             {!showForm && (
               <button
                 onClick={() => setShowForm(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-black uppercase italic text-[10px] rounded-2xl shadow-sm transition-all"
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-black uppercase italic text-[10px] rounded-2xl shadow-xs transition-all"
               >
                 <Plus className="w-4 h-4" /> Nouvelle année
               </button>
@@ -214,7 +240,7 @@ export default function GlobalSettingsPage() {
                     type="text"
                     value={newYear.label}
                     onChange={(e) => setNewYear({ ...newYear, label: e.target.value })}
-                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 ring-green-500"
+                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 ring-green-500 text-slate-900 font-bold"
                     placeholder="2026-2027"
                     required
                   />
@@ -225,7 +251,7 @@ export default function GlobalSettingsPage() {
                     type="date"
                     value={newYear.start_date}
                     onChange={(e) => setNewYear({ ...newYear, start_date: e.target.value })}
-                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 ring-green-500"
+                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 ring-green-500 text-slate-900 font-bold"
                     required
                   />
                 </div>
@@ -235,7 +261,7 @@ export default function GlobalSettingsPage() {
                     type="date"
                     value={newYear.end_date}
                     onChange={(e) => setNewYear({ ...newYear, end_date: e.target.value })}
-                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 ring-green-500"
+                    className="w-full p-4 bg-white border border-slate-200 rounded-2xl text-sm outline-none focus:ring-2 ring-green-500 text-slate-900 font-bold"
                     required
                   />
                 </div>
@@ -250,7 +276,7 @@ export default function GlobalSettingsPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-3 bg-slate-900 hover:bg-green-600 text-white text-xs font-black uppercase rounded-2xl transition shadow-xl"
+                  className="px-6 py-3 bg-slate-900 hover:bg-green-600 text-white text-xs font-black uppercase rounded-2xl transition shadow-md"
                 >
                   Enregistrer
                 </button>
@@ -259,7 +285,7 @@ export default function GlobalSettingsPage() {
           )}
 
           {/* Liste des années scolaires */}
-          <div className="space-y-4 max-h-[350px] overflow-y-auto pr-2">
+          <div className="space-y-4 max-h-[350px] overflow-y-auto pr-2 no-scrollbar">
             {academicYears.length > 0 ? (
               academicYears.map((year) => (
                 <div
@@ -282,8 +308,9 @@ export default function GlobalSettingsPage() {
                       </span>
                     ) : (
                       <button
+                        type="button"
                         onClick={() => toggleActiveYear(year)}
-                        className="text-[10px] text-green-600 font-black uppercase border border-green-200 px-3 py-2 rounded-xl hover:bg-green-50 transition"
+                        className="text-[10px] text-green-600 font-black uppercase border border-green-200 px-3 py-2 rounded-xl hover:bg-green-50 transition-colors"
                       >
                         Activer
                       </button>
@@ -298,7 +325,7 @@ export default function GlobalSettingsPage() {
         </div>
 
         {/* SECTION : ÉCHÉANCIER DES TRANCHES */}
-        <div className="lg:col-span-12 bg-white p-6 md:p-10 rounded-[3.5rem] border border-slate-100 shadow-sm space-y-8">
+        <div className="lg:col-span-12 bg-white p-6 md:p-10 rounded-[3.5rem] border border-slate-100 shadow-xs space-y-8">
             <div className="flex items-center gap-3 border-b pb-6">
                 <Clock className="text-green-600" />
                 <h3 className="font-black uppercase italic text-lg text-slate-800">Calendrier des Tranches (Plan 3)</h3>
@@ -310,7 +337,7 @@ export default function GlobalSettingsPage() {
                     <p className="font-black text-center text-green-600 uppercase text-[10px]">Tranche {num}</p>
                     <div className="space-y-3">
                         <select 
-                            className="w-full p-3 bg-white rounded-xl font-bold text-xs outline-none shadow-sm"
+                            className="w-full p-3 bg-white rounded-xl font-bold text-xs outline-none shadow-xs border-0 text-slate-900"
                             value={config[`t${num}_start_month`] ?? 0}
                             onChange={(e)=>setConfig({...config, [`t${num}_start_month`]: parseInt(e.target.value)})}
                         >
@@ -318,7 +345,7 @@ export default function GlobalSettingsPage() {
                             {MOIS.map((m, i) => <option key={i} value={i}>{m}</option>)}
                         </select>
                         <select 
-                            className="w-full p-3 bg-white rounded-xl font-bold text-xs outline-none shadow-sm"
+                            className="w-full p-3 bg-white rounded-xl font-bold text-xs outline-none shadow-xs border-0 text-slate-900"
                             value={config[`t${num}_end_month`] ?? 0}
                             onChange={(e)=>setConfig({...config, [`t${num}_end_month`]: parseInt(e.target.value)})}
                         >
@@ -334,7 +361,7 @@ export default function GlobalSettingsPage() {
         {/* SECTION : PLAN 9 ET RÈGLES */}
         <div className="lg:col-span-12 grid grid-cols-1 md:grid-cols-3 gap-8">
             {/* PLAN 9 MOIS */}
-            <div className="bg-white p-8 rounded-[3.5rem] border border-slate-100 shadow-sm space-y-6">
+            <div className="bg-white p-8 rounded-[3.5rem] border border-slate-100 shadow-xs space-y-6">
                 <div className="flex items-center gap-3 border-b pb-4">
                     <Calendar className="text-blue-600" />
                     <h3 className="font-black uppercase italic text-sm text-slate-800">Échéance Mensuelle</h3>
@@ -344,7 +371,7 @@ export default function GlobalSettingsPage() {
                     <p className="text-[9px] font-black uppercase text-slate-400 mt-1">Mois en cours de règlement</p>
                 </div>
                 <input 
-                    type="range" min="1" max="9" className="w-full accent-slate-900"
+                    type="range" min="1" max="9" className="w-full accent-slate-900 cursor-pointer"
                     value={config.current_month_index || 1}
                     onChange={(e)=>setConfig({...config, current_month_index: parseInt(e.target.value)})}
                 />
@@ -356,20 +383,20 @@ export default function GlobalSettingsPage() {
                     <ShieldCheck className="text-green-400" />
                     <h3 className="font-black uppercase italic text-sm text-white">Tarification & Académique</h3>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     <div>
-                        <label className="text-[9px] font-black uppercase text-slate-500 ml-2">Inscription</label>
+                        <label className="text-[9px] font-black uppercase text-slate-500 ml-2 block mb-1">Inscription</label>
                         <NumericInput
-                          className="w-full p-4 bg-slate-800 text-green-400 rounded-2xl font-black outline-none"
+                          className="w-full p-4 bg-slate-800 text-green-400 rounded-2xl font-black outline-none border-0 text-sm"
                           value={config.registration_fee_default ?? null}
                           onChange={(v)=>setConfig({...config, registration_fee_default: v ?? 0})}
                           maximumFractionDigits={0}
                         />
                     </div>
                     <div>
-                        <label className="text-[9px] font-black uppercase text-slate-500 ml-2">Moyenne Passage</label>
+                        <label className="text-[9px] font-black uppercase text-slate-500 ml-2 block mb-1">Moyenne Passage</label>
                         <NumericInput
-                          className="w-full p-4 bg-slate-800 text-blue-400 rounded-2xl font-black outline-none"
+                          className="w-full p-4 bg-slate-800 text-blue-400 rounded-2xl font-black outline-none border-0 text-sm"
                           value={config.passing_grade ?? null}
                           onChange={(v)=>setConfig({...config, passing_grade: v ?? 10})}
                           maximumFractionDigits={1}
@@ -377,8 +404,9 @@ export default function GlobalSettingsPage() {
                     </div>
                     <div className="flex items-end">
                         <button 
+                            type="button"
                             onClick={() => setConfig({...config, is_registration_open: !config.is_registration_open})}
-                            className={`w-full p-4 rounded-2xl font-black uppercase text-[10px] transition-all ${config.is_registration_open ? 'bg-green-500 text-white shadow-lg shadow-green-500/20' : 'bg-rose-500 text-white'}`}
+                            className={`w-full p-4 rounded-2xl font-black uppercase text-[10px] transition-all cursor-pointer ${config.is_registration_open ? 'bg-green-500 text-white shadow-md shadow-green-500/20' : 'bg-rose-500 text-white'}`}
                         >
                             Inscriptions : {config.is_registration_open ? 'Ouvertes' : 'Fermées'}
                         </button>
@@ -386,6 +414,7 @@ export default function GlobalSettingsPage() {
                 </div>
             </div>
         </div>
+
       </div>
     </div>
   );

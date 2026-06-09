@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from 'react';
-import { supabase } from '@/utils/supabase'; // Assurez-vous que ce chemin est correct
+import { useState } from 'react';
+import { supabase } from '@/utils/supabase';
 import { useRouter } from 'next/navigation';
 import { LogIn, ShieldCheck, Loader2, Eye, EyeOff } from 'lucide-react';
 
@@ -12,27 +12,6 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [school, setSchool] = useState<any>(null);
-
-  // Récupérer les données de l'école pour affichage
-  useEffect(() => {
-    async function fetchSchool() {
-      try {
-        const { data: schoolData } = await supabase
-          .from('schools')
-          .select('*')
-          .limit(1)
-          .maybeSingle();
-        
-        if (schoolData) {
-          setSchool(schoolData);
-        }
-      } catch (error) {
-        console.error('Erreur lors de la récupération de l\'école:', error);
-      }
-    }
-    fetchSchool();
-  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,15 +51,11 @@ export default function LoginPage() {
       const redirectParam = params.get('redirect');
 
       if (profile?.role === 'super_admin') {
-        // Redirection absolue pour le Super Admin
         router.push('/super_admin');
       } else if (redirectParam && redirectParam !== '/login') {
-        // Redirection vers la page tentée avant le login (vérification du slash absolu)
         const cleanRedirect = redirectParam.startsWith('/') ? redirectParam : `/${redirectParam}`;
         router.push(cleanRedirect);
       } else {
-        // ✅ CORRECTION : Ajout du slash absolu obligatoire '/' pour éviter la route relative cassée
-        // Ajuste en '/school/dashboard' si ton tableau de bord est dans le sous-dossier school
         router.push('/dashboard'); 
       }
     } catch (err: any) {
@@ -91,57 +66,62 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col justify-center py-12 px-6 lg:px-8 transition-colors">
+    /* L'astuce magique : "md:fixed md:inset-0 md:z-[9999]" 
+      Sur PC, la page se détache complètement du Layout, passe par-dessus tout le monde,
+      s'étale sur 100% de la largeur/hauteur et se centre parfaitement.
+    */
+    <div 
+      id="login-page" 
+      className="min-h-screen bg-[#f8fafc] flex flex-col justify-center py-12 px-6 lg:px-8 w-full md:fixed md:inset-0 md:z-[9999] md:overflow-y-auto"
+    >
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center mb-6">
-          {school?.logo_url ? (
-            <img src={school.logo_url} alt="Logo" className="h-16 w-16 rounded-[2rem] object-cover shadow-2xl ring-8 ring-white dark:ring-slate-800" />
-          ) : (
-            <div className="h-16 w-16 bg-blue-600 dark:bg-green-700 rounded-[2rem] flex items-center justify-center shadow-2xl shadow-green-200 dark:shadow-green-900/30 ring-8 ring-white dark:ring-slate-800">
-              <span className="font-black text-3xl text-white italic">KN</span>
-            </div>
-          )}
+          {/* Logo fixe officiel KalanNyetaa */}
+          <div className="h-16 w-16 bg-gradient-to-br from-[#1763FF] to-[#00246B] rounded-[2rem] flex items-center justify-center shadow-2xl shadow-blue-200 ring-8 ring-white">
+            <span className="font-black text-3xl text-white">K</span>
+          </div>
         </div>
         
-        <h2 className="text-center text-3xl font-black tracking-tighter text-slate-900 dark:text-slate-50 italic">
-           KalanNyetaa
+        {/* Nom de la marque en dur */}
+        <h2 className="text-center text-3xl font-black tracking-tighter text-slate-900">
+          Kalan<span className="text-[#1763FF]">Nyetaa</span>
         </h2>
-        <p className="mt-2 text-center text-xs font-bold uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+        <p className="mt-2 text-center text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
           Gestion Scolaire Intégrée
         </p>
       </div>
 
       <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-[440px]">
-        <div className="bg-white dark:bg-slate-800 py-10 px-8 shadow-2xl shadow-slate-200/50 dark:shadow-slate-900/50 rounded-[3rem] border border-slate-100 dark:border-slate-700 transition-colors">
+        <div className="bg-white py-10 px-8 shadow-2xl shadow-slate-200/50 rounded-[3rem] border border-slate-100">
           <form className="space-y-6" onSubmit={handleLogin}>
             {error && (
-              <div className="bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 p-4 rounded-2xl text-xs font-black uppercase text-center border border-rose-100 dark:border-rose-800 animate-pulse">
+              <div className="bg-rose-50 text-rose-600 p-4 rounded-2xl text-xs font-black uppercase text-center border border-rose-100 animate-pulse">
                 {error}
               </div>
             )}
 
             <div>
-              <label className="block text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 mb-2 tracking-widest">
+              <label className="block text-[10px] font-black uppercase text-slate-400 ml-2 mb-2 tracking-widest">
                 Adresse Email
               </label>
               <input
                 type="email"
                 required
-                className="w-full p-4 bg-slate-50 dark:bg-slate-700 border-2 border-transparent rounded-2xl focus:border-green-500 focus:bg-white dark:focus:bg-slate-600 outline-none font-bold text-slate-900 dark:text-slate-50 transition-all placeholder:text-slate-300 dark:placeholder:text-slate-400"
-                placeholder="nom@ecole.com"
+                className="w-full p-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:border-[#1763FF] focus:bg-white outline-none font-bold text-slate-900 transition-all placeholder:text-slate-300"
+                placeholder="nom@kalannyetaa.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
 
             <div className="relative">
-              <label className="block text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2 mb-2 tracking-widest">
+              <label className="block text-[10px] font-black uppercase text-slate-400 ml-2 mb-2 tracking-widest">
                 Mot de passe
               </label>
               <input
                 type={showPassword ? "text" : "password"}
                 required
-                className="w-full p-4 bg-slate-50 dark:bg-slate-700 border-2 border-transparent rounded-2xl focus:border-green-500 focus:bg-white dark:focus:bg-slate-600 outline-none font-bold text-slate-900 dark:text-slate-50 transition-all placeholder:text-slate-300 dark:placeholder:text-slate-400"
+                className="w-full p-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:border-[#1763FF] focus:bg-white outline-none font-bold text-slate-900 transition-all placeholder:text-slate-300"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -149,7 +129,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-[42px] text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+                className="absolute right-4 top-[42px] text-slate-400 hover:text-slate-600 transition-colors"
               >
                 {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
@@ -159,11 +139,11 @@ export default function LoginPage() {
               <div className="flex items-center gap-2">
                 <input 
                   type="checkbox" 
-                  className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-green-600 dark:text-green-500 focus:ring-green-500 dark:focus:ring-green-600 transition-all cursor-pointer" 
+                  className="w-4 h-4 rounded border-slate-300 text-[#1763FF] focus:ring-[#1763FF] transition-all cursor-pointer" 
                 />
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Se souvenir de moi</span>
+                <span className="text-xs font-bold text-slate-500">Se souvenir de moi</span>
               </div>
-              <button type="button" className="text-xs font-bold text-green-600 dark:text-green-500 hover:text-green-700 dark:hover:text-green-400 hover:underline transition-colors">
+              <button type="button" className="text-xs font-bold text-[#1763FF] hover:text-blue-700 hover:underline transition-colors">
                 Oublié ?
               </button>
             </div>
@@ -172,7 +152,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex justify-center items-center gap-3 py-5 px-4 bg-slate-900 dark:bg-green-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-green-600 dark:hover:bg-green-700 transition-all shadow-xl active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
+                className="w-full flex justify-center items-center gap-3 py-5 px-4 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-[#1763FF] transition-all shadow-xl active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
               >
                 {loading ? (
                   <Loader2 className="animate-spin" size={18} />
@@ -186,16 +166,16 @@ export default function LoginPage() {
             </div>
           </form>
 
-          <div className="mt-8 pt-8 border-t border-slate-200 dark:border-slate-700 text-center">
-            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center justify-center gap-2">
-              <ShieldCheck size={14} className="text-green-500 dark:text-green-400" />
+          <div className="mt-8 pt-8 border-t border-slate-50 text-center">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center justify-center gap-2">
+              <ShieldCheck size={14} className="text-[#1763FF]" />
               Protection des données Multi-Tenant
             </p>
           </div>
         </div>
         
-        <p className="mt-8 text-center text-xs text-slate-400 dark:text-slate-500 font-bold italic">
-          'Propulsé par KalanNyetaa Technologies'
+        <p className="mt-8 text-center text-xs text-slate-400 font-bold tracking-wide">
+          Propulsé par <span className="font-extrabold text-slate-500">KalanNyetaa Technologies</span>
         </p>
       </div>
     </div>

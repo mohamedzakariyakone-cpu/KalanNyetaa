@@ -78,6 +78,15 @@ export default function StudentDetails() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Fonction pour formater le prix à la saisie (ex: 50000 -> 50 000)
+  const formatInputDisplay = (val: string) => {
+    const clean = val.replace(/\s/g, '');
+    if (!clean) return '';
+    const num = parseInt(clean, 10);
+    if (isNaN(num)) return val;
+    return new Intl.NumberFormat('fr-FR').format(num).replace(/,/g, ' ');
+  };
+
   const sendReceiptWhatsApp = (pAmount: number, pMonth: string, type: 'SCOLAIRE' | 'EXTRA') => {
     if (!student?.parent_phone) return;
     const cleanNumber = student.parent_phone.replace(/\D/g, '');
@@ -133,7 +142,8 @@ export default function StudentDetails() {
   // Encaissement Scolarité
   const handleBasePayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payAmount = parseFloat(amount);
+    // Nettoyage des espaces pour récupérer le nombre pur
+    const payAmount = parseFloat(amount.replace(/\s/g, ''));
     if (isNaN(payAmount)) return;
 
     // Nouveau calcul cumulatif
@@ -157,7 +167,8 @@ export default function StudentDetails() {
 
   const handleExtraPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    const payAmount = parseFloat(extraAmount);
+    // Nettoyage des espaces pour récupérer le nombre pur
+    const payAmount = parseFloat(extraAmount.replace(/\s/g, ''));
     if (isNaN(payAmount)) return;
 
     const { error } = await supabase.from('student_extra_payments').insert([{
@@ -268,12 +279,12 @@ export default function StudentDetails() {
                         <option value="">Sélectionner frais divers...</option>
                         {extraFeeTypes.map(t => <option key={t.id} value={t.id}>{t.name} ({Number(t.default_amount).toLocaleString()} F)</option>)}
                     </select>
-                    <NumericInput
+                    <input
+                      type="text"
                       placeholder="Montant perçu..."
                       className="w-full p-3.5 bg-slate-50 border-none rounded-xl text-xs font-bold outline-none text-slate-800"
-                      value={extraAmount === '' ? undefined : Number(extraAmount)}
-                      onChange={(v)=>setExtraAmount(v === null ? '' : String(v))}
-                      maximumFractionDigits={0}
+                      value={formatInputDisplay(extraAmount)}
+                      onChange={(e) => setExtraAmount(e.target.value)}
                       required
                     />
                     <button type="submit" className="w-full bg-[#1763FF] text-white p-3.5 rounded-xl font-black text-[10px] uppercase hover:bg-[#1252D4] transition-all shadow-md shadow-blue-500/10">Valider l'encaissement</button>
@@ -375,12 +386,12 @@ export default function StudentDetails() {
             <div className="bg-white p-5 sm:p-6 rounded-[2rem] border border-slate-200/60 shadow-sm">
                 <h3 className="font-black mb-4 text-[10px] uppercase tracking-widest flex items-center gap-2"><Wallet size={14} className="text-[#1763FF]"/> Encaisser Paiement Scolaire</h3>
                 <form onSubmit={handleBasePayment} className="flex flex-col sm:grid sm:grid-cols-3 gap-3">
-                    <NumericInput
+                    <input
+                      type="text"
                       placeholder="Montant en Francs..."
                       className="p-3.5 bg-slate-50 rounded-xl font-bold outline-none text-xs text-slate-800"
-                      value={amount === '' ? undefined : Number(amount)}
-                      onChange={(v)=>setAmount(v === null ? '' : String(v))}
-                      maximumFractionDigits={0}
+                      value={formatInputDisplay(amount)}
+                      onChange={(e) => setAmount(e.target.value)}
                       required
                     />
                     <select className="p-3.5 bg-slate-50 rounded-xl outline-none font-bold text-xs text-slate-800" value={month} onChange={(e)=>setMonth(e.target.value)} required>
@@ -461,11 +472,14 @@ export default function StudentDetails() {
 
               <div className="space-y-1">
                 <label className="text-[9px] font-black uppercase text-slate-400 ml-1">Montant Scolarité Annuelle Requis</label>
-                <NumericInput
+                <input
+                  type="text"
                   className="w-full p-3.5 bg-slate-50 rounded-xl font-black text-xs text-[#1763FF]"
-                  value={editForm.annual_fee ?? undefined}
-                  onChange={(v)=>setEditForm({...editForm, annual_fee: v ?? 0})}
-                  maximumFractionDigits={0}
+                  value={formatInputDisplay(String(editForm.annual_fee ?? 0))}
+                  onChange={(e) => {
+                    const clean = e.target.value.replace(/\s/g, '');
+                    setEditForm({...editForm, annual_fee: clean === '' ? 0 : parseInt(clean, 10)});
+                  }}
                 />
               </div>
 
