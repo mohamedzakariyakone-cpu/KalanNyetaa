@@ -79,13 +79,11 @@ const Sidebar = ({ mobile = false, floating = false, onClose }: SidebarProps) =>
 
   let base = '';
   if (floating) {
-    base = 'fixed left-1/2 bottom-6 transform -translate-x-1/2 w-[92vw] max-w-[360px] bg-white text-gray-800 p-4 rounded-3xl shadow-2xl z-50 overflow-hidden';
+    base = 'fixed left-1/2 bottom-6 transform -translate-x-1/2 w-[92vw] max-w-[360px] bg-white dark:bg-slate-800 text-gray-800 dark:text-slate-100 p-4 rounded-3xl shadow-2xl dark:shadow-slate-950/50 z-50 overflow-hidden transition-colors';
   } else if (mobile) {
-    // Fond sidebar : blanc + bleu très léger & bordure adaptée
-    base = 'fixed inset-y-0 left-0 w-[85vw] max-w-[320px] bg-gradient-to-b from-blue-50/60 to-white text-gray-800 p-5 flex flex-col border-r border-blue-100 shadow-2xl z-50 transform transition-transform overflow-y-auto';
+    base = 'fixed inset-y-0 left-0 w-[85vw] max-w-[320px] bg-gradient-to-b from-blue-50/60 dark:from-slate-800/90 to-white dark:to-slate-900 text-gray-800 dark:text-slate-100 p-5 flex flex-col border-r border-blue-100 dark:border-slate-700 shadow-2xl dark:shadow-slate-950/50 z-50 transform transition-all overflow-y-auto';
   } else {
-    // Fond sidebar : blanc + bleu très léger & bordure adaptée
-    base = 'hidden md:flex w-72 h-screen bg-gradient-to-b from-blue-50/50 to-white text-gray-800 fixed left-0 top-0 p-8 flex flex-col border-r border-blue-100 z-50 rounded-r-[1.5rem] overflow-y-auto';
+    base = 'hidden md:flex w-72 h-screen bg-gradient-to-b from-blue-50/50 dark:from-slate-800/50 to-white dark:to-slate-900 text-gray-800 dark:text-slate-100 fixed left-0 top-0 p-8 flex flex-col border-r border-blue-100 dark:border-slate-700 z-50 rounded-r-[1.5rem] overflow-y-auto transition-colors';
   }
 
   return (
@@ -139,15 +137,14 @@ const Sidebar = ({ mobile = false, floating = false, onClose }: SidebarProps) =>
             <Link 
               key={item.name} 
               href={item.href}
-              /* Bouton actif : #1763FF | Hover : bleu clair bg-blue-50 text-[#1763FF] */
               className={`group flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 font-bold text-sm
                 ${isActive 
-                  ? 'bg-[#1763FF] text-white shadow-md shadow-blue-500/20' 
-                  : 'text-gray-600 hover:bg-blue-50 hover:text-[#1763FF]'
+                  ? 'bg-[#1763FF] dark:bg-green-600 text-white shadow-md shadow-blue-500/20 dark:shadow-green-900/30' 
+                  : 'text-gray-600 dark:text-slate-400 hover:bg-blue-50 dark:hover:bg-slate-700 hover:text-[#1763FF] dark:hover:text-green-400'
                 }`}
               onClick={() => onClose?.()}
             >
-              <item.icon size={20} className={isActive ? 'text-white' : 'text-gray-400 group-hover:text-[#1763FF]'} />
+              <item.icon size={20} className={isActive ? 'text-white' : 'text-gray-400 dark:text-slate-500 group-hover:text-[#1763FF] dark:group-hover:text-green-400'} />
               <span>{item.name}</span>
               
               {isActive && (
@@ -159,10 +156,10 @@ const Sidebar = ({ mobile = false, floating = false, onClose }: SidebarProps) =>
       </nav>
 
       {/* SECTION BAS : Bouton de déconnexion */}
-      <div className="border-t border-gray-100 pt-4 mt-4">
+      <div className="border-t border-gray-100 dark:border-slate-700 pt-4 mt-4">
         <button 
           onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 text-sm font-bold transition-all"
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 text-sm font-bold transition-all"
         >
           <LogOut size={20} />
           <span>Déconnexion</span>

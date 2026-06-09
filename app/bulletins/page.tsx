@@ -451,7 +451,7 @@ export default function EngineScolaire() {
                     ) : school?.name ? (
                       <>{school.name.toUpperCase()}</>
                     ) : (
-                      <>LES OURSINS <span className="text-indigo-600">ACADEMY</span></>
+                      <>KalanNyetaa <span className="text-indigo-600">ACADEMY</span></>
                     )}
                   </h1>
                   <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wider">

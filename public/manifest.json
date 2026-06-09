@@ -1,11 +1,11 @@
 {
-  "theme_color": "#4f46e5",
+  "theme_color": "#transparent",
   "background_color": "#ffffff",
   "display": "standalone",
   "scope": "/",
   "start_url": "/",
-  "name": "KanlanNyetaa",
-  "short_name": "KanlanNyetaa",
+  "name": "KalanNyetaa",
+  "short_name": "KalanNyetaa",
   "description": "Application de gestion scolaire pour les établissements éducatifs, offrant des fonctionnalités de gestion des élèves, des enseignants, des classes, des emplois du temps et des bulletins scolaires.",
   "orientation": "portrait-primary",
   "icons": [

@@ -2,6 +2,7 @@ import './globals.css'
 import MobileShell from '@/components/MobileShell'
 import { Inter } from 'next/font/google'
 import { YearProvider } from '@/context/YearContext'
+import { ThemeProvider } from '@/components/ThemeProvider'
 import type { Metadata, Viewport } from 'next'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
@@ -36,17 +37,31 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="fr" className={`${inter.variable} font-sans`}>
+    <html lang="fr" className={`${inter.variable} font-sans`} suppressHydrationWarning>
       <head>
         {/* Icône requise pour l'installation sur iOS (Safari) */}
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+        {/* Script pour éviter le flash en mode sombre */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              try {
+                const theme = localStorage.getItem('theme') || 'system';
+                const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+                if (isDark) document.documentElement.classList.add('dark');
+              } catch (e) {}
+            `,
+          }}
+        />
       </head>
-      <body className="bg-[#F8FAFC] text-slate-900 antialiased">
-        <YearProvider>
-          <MobileShell>
-            {children}
-          </MobileShell>
-        </YearProvider>
+      <body className="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-50 antialiased transition-colors">
+        <ThemeProvider>
+          <YearProvider>
+            <MobileShell>
+              {children}
+            </MobileShell>
+          </YearProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

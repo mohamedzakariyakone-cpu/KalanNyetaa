@@ -139,7 +139,7 @@ export default function Super_admin() {
       {/* Sidebar (Inchangée) */}
       <div className="w-72 bg-slate-900 m-6 rounded-[3rem] p-8 flex flex-col shadow-2xl">
         <div className="mb-12 px-4">
-          <h2 className="text-white font-black text-2xl italic tracking-tighter">Oursins<span className="text-green-500 text-4xl">.</span></h2>
+          <h2 className="text-white font-black text-2xl italic tracking-tighter">KalanNyetaa<span className="text-green-500 text-4xl">.</span></h2>
           <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">Master Control v2.0</p>
         </div>
         <nav className="space-y-2 flex-1">
