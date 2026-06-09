@@ -27,7 +27,6 @@ export default function TeacherProfilePage() {
     const { data, error } = await supabase.from('teachers').select('*').eq('id', id).single();
     if (error) router.push('/teachers');
     else setTeacher(data);
-    loading.false;
     setLoading(false);
   };
 
