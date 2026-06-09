@@ -1,0 +1,29 @@
+{
+  "theme_color": "#4f46e5",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "scope": "/",
+  "start_url": "/",
+  "name": "KanlanNyetaa",
+  "short_name": "KanlanNyetaa",
+  "description": "Application de gestion scolaire pour les établissements éducatifs, offrant des fonctionnalités de gestion des élèves, des enseignants, des classes, des emplois du temps et des bulletins scolaires.",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-384x384.png",
+      "sizes": "384x384",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
