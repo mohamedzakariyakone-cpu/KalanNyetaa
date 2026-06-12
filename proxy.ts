@@ -1,6 +1,6 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { ROLES_CONFIG, RoleType } from '/app/config/roles' // Ajuste le chemin vers ton fichier config/roles s'il est ailleurs
+import { ROLES_CONFIG, type RoleType } from './app/config/roles'
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({
@@ -13,29 +13,30 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
+        cookies: {
+          // Retourne la valeur du cookie côté serveur
+          get(name: string) {
+            return request.cookies.get(name)?.value
+          },
+          // Définit un cookie sur la réponse (ne pas toucher request.cookies)
+          set(name: string, value: string, options?: any) {
+            try {
+              ;(response as any).cookies.set(name, value, options)
+            } catch (err) {
+              // Fallback : tenter de définir via la forme objet
+              ;(response as any).cookies.set({ name, value, ...options })
+            }
+          },
+          // Supprime un cookie côté réponse
+          delete(name: string, options?: any) {
+            try {
+              ;(response as any).cookies.delete(name)
+            } catch (err) {
+              // Fallback : définir une date d'expiration passée
+              ;(response as any).cookies.set(name, '', { ...(options || {}), expires: new Date(0) })
+            }
+          },
         },
-        set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({ name, value, ...options })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          response.cookies.set({ name, value, ...options })
-        },
-        remove(name: string, options: CookieOptions) {
-          request.cookies.set({ name, value: '', ...options })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          response.cookies.set({ name, value: '', ...options })
-        },
-      },
     }
   )
 
