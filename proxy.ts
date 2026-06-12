@@ -13,7 +13,7 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-        cookies: {
+        cookies: ({
           // Retourne la valeur du cookie côté serveur
           get(name: string) {
             return request.cookies.get(name)?.value
@@ -36,7 +36,7 @@ export async function proxy(request: NextRequest) {
               ;(response as any).cookies.set(name, '', { ...(options || {}), expires: new Date(0) })
             }
           },
-        },
+        } as unknown) as any,
     }
   )
 
