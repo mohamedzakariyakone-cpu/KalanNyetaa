@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation'; 
@@ -6,6 +6,7 @@ import { LayoutDashboard, School, Users, GraduationCap, Wallet, Settings, LogOut
 import { supabase } from '@/utils/supabase';
 import { useState, useEffect, useRef } from 'react';
 import YearSelector from '@/components/YearSelector';
+import { ROLES_CONFIG, RoleType } from '@/app/config/roles';
 
 type SidebarProps = { onClose?: () => void };
 
@@ -14,10 +15,26 @@ const Sidebar = ({ onClose }: SidebarProps) => {
   const router = useRouter();
   const [school, setSchool] = useState<any>(null);
   const [loadingSchool, setLoadingSchool] = useState(true);
+  const [userRole, setUserRole] = useState<RoleType | null>(null);
   
   // État pour ouvrir/fermer le menu "Plus" sur mobile
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Charger le rôle utilisateur depuis le cookie ou localStorage au montage client
+  useEffect(() => {
+    const getRole = () => {
+      if (typeof window !== 'undefined') {
+        // Extraction depuis les cookies
+        const match = document.cookie.match(new RegExp('(^| )userRole=([^;]+)'));
+        if (match) return match[2] as RoleType;
+        // Fallback localstorage
+        return localStorage.getItem('userRole') as RoleType | null;
+      }
+      return null;
+    };
+    setUserRole(getRole());
+  }, [pathname]);
 
   // Fermer le menu "Plus" si on clique à l'extérieur
   useEffect(() => {
@@ -63,8 +80,11 @@ const Sidebar = ({ onClose }: SidebarProps) => {
     fetchSchool();
   }, []);
 
-  // Éléments de menu d'origine
-  const menuItems = [
+  // 🛡️ SÉCURITÉ ABSOLUE : Si on est sur le sélecteur de rôle ou le login, on ne monte rien du tout.
+  if (pathname === '/' || pathname === '/login') return null;
+
+  // Liste complète de tous les éléments de menu possibles
+  const allMenuItems = [
     { name: 'Tableau de bord', href: '/dashboard', icon: LayoutDashboard },
     { name: 'Classes', href: '/classes', icon: School },
     { name: 'Élèves', href: '/students', icon: Users },
@@ -72,16 +92,27 @@ const Sidebar = ({ onClose }: SidebarProps) => {
     { name: 'Comptabilité', href: '/finance', icon: Wallet },
     { name: 'Bulletins', href: '/bulletins', icon: NotebookTabs },
     { name: 'Performance', href: '/performance', icon: ChartLine },
-    { name: 'Paramètres', href: '/admin/settings', icon: Settings }
+    { name: 'Paramètres', href: '/admin/settings', icon: Settings },
+    { name: 'Quitter', href: '/', icon: LogOut },
   ];
 
-  // Découpage pour le mobile
+  // Filtrage dynamique des éléments de menu basés sur config/roles.ts
+  const allowedPages = userRole ? ROLES_CONFIG[userRole]?.allowedPages || [] : [];
+  const menuItems = allMenuItems.filter(item => 
+    allowedPages.some(allowedPath => item.href === allowedPath || item.href.startsWith(`${allowedPath}/`))
+  );
+
+  // Découpage dynamique adapté pour le mobile selon les droits du rôle
   const visibleMobileItems = menuItems.slice(0, 4);
   const hiddenMobileItems = menuItems.slice(4);
 
   // Fonction de déconnexion
   const handleLogout = async () => {
     try {
+      // Nettoyer le cookie de session de rôle
+      document.cookie = "userRole=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
+      localStorage.removeItem('userRole');
+
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       
@@ -95,15 +126,24 @@ const Sidebar = ({ onClose }: SidebarProps) => {
     }
   };
 
-  if (pathname === '/login') return null;
+  // Quitter vers la page de sélection de rôle sans déconnecter la session
+  const handleQuit = () => {
+    // Nettoyer uniquement le rôle stocké
+    document.cookie = "userRole=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
+    localStorage.removeItem('userRole');
+    onClose?.();
+    setShowMoreMenu(false);
+    router.push('/');
+    router.refresh();
+  };
 
   return (
     <>
-      {/* 1. VERSION MOBILE (Stylisée avec bordures renforcées et animations poussées) */}
+      {/* 1. VERSION MOBILE */}
       <div ref={menuRef} className="md:hidden fixed bottom-0 left-0 right-0 z-50 transition-all duration-300" role="navigation" aria-label="Mobile Navigation">
         
-        {/* LE MENU DÉROULANT "PLUS" (Animation d'entrée "Pop", flou d'arrière-plan, bordure bleue) */}
-        {showMoreMenu && (
+        {/* LE MENU DÉROULANT "PLUS" */}
+        {showMoreMenu && hiddenMobileItems.length > 0 && (
           <div className="absolute bottom-[5.5rem] right-4 left-4 bg-white/95 backdrop-blur-2xl rounded-3xl p-5 shadow-[0_15px_60px_rgba(23,99,255,0.2)] border-2 border-blue-100 flex flex-col gap-1.5 max-h-[60vh] overflow-y-auto animate-pop-in duration-300">
             <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest px-3 mb-2 italic">Autres fonctionnalités</p>
             {hiddenMobileItems.map((item) => {
@@ -129,10 +169,18 @@ const Sidebar = ({ onClose }: SidebarProps) => {
               <LogOut size={19} />
               <span>Déconnexion</span>
             </button>
+
+            <button 
+              onClick={handleQuit}
+              className="flex items-center gap-3 px-4 py-3.5 rounded-2xl text-orange-500 hover:bg-orange-50/80 text-sm font-bold active:scale-98 transition-transform"
+            >
+              <LogOut size={19} />
+              <span>Quitter</span>
+            </button>
           </div>
         )}
 
-        {/* LA BARRE PRINCIPALE (Bordure supérieure bleue prononcée, ombre portée intense, animations d'icônes) */}
+        {/* LA BARRE PRINCIPALE MOBILE */}
         <div className="bg-white/95 backdrop-blur-xl rounded-t-[2.2rem] shadow-[0_-10px_40px_rgba(23,99,255,0.12),0_-1px_0px_rgba(0,0,0,0.03)] border-t-2 border-t-blue-100/80 p-3 pb-6 px-6 flex justify-between items-center transition-transform">
           {visibleMobileItems.map((item) => {
             const isActive = pathname === item.href;
@@ -160,24 +208,26 @@ const Sidebar = ({ onClose }: SidebarProps) => {
             );
           })}
 
-          <button 
-            onClick={() => setShowMoreMenu(!showMoreMenu)}
-            className="flex flex-col items-center gap-1.5 min-w-[62px] focus:outline-none active:scale-95 transition-transform duration-150 group"
-          >
-            <div className={`p-2 rounded-2xl transition-all ${showMoreMenu || hiddenMobileItems.some(item => pathname === item.href) ? 'bg-blue-100/70 text-[#1763FF] shadow-inner' : 'text-gray-400'}`}>
-              <MoreHorizontal 
-                size={23} 
-                className={`transition-transform duration-300 ${showMoreMenu ? 'rotate-90' : ''}`}
-              />
-            </div>
-            <span className={`text-[10.5px] tracking-tight transition-colors duration-200 ${showMoreMenu || hiddenMobileItems.some(item => pathname === item.href) ? 'text-[#1763FF] font-black' : 'text-gray-500 font-medium'}`}>
-              Plus
-            </span>
-          </button>
+          {hiddenMobileItems.length > 0 && (
+            <button 
+              onClick={() => setShowMoreMenu(!showMoreMenu)}
+              className="flex flex-col items-center gap-1.5 min-w-[62px] focus:outline-none active:scale-95 transition-transform duration-150 group"
+            >
+              <div className={`p-2 rounded-2xl transition-all ${showMoreMenu || hiddenMobileItems.some(item => pathname === item.href) ? 'bg-blue-100/70 text-[#1763FF] shadow-inner' : 'text-gray-400'}`}>
+                <MoreHorizontal 
+                  size={23} 
+                  className={`transition-transform duration-300 ${showMoreMenu ? 'rotate-90' : ''}`}
+                />
+              </div>
+                <span className={`text-[10.5px] tracking-tight transition-colors duration-200 ${showMoreMenu || hiddenMobileItems.some(item => pathname === item.href) ? 'text-[#1763FF] font-black' : 'text-gray-500 font-medium'}`}>
+                Plus
+              </span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* 2. VERSION PC (Reste identique) */}
+      {/* 2. VERSION PC */}
       <div className="hidden md:flex w-72 h-screen bg-gradient-to-b from-blue-50/50 to-white text-gray-800 fixed left-0 top-0 p-8 flex-col border-r border-blue-100 z-50 rounded-r-[1.5rem] overflow-y-auto" role="navigation" aria-label="Sidebar">
         {/* HEADER */}
         <div className="flex items-center justify-between mb-12">
@@ -201,7 +251,9 @@ const Sidebar = ({ onClose }: SidebarProps) => {
                   <>Kalan<span className="text-[#1763FF]">Nyetaa</span></>
                 )}
               </h1>
-              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Admin</p>
+              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                {userRole ? ROLES_CONFIG[userRole]?.label : 'Admin'}
+              </p>
             </div>
           </div>
         </div>
@@ -238,13 +290,21 @@ const Sidebar = ({ onClose }: SidebarProps) => {
         </nav>
 
         {/* SECTION BAS */}
-        <div className="border-t border-gray-100 pt-4 mt-4">
+        <div className="border-t border-gray-100 pt-4 mt-4 space-y-2">
           <button 
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 text-sm font-bold transition-all"
           >
             <LogOut size={20} />
             <span>Déconnexion</span>
+          </button>
+          
+          <button 
+            onClick={handleQuit}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-orange-500 hover:bg-orange-50 text-sm font-bold transition-all"
+          >
+            <LogOut size={20} />
+            <span>Quitter</span>
           </button>
         </div>
       </div>

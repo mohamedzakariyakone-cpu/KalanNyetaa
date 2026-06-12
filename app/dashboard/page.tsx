@@ -13,7 +13,6 @@ import {
 export default function Dashboard() {
   // Récupération de l'état global de l'année scolaire
   const { selectedYearId, selectedYear, years, isLoading, isReadOnly, changeYear } = useYear();
-  
   const [stats, setStats] = useState({
     totalStudents: 0,
     totalClasses: 0,
@@ -27,10 +26,23 @@ export default function Dashboard() {
   const [classDistribution, setClassDistribution] = useState<any[]>([]);
   const [recentIncidents, setRecentIncidents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   // Gestion du dropdown d'année sur mobile
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Détecter le rôle utilisateur au montage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const match = document.cookie.match(new RegExp('(^| )userRole=([^;]+)'));
+      const role = match ? match[2] : localStorage.getItem('userRole');
+      setUserRole(role);
+    }
+  }, []);
+
+  // Condition pour masquer les montants au Directeur et au Caissier
+  const shouldHideFinancials = userRole === 'directeur' || userRole === 'caissier';
 
   // Fermer le dropdown quand on clique en dehors
   useEffect(() => {
@@ -59,12 +71,14 @@ export default function Dashboard() {
         .from('students')
         .select('id, first_name, last_name, scolarite_totale, scolarite_payee, class_id')
         .eq('academic_year_id', selectedYearId);
+
       if (studentsError) throw studentsError;
 
       const { data: classes, error: classesError } = await supabase
         .from('classes')
         .select('id, name')
         .eq('academic_year_id', selectedYearId);
+
       if (classesError) throw classesError;
 
       const { count: teacherCount } = await supabase
@@ -77,6 +91,7 @@ export default function Dashboard() {
         .select('id, amount, created_at, student_id')
         .eq('academic_year_id', selectedYearId)
         .order('created_at', { ascending: false });
+
       if (paymentsError) throw paymentsError;
 
       const { data: expenses } = await supabase
@@ -89,7 +104,7 @@ export default function Dashboard() {
         .select('id, reason, severity, incident_date, student_id')
         .eq('academic_year_id', selectedYearId)
         .order('incident_date', { ascending: false })
-        .range(0, 2); 
+        .range(0, 2);
 
       const classMap: Record<string, string> = {};
       classes?.forEach((c: { id: string | number; name: string; }) => { classMap[c.id] = c.name; });
@@ -182,7 +197,7 @@ export default function Dashboard() {
     <div className="w-full bg-slate-50 min-h-screen font-sans">
       
       {/* ========================================================================= */}
-      {/* 1. INTERFACE MOBILE (100% NATIVE APP UI/UX - LARGE, LISIBLE, SANS DÉBORD) */}
+      {/* 1. INTERFACE MOBILE (100% NATIVE APP UI/UX)                               */}
       {/* ========================================================================= */}
       <div className="block md:hidden w-full px-4 pt-6 pb-24 space-y-6">
         
@@ -192,7 +207,6 @@ export default function Dashboard() {
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-black text-slate-900 tracking-tight">Vue d'ensemble</h1>
               
-              {/* COMPOSANT SELECTEUR D'ANNÉE INTEGRÉ EXCLUSIVEMENT SUR MOBILE */}
               <div className="relative" ref={dropdownRef}>
                 {isLoading ? (
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-xl animate-pulse">
@@ -269,7 +283,6 @@ export default function Dashboard() {
                   </>
                 )}
               </div>
-
             </div>
             <p className="text-sm font-bold text-slate-500">KalanNyetaa Structure</p>
           </div>
@@ -351,11 +364,15 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 gap-3 w-full">
             <div className="bg-slate-50 p-4 rounded-2xl flex flex-col justify-center">
               <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Encaissé</p>
-              <p className="text-base font-black text-emerald-600 truncate">{new Intl.NumberFormat('fr-FR').format(stats.totalCollected)} F</p>
+              <p className="text-base font-black text-emerald-600 truncate">
+                {shouldHideFinancials ? '••••••' : `${new Intl.NumberFormat('fr-FR').format(stats.totalCollected)} F`}
+              </p>
             </div>
             <div className="bg-slate-50 p-4 rounded-2xl flex flex-col justify-center">
               <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Objectif</p>
-              <p className="text-base font-black text-slate-800 truncate">{new Intl.NumberFormat('fr-FR').format(stats.totalExpected)} F</p>
+              <p className="text-base font-black text-slate-800 truncate">
+                {shouldHideFinancials ? '••••••' : `${new Intl.NumberFormat('fr-FR').format(stats.totalExpected)} F`}
+              </p>
             </div>
           </div>
         </div>
@@ -365,7 +382,9 @@ export default function Dashboard() {
           <div className="bg-rose-500 p-5 rounded-3xl text-white shadow-lg shadow-rose-200 flex justify-between items-center w-full">
             <div className="min-w-0">
               <p className="text-rose-100 font-bold text-xs uppercase tracking-widest mb-1">Reste à recouvrer</p>
-              <h3 className="text-2xl font-black truncate">{new Intl.NumberFormat('fr-FR').format(remaining)} FCFA</h3>
+              <h3 className="text-2xl font-black truncate">
+                {shouldHideFinancials ? '••••••' : `${new Intl.NumberFormat('fr-FR').format(remaining)} FCFA`}
+              </h3>
             </div>
             <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center shrink-0 ml-3">
               <ArrowDownRight className="w-6 h-6 text-white" />
@@ -394,7 +413,9 @@ export default function Dashboard() {
                       <p className="text-xs text-slate-500 truncate">{p.className}</p>
                     </div>
                   </div>
-                  <span className="font-black text-sm text-emerald-600 shrink-0">+{new Intl.NumberFormat('fr-FR').format(p.amount)}F</span>
+                  <span className="font-black text-sm text-emerald-600 shrink-0">
+                    {shouldHideFinancials ? '••••••' : `+${new Intl.NumberFormat('fr-FR').format(p.amount)}F`}
+                  </span>
                 </div>
               ))
             )}
@@ -421,7 +442,9 @@ export default function Dashboard() {
                       <p className="text-xs text-slate-500 truncate">{d.className}</p>
                     </div>
                   </div>
-                  <span className="font-black text-sm text-rose-600 shrink-0">{new Intl.NumberFormat('fr-FR').format(d.debt)}F</span>
+                  <span className="font-black text-sm text-rose-600 shrink-0">
+                    {shouldHideFinancials ? '••••••' : `${new Intl.NumberFormat('fr-FR').format(d.debt)}F`}
+                  </span>
                 </div>
               ))
             )}
@@ -455,7 +478,7 @@ export default function Dashboard() {
       </div>
 
       {/* ========================================================== */}
-      {/* 2. INTERFACE PC / TABLETTE (CONSERVÉE EXACTEMENT À L'IDENTIQUE) */}
+      {/* 2. INTERFACE PC / TABLETTE                                 */}
       {/* ========================================================== */}
       <div className="hidden md:block space-y-8 w-full max-w-full overflow-x-hidden px-6 py-8">
         
@@ -485,13 +508,13 @@ export default function Dashboard() {
                 <div>
                   <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mb-1">Total Encaissé (Scolarités)</p>
                   <h2 className="text-2xl sm:text-3xl font-black text-slate-950 tracking-tight">
-                    {new Intl.NumberFormat('fr-FR').format(stats.totalCollected)} <span className="text-sm font-medium text-slate-400">FCFA</span>
+                    {shouldHideFinancials ? '••••••' : `${new Intl.NumberFormat('fr-FR').format(stats.totalCollected)}`} <span className="text-sm font-medium text-slate-400">FCFA</span>
                   </h2>
                 </div>
                 <div>
                   <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mb-1">Total Dépenses Enregistrées</p>
                   <h2 className="text-2xl sm:text-3xl font-black text-rose-600 tracking-tight">
-                    {new Intl.NumberFormat('fr-FR').format(stats.totalExpenses)} <span className="text-sm font-medium text-rose-300">FCFA</span>
+                    {shouldHideFinancials ? '••••••' : `${new Intl.NumberFormat('fr-FR').format(stats.totalExpenses)}`} <span className="text-sm font-medium text-rose-300">FCFA</span>
                   </h2>
                 </div>
               </div>
@@ -507,7 +530,9 @@ export default function Dashboard() {
                 <div>
                   <p className="text-xs font-black text-slate-800">Recouvrement</p>
                   <p className="text-[11px] font-medium text-slate-400 mt-0.5">Objectif Annuel Global :</p>
-                  <p className="text-xs font-bold text-slate-700">{new Intl.NumberFormat('fr-FR').format(stats.totalExpected)} F</p>
+                  <p className="text-xs font-bold text-slate-700">
+                    {shouldHideFinancials ? '••••••' : `${new Intl.NumberFormat('fr-FR').format(stats.totalExpected)} F`}
+                  </p>
                 </div>
               </div>
             </div>
@@ -516,7 +541,7 @@ export default function Dashboard() {
               <div>
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Trésorerie Disponible (Net)</p>
                 <p className={`text-xl font-black ${netCaisse >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  {new Intl.NumberFormat('fr-FR').format(netCaisse)} FCFA
+                  {shouldHideFinancials ? '••••••' : `${new Intl.NumberFormat('fr-FR').format(netCaisse)} FCFA`}
                 </p>
               </div>
             </div>
@@ -529,7 +554,7 @@ export default function Dashboard() {
               </div>
               <p className="text-rose-100 font-bold text-xs uppercase tracking-widest mb-2">Fonds Dehors (Reste)</p>
               <h2 className="text-2xl sm:text-3xl font-black tracking-tight break-words">
-                {new Intl.NumberFormat('fr-FR').format(remaining)} 
+                {shouldHideFinancials ? '••••••' : `${new Intl.NumberFormat('fr-FR').format(remaining)}`} 
                 <span className="text-sm block text-rose-200 font-medium mt-1 uppercase">FCFA à recouvrer</span>
               </h2>
             </div>
@@ -549,7 +574,9 @@ export default function Dashboard() {
                       <p className="font-bold text-slate-900 truncate">{p.studentName}</p>
                       <p className="text-[10px] text-slate-400">{p.className}</p>
                     </div>
-                    <span className="font-black text-emerald-600 shrink-0">+{new Intl.NumberFormat('fr-FR').format(p.amount)} F</span>
+                    <span className="font-black text-emerald-600 shrink-0">
+                      {shouldHideFinancials ? '••••••' : `+${new Intl.NumberFormat('fr-FR').format(p.amount)} F`}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -570,7 +597,9 @@ export default function Dashboard() {
                       <p className="font-bold text-slate-900 truncate">{d.name}</p>
                       <p className="text-[10px] text-slate-500">{d.className}</p>
                     </div>
-                    <span className="font-black text-rose-600 shrink-0">{new Intl.NumberFormat('fr-FR').format(d.debt)} F</span>
+                    <span className="font-black text-rose-600 shrink-0">
+                      {shouldHideFinancials ? '••••••' : `${new Intl.NumberFormat('fr-FR').format(d.debt)} F`}
+                    </span>
                   </div>
                 ))}
               </div>

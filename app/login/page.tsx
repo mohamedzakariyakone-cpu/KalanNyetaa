@@ -56,7 +56,7 @@ export default function LoginPage() {
         const cleanRedirect = redirectParam.startsWith('/') ? redirectParam : `/${redirectParam}`;
         router.push(cleanRedirect);
       } else {
-        router.push('/dashboard'); 
+        router.push('/'); 
       }
     } catch (err: any) {
       setError(err.message || "Une erreur est survenue lors de la connexion.");

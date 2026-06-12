@@ -77,6 +77,17 @@ function StudentsPageContent() {
   });
 
   const { selectedYearId, selectedYear, years, isReadOnly, isLoading: yearLoading } = useYear();
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const match = document.cookie.match(new RegExp('(^| )userRole=([^;]+)'));
+      const role = match ? match[2] : localStorage.getItem('userRole');
+      setUserRole(role);
+    }
+  }, []);
+
+  const shouldHideFinancials = userRole === 'directeur' || userRole === 'caissier';
 
   useEffect(() => {
     if (classFilter) {
@@ -437,7 +448,7 @@ function StudentsPageContent() {
           </div>
           <div className="min-w-0">
             <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase truncate">Recouvré</p>
-            <p className="text-sm sm:text-lg font-black text-emerald-600 leading-tight truncate">{stats.totalPaid.toLocaleString()} <span className="text-[8px] font-bold text-emerald-400">FCFA</span></p>
+            <p className="text-sm sm:text-lg font-black text-emerald-600 leading-tight truncate">{shouldHideFinancials ? '••••••' : stats.totalPaid.toLocaleString()} <span className="text-[8px] font-bold text-emerald-400">FCFA</span></p>
           </div>
         </div>
 
@@ -447,7 +458,7 @@ function StudentsPageContent() {
           </div>
           <div className="min-w-0">
             <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase truncate">Restant dû</p>
-            <p className="text-sm sm:text-lg font-black text-rose-600 leading-tight truncate">{stats.totalDue.toLocaleString()} <span className="text-[8px] font-bold text-rose-400">FCFA</span></p>
+            <p className="text-sm sm:text-lg font-black text-rose-600 leading-tight truncate">{shouldHideFinancials ? '••••••' : stats.totalDue.toLocaleString()} <span className="text-[8px] font-bold text-rose-400">FCFA</span></p>
           </div>
         </div>
 

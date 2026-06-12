@@ -9,7 +9,7 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 
 export const metadata: Metadata = {
   title: 'KalanNyetaa - Gestion Scolaire',
-  description: 'Application d\'intelligence financière et de gestion pour l\'école KalanNyetaa',
+  description: 'Application d\'intelligence financière and de gestion pour l\'école KalanNyetaa',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
@@ -46,20 +46,33 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="color-scheme" content="light" />
         <meta name="supported-color-schemes" content="light" />
+        
+        {/* 🪄 SÉCURITÉ ABSOLUE : CSS natif injecté pour forcer le masquage 
+            si l'un des deux écrans d'accès est détecté dans la page */}
+        <style>{`
+          body:has(#login-page) .app-sidebar,
+          body:has(#role-selection-page) .app-sidebar {
+            display: none !important;
+          }
+          body:has(#login-page) .admin-content,
+          body:has(#role-selection-page) .admin-content {
+            padding-left: 0 !important;
+          }
+        `}</style>
       </head>
       
-      {/* Le sélecteur CSS "[&:has(#login-page)]_._admin-content" dans les classes du body fait la magie :
-        Si le layout détecte l'identifiant id="login-page" n'importe où dans ses enfants, 
-        il applique "md:pl-0", annulant ainsi instantanément la marge de la sidebar sur PC.
-      */}
       <body className="!bg-[#F8FAFC] !text-slate-900 bg-[#F8FAFC] text-slate-900 antialiased min-h-screen
-        [&:has(#login-page)]_._admin-content:md:pl-0">
+        [&:has(#login-page)]_._admin-content:md:pl-0
+        [&:has(#role-selection-page)]_._admin-content:md:pl-0">
         
         <YearProvider>
           <MobileShell>
-            <Sidebar /> 
+            {/* L'enveloppe de classe pour le ciblage CSS */}
+            <div className="app-sidebar">
+              <Sidebar /> 
+            </div>
             
-            {/* On ajoute la classe "admin-content" pour pouvoir la cibler dynamiquement */}
+            {/* Contenu principal */}
             <div className="admin-content flex-1 pb-28 md:pb-0 md:pl-72 transition-all duration-150">
               {children}
             </div>

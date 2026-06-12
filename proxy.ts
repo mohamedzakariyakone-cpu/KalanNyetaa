@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { ROLES_CONFIG, RoleType } from '/app/config/roles' // Ajuste le chemin vers ton fichier config/roles s'il est ailleurs
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({
@@ -45,7 +46,7 @@ export async function proxy(request: NextRequest) {
   const url = request.nextUrl.clone()
   const pathname = url.pathname
 
-  // 🔒 CAS 1 : L'UTILISATEUR N'EST PAS CONNECTÉ
+  // 🔒 CAS 1 : L'UTILISATEUR N'EST PAS CONNECTÉ À SUPABASE
   if (!user) {
     if (pathname !== '/login') {
       url.pathname = '/login'
@@ -61,20 +62,53 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // ✅ CAS 2 : L'UTILISATEUR EST CONNECTÉ
+  // ✅ CAS 2 : L'UTILISATEUR EST BIEN CONNECTÉ À SUPABASE
   if (user) {
-    // 🎯 PROTECTION STRICTE : On ne redirige vers /dashboard QUE si l'utilisateur tape EXACTEMENT '/' ou '/login'
-    if (pathname === '/login' || pathname === '/') {
-      const redirectTo = url.searchParams.get('redirect') || '/dashboard'
-      
-      const redirectResponse = NextResponse.redirect(new URL(redirectTo, request.url))
+    // Si l'utilisateur est connecté et va sur /login, on le ramène au choix du rôle (/)
+    if (pathname === '/login') {
+      const redirectResponse = NextResponse.redirect(new URL('/', request.url))
       response.cookies.getAll().forEach((cookie) => {
         redirectResponse.cookies.set(cookie)
       })
       return redirectResponse
     }
 
-    // 🔐 PROTECTION SUPER ADMIN
+    // 🔐 SÉCURITÉ DES RÔLES LOCAUX (PROTECTION ANTI-FORÇAGE D'URL)
+    // On extrait le rôle depuis les cookies pour la sécurité côté serveur
+    const userRoleCookie = request.cookies.get('userRole')?.value as RoleType | undefined
+
+    // Si l'utilisateur essaie d'accéder à une page de l'application (ex: /dashboard, /finance, /academic...)
+    // mais qu'il n'a pas encore choisi de rôle, on le force à rester sur l'écran de sélection (/)
+    if (pathname !== '/' && !userRoleCookie) {
+      const redirectResponse = NextResponse.redirect(new URL('/', request.url))
+      response.cookies.getAll().forEach((cookie) => {
+        redirectResponse.cookies.set(cookie)
+      })
+      return redirectResponse
+    }
+
+    // Si un rôle est sélectionné, on vérifie s'il a le droit d'accéder à l'URL demandée
+    if (userRoleCookie && pathname !== '/') {
+      const roleConfig = ROLES_CONFIG[userRoleCookie]
+      
+      if (roleConfig) {
+        // On vérifie si le chemin actuel commence par une des pages autorisées du rôle
+        const isPageAllowed = roleConfig.allowedPages.some(allowedPath => 
+          pathname === allowedPath || pathname.startsWith(`${allowedPath}/`)
+        )
+
+        // Si le Caissier ou le Directeur tente de forcer une URL non autorisée (ex: /finance)
+        if (!isPageAllowed) {
+          const redirectResponse = NextResponse.redirect(new URL('/dashboard', request.url))
+          response.cookies.getAll().forEach((cookie) => {
+            redirectResponse.cookies.set(cookie)
+          })
+          return redirectResponse
+        }
+      }
+    }
+
+    // 🔐 PROTECTION SUPER ADMIN (CONSERVÉE)
     if (pathname.startsWith('/super-admin')) {
       const { data: profile } = await supabase
         .from('profiles')
