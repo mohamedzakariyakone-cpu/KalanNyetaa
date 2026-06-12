@@ -2,6 +2,7 @@
 
 import { useState, useEffect, cloneElement, useRef } from 'react';
 import { supabase } from '@/utils/supabase';
+import { offlineFetch } from '@/utils/offlineApi';
 import { useYear } from '@/context/YearContext';
 import { 
   Users, TrendingUp, Clock, 
@@ -67,44 +68,82 @@ export default function Dashboard() {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const { data: students, error: studentsError } = await supabase
-        .from('students')
-        .select('id, first_name, last_name, scolarite_totale, scolarite_payee, class_id')
-        .eq('academic_year_id', selectedYearId);
+      const { data: students, error: studentsError } = await offlineFetch<any[]>(
+        `dashboard_students:${selectedYearId}`,
+        async () => {
+          return await supabase
+            .from('students')
+            .select('id, first_name, last_name, scolarite_totale, scolarite_payee, class_id')
+            .eq('academic_year_id', selectedYearId);
+        },
+        { cacheDuration: 3600 } // Cache 1 heure
+      );
 
-      if (studentsError) throw studentsError;
+      if (studentsError && !students) throw studentsError;
 
-      const { data: classes, error: classesError } = await supabase
-        .from('classes')
-        .select('id, name')
-        .eq('academic_year_id', selectedYearId);
+      const { data: classes, error: classesError } = await offlineFetch<any[]>(
+        `dashboard_classes:${selectedYearId}`,
+        async () => {
+          return await supabase
+            .from('classes')
+            .select('id, name')
+            .eq('academic_year_id', selectedYearId);
+        },
+        { cacheDuration: 3600 }
+      );
 
-      if (classesError) throw classesError;
+      if (classesError && !classes) throw classesError;
 
-      const { count: teacherCount } = await supabase
-        .from('teachers')
-        .select('*', { count: 'exact', head: true })
-        .eq('academic_year_id', selectedYearId);
+      const { data: teacherData, error: teacherError } = await offlineFetch<any[]>(
+        `dashboard_teachers:${selectedYearId}`,
+        async () => {
+          return await supabase
+            .from('teachers')
+            .select('id')
+            .eq('academic_year_id', selectedYearId);
+        },
+        { cacheDuration: 3600 }
+      );
 
-      const { data: payments, error: paymentsError } = await supabase
-        .from('payments')
-        .select('id, amount, created_at, student_id')
-        .eq('academic_year_id', selectedYearId)
-        .order('created_at', { ascending: false });
+      const teacherCount = teacherData?.length || 0;
 
-      if (paymentsError) throw paymentsError;
+      const { data: payments, error: paymentsError } = await offlineFetch<any[]>(
+        `dashboard_payments:${selectedYearId}`,
+        async () => {
+          return await supabase
+            .from('payments')
+            .select('id, amount, created_at, student_id')
+            .eq('academic_year_id', selectedYearId)
+            .order('created_at', { ascending: false });
+        },
+        { cacheDuration: 1800 } // Cache 30 min
+      );
 
-      const { data: expenses } = await supabase
-        .from('expenses')
-        .select('amount')
-        .eq('academic_year_id', selectedYearId);
+      if (paymentsError && !payments) throw paymentsError;
 
-      const { data: discipline } = await supabase
-        .from('discipline')
-        .select('id, reason, severity, incident_date, student_id')
-        .eq('academic_year_id', selectedYearId)
-        .order('incident_date', { ascending: false })
-        .range(0, 2);
+      const { data: expenses } = await offlineFetch<any[]>(
+        `dashboard_expenses:${selectedYearId}`,
+        async () => {
+          return await supabase
+            .from('expenses')
+            .select('amount')
+            .eq('academic_year_id', selectedYearId);
+        },
+        { cacheDuration: 3600 }
+      );
+
+      const { data: discipline } = await offlineFetch<any[]>(
+        `dashboard_discipline:${selectedYearId}`,
+        async () => {
+          return await supabase
+            .from('discipline')
+            .select('id, reason, severity, incident_date, student_id')
+            .eq('academic_year_id', selectedYearId)
+            .order('incident_date', { ascending: false })
+            .range(0, 2);
+        },
+        { cacheDuration: 1800 }
+      ).then(result => ({ data: result.data }));
 
       const classMap: Record<string, string> = {};
       classes?.forEach((c: { id: string | number; name: string; }) => { classMap[c.id] = c.name; });

@@ -2,6 +2,7 @@ import './globals.css'
 import MobileShell from '@/components/MobileShell'
 import Sidebar from '@/components/Sidebar'
 import OfflineSync from '@/components/OfflineSync'
+import ConnectionStatus from '@/components/ConnectionStatus'
 import { Inter } from 'next/font/google'
 import { YearProvider } from '@/context/YearContext'
 import type { Metadata, Viewport } from 'next'
@@ -67,6 +68,7 @@ export default function RootLayout({
         [&:has(#role-selection-page)]_._admin-content:md:pl-0">
         
         <YearProvider>
+          <ConnectionStatus />
           <MobileShell>
             {/* L'enveloppe de classe pour le ciblage CSS */}
             <div className="app-sidebar">

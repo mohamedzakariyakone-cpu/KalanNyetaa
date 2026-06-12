@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@serwist/next": "^9.5.11",
-    "idb": "^8.0.3",
     "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.104.0",
@@ -18,6 +17,7 @@
     "framer-motion": "^12.38.0",
     "html2canvas": "^1.4.1",
     "html2pdf.js": "^0.14.0",
+    "idb": "^8.0.3",
     "jspdf": "^4.2.1",
     "lodash": "^4.18.1",
     "lucide-react": "^1.4.0",
@@ -28,7 +28,6 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "serwist": "^9.5.11",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -37,6 +36,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
     "postcss": "^8.5.8",
+    "serwist": "^9.5.11",
     "tailwindcss": "^4.2.2",
     "typescript": "^5"
   }
