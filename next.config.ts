@@ -1,10 +1,14 @@
 import type { NextConfig } from "next";
-import withPWAInit from "@ducanh2912/next-pwa";
+import withSerwistInit from "@serwist/next";
 
-const withPWA = withPWAInit({
-  dest: "public",
-  disable: process.env.NODE_ENV === "development", // Désactivé en développement pour éviter que le cache ne bloque tes modifications en direct
-  register: true,
+const withSerwist = withSerwistInit({
+  swSrc: "app/sw.ts",
+  swDest: "public/sw.js",
+  register: false,
+  disable: process.env.NODE_ENV === "development",
+  scope: "/",
+  reloadOnOnline: true,
+  cacheOnNavigation: true,
 });
 
 const nextConfig: NextConfig = {
@@ -20,4 +24,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withPWA(nextConfig);
+export default withSerwist(nextConfig);

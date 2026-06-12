@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabase';
+import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
 import { 
   ArrowLeft, Phone, Mail, Calendar, Briefcase, 
   Loader2, Trash2, Edit3, Banknote, BookOpen, 
@@ -13,6 +14,7 @@ import Link from 'next/link';
 
 export default function TeacherProfilePage() {
   const { id } = useParams();
+  const teacherId = Array.isArray(id) ? id[0] : id;
   const router = useRouter();
   const [teacher, setTeacher] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -24,9 +26,15 @@ export default function TeacherProfilePage() {
   useEffect(() => { fetchTeacher(); }, [id]);
 
   const fetchTeacher = async () => {
-    const { data, error } = await supabase.from('teachers').select('*').eq('id', id).single();
-    if (error) router.push('/teachers');
-    else setTeacher(data);
+    const { data, error } = await offlineFetch<any>(`teacher:${teacherId}`, async () => {
+      return await supabase.from('teachers').select('*').eq('id', teacherId).single();
+    });
+    if (error || !data) {
+      if (!data) router.push('/teachers');
+      else console.error('Erreur professeur hors ligne :', error);
+    } else {
+      setTeacher(data);
+    }
     setLoading(false);
   };
 
@@ -68,7 +76,16 @@ export default function TeacherProfilePage() {
     if (activeModal === 'hours') columnToUpdate = { weekly_hours: parseInt(inputValue) || 0 };
     if (activeModal === 'availability') columnToUpdate = { availability: inputValue };
 
-    const { error } = await supabase.from('teachers').update(columnToUpdate).eq('id', id);
+    const { error } = await offlineWrite({
+      table: 'teachers',
+      action: 'UPDATE',
+      payload: columnToUpdate,
+      options: { keyColumn: 'id', keyValue: teacherId },
+      cacheKey: `teacher:${teacherId}`,
+      optimisticUpdate: () => {
+        setTeacher((prev: any) => ({ ...prev, ...columnToUpdate }))
+      },
+    });
 
     if (!error) {
       await fetchTeacher();

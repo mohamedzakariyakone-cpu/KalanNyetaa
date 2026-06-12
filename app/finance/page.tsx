@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/utils/supabase';
+import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
 import { useYear } from '@/context/YearContext';
 import {
   Target, Loader2, MessageSquare, Search, BellRing, AlertTriangle,
@@ -143,29 +144,47 @@ export default function CFODashboardUltraResponsive() {
       if (profileErr) throw profileErr;
       const schoolId = profile?.school_id;
 
-      const { data: sData, error: sErr } = await supabase
-        .from('school_settings')
-        .select('*')
-        .eq('school_id', schoolId)
-        .maybeSingle();
+      const { data: sData, error: sErr } = await offlineFetch<Settings | null>(`finance_settings:${schoolId}`, async () => {
+        return await supabase
+          .from('school_settings')
+          .select('*')
+          .eq('school_id', schoolId)
+          .maybeSingle();
+      });
       
       if (sErr) throw sErr;
       
       setSettings(sData || { current_month_index: new Date().getMonth() + 1 });
 
-      const [studentsRes, expensesRes, teachersRes] = await Promise.all([
-        supabase.from('students').select('*, payments(amount, created_at), classes(name)').eq('academic_year_id', selectedYearId),
-        supabase.from('expenses').select('*').eq('academic_year_id', selectedYearId).order('created_at', { ascending: false }),
-        supabase.from('teachers').select('id, first_name, last_name, salary').eq('academic_year_id', selectedYearId)
-      ]);
+      const { data: studentsData, error: studentsError } = await offlineFetch<Student[]>(`finance_students:${selectedYearId}`, async () => {
+        return await supabase
+          .from('students')
+          .select('*, payments(amount, created_at), classes(name)')
+          .eq('academic_year_id', selectedYearId);
+      });
 
-      if (studentsRes.error) throw studentsRes.error;
-      if (expensesRes.error) throw expensesRes.error;
-      if (teachersRes.error) throw teachersRes.error;
+      const { data: expensesData, error: expensesError } = await offlineFetch<Expense[]>(`finance_expenses:${selectedYearId}`, async () => {
+        return await supabase
+          .from('expenses')
+          .select('*')
+          .eq('academic_year_id', selectedYearId)
+          .order('created_at', { ascending: false });
+      });
 
-      setStudents((studentsRes.data as Student[]) || []);
-      setExpenses((expensesRes.data as Expense[]) || []);
-      setTeachers((teachersRes.data as Teacher[]) || []);
+      const { data: teachersData, error: teachersError } = await offlineFetch<Teacher[]>(`finance_teachers:${selectedYearId}`, async () => {
+        return await supabase
+          .from('teachers')
+          .select('id, first_name, last_name, salary')
+          .eq('academic_year_id', selectedYearId);
+      });
+
+      if (studentsError) throw studentsError;
+      if (expensesError) throw expensesError;
+      if (teachersError) throw teachersError;
+
+      setStudents(studentsData || []);
+      setExpenses(expensesData || []);
+      setTeachers(teachersData || []);
     } catch (err: unknown) {
       console.error("Erreur de chargement:", err);
       setError(err instanceof Error ? err.message : String(err));
@@ -267,11 +286,24 @@ export default function CFODashboardUltraResponsive() {
     }
     
     setIsSubmittingExpense(true);
-    const { error } = await supabase.from('expenses').insert([{ 
-      description: expDesc, 
-      amount: numericAmount, // Envoi du nombre propre à Supabase
-      academic_year_id: selectedYearId
-    }]);
+    const { data, error } = await offlineWrite({
+      table: 'expenses',
+      action: 'INSERT',
+      payload: [{
+        description: expDesc,
+        amount: numericAmount,
+        academic_year_id: selectedYearId
+      }],
+      cacheKey: `finance_expenses:${selectedYearId}`,
+      optimisticUpdate: () => {
+        setExpenses(prev => [{
+          id: `temp-${Date.now()}`,
+          description: expDesc,
+          amount: numericAmount,
+          created_at: new Date().toISOString(),
+        }, ...prev]);
+      }
+    });
     setIsSubmittingExpense(false);
     if (error) {
       alert(`Erreur : ${error.message}`);
@@ -288,7 +320,19 @@ export default function CFODashboardUltraResponsive() {
     if (isReadOnly) return;
     if (!confirm('Voulez-vous vraiment supprimer cette dépense ?')) return;
 
-    const { error } = await supabase.from('expenses').delete().eq('id', id);
+    const { data, error } = await offlineWrite({
+      table: 'expenses',
+      action: 'DELETE',
+      payload: null,
+      options: {
+        keyColumn: 'id',
+        keyValue: id,
+      },
+      cacheKey: `finance_expenses:${selectedYearId}`,
+      optimisticUpdate: () => {
+        setExpenses(prev => prev.filter(exp => exp.id !== id));
+      }
+    });
     if (error) {
       alert(`Erreur: ${error.message}`);
       return;

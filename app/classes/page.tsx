@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/utils/supabase';
+import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
 import { useYear } from '@/context/YearContext';
 import { Trash2, PlusCircle, School, Search, Loader2, ArrowUpRight, Users, Lock, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
@@ -20,16 +21,20 @@ export default function ClassesPage() {
   const fetchClasses = useCallback(async () => {
     if (!selectedYearId) return;
     setLoading(true);
-    // On sélectionne les classes et on compte les élèves liés (relation students)
-    // Filtrer par année scolaire
-    const { data, error } = await supabase
-      .from('classes')
-      .select('*, students(id)')
-      .eq('academic_year_id', selectedYearId)
-      .order('name');
-    
-    if (error) console.error(error);
-    else setClasses(data || []);
+
+    const { data, error } = await offlineFetch<any[]>(`classes:${selectedYearId}`, async () => {
+      return await supabase
+        .from('classes')
+        .select('*, students(id)')
+        .eq('academic_year_id', selectedYearId)
+        .order('name');
+    });
+
+    if (error) {
+      console.error('Erreur de récupération des classes hors ligne :', error);
+    }
+
+    setClasses(data || []);
     setLoading(false);
   }, [selectedYearId]);
 
@@ -44,11 +49,22 @@ export default function ClassesPage() {
     if (!className || !level || !selectedYearId || isReadOnly) return;
     setSubmitting(true);
 
-    const { error } = await supabase.from('classes').insert([{ 
-      name: className.toUpperCase(), 
-      level: level,
-      academic_year_id: selectedYearId
-    }]);
+    const { error } = await offlineWrite({
+      table: 'classes',
+      action: 'INSERT',
+      payload: {
+        name: className.toUpperCase(),
+        level,
+        academic_year_id: selectedYearId,
+      },
+      cacheKey: `classes:${selectedYearId}`,
+      optimisticUpdate: () => {
+        setClasses((prev) => [
+          { id: `offline-${Date.now()}`, name: className.toUpperCase(), level, academic_year_id: selectedYearId, students: [] },
+          ...prev,
+        ]);
+      },
+    });
 
     if (error) {
       alert("Erreur : Cette classe existe déjà !");
@@ -61,11 +77,24 @@ export default function ClassesPage() {
 
   const deleteClass = async (id: string, name: string) => {
     if (isReadOnly) return;
-    const confirm = window.confirm(`Voulez-vous vraiment supprimer la classe ${name} ?`);
-    if (confirm) {
-      const { error } = await supabase.from('classes').delete().eq('id', id);
-      if (error) alert("Impossible de supprimer : Des élèves sont peut-être liés à cette classe.");
-      else fetchClasses();
+    const confirmed = window.confirm(`Voulez-vous vraiment supprimer la classe ${name} ?`);
+    if (confirmed) {
+      const { error } = await offlineWrite({
+        table: 'classes',
+        action: 'DELETE',
+        payload: {},
+        options: { keyColumn: 'id', keyValue: id },
+        cacheKey: `classes:${selectedYearId}`,
+        optimisticUpdate: () => {
+          setClasses((prev) => prev.filter((cls) => String(cls.id) !== id));
+        },
+      });
+
+      if (error) {
+        alert("Impossible de supprimer : Des élèves sont peut-être liés à cette classe.");
+      } else {
+        fetchClasses();
+      }
     }
   };
 

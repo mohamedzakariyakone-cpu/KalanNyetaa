@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/utils/supabase';
+import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
 import { 
   ShieldAlert, User, Calendar, AlertTriangle, 
   PlusCircle, Search, Loader2, History 
@@ -24,14 +25,24 @@ export default function DisciplinePage() {
 
   const fetchData = async () => {
     setLoading(true);
-    // On récupère les incidents avec le nom de l'élève
-    const { data: incData } = await supabase
-      .from('discipline')
-      .select('*, students(first_name, last_name, classes(name))')
-      .order('incident_date', { ascending: false });
-    
-    // On récupère les élèves pour le menu déroulant
-    const { data: stData } = await supabase.from('students').select('id, first_name, last_name');
+
+    const { data: incData, error: incError } = await offlineFetch<any[]>('discipline_incidents', async () => {
+      return await supabase
+        .from('discipline')
+        .select('*, students(first_name, last_name, classes(name))')
+        .order('incident_date', { ascending: false });
+    });
+
+    const { data: stData, error: stError } = await offlineFetch<any[]>('discipline_students', async () => {
+      return await supabase.from('students').select('id, first_name, last_name');
+    });
+
+    if (incError) {
+      console.error('Erreur de récupération des incidents hors ligne :', incError);
+    }
+    if (stError) {
+      console.error('Erreur de récupération des élèves hors ligne :', stError);
+    }
 
     setIncidents(incData || []);
     setStudents(stData || []);
@@ -42,11 +53,29 @@ export default function DisciplinePage() {
     e.preventDefault();
     setIsSubmitting(true);
     
-    const { error } = await supabase.from('discipline').insert([{
-      student_id: studentId,
-      reason: reason,
-      severity: severity
-    }]);
+    const { error } = await offlineWrite({
+      table: 'discipline',
+      action: 'INSERT',
+      payload: {
+        student_id: studentId,
+        reason: reason,
+        severity: severity,
+      },
+      cacheKey: 'discipline_incidents',
+      optimisticUpdate: () => {
+        setIncidents((prev) => [
+          {
+            id: `offline-${Date.now()}`,
+            student_id: studentId,
+            reason,
+            severity,
+            incident_date: new Date().toISOString().split('T')[0],
+            students: students.find((s) => String(s.id) === studentId) || {},
+          },
+          ...prev,
+        ])
+      },
+    });
 
     if (!error) {
       setReason(''); setStudentId('');

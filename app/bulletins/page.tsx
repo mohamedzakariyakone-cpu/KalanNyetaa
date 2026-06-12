@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '@/utils/supabase';
+import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
 import { useYear } from '@/context/YearContext';
 import { Settings, PenTool, BarChart3, FileText, Plus, Save, Trash2, Download, Trophy, Target, Search, Menu, X, ChevronDown, ChevronUp, Check, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 
@@ -43,7 +44,10 @@ export default function EngineScolaire() {
   useEffect(() => {
     async function getClasses() {
       if (!selectedYearId) return;
-      const { data } = await supabase.from('classes').select('*').eq('academic_year_id', selectedYearId);
+      const { data, error } = await offlineFetch<any[]>(`bulletins_classes:${selectedYearId}`, async () => {
+        return await supabase.from('classes').select('*').eq('academic_year_id', selectedYearId);
+      });
+      if (error) console.error('Erreur de récupération des classes hors ligne :', error);
       setClasses(data || []);
     }
     if (!yearLoading && selectedYearId) {
@@ -65,14 +69,16 @@ export default function EngineScolaire() {
           .maybeSingle();
 
         if (profile?.school_id) {
-          const { data: schoolData } = await supabase
-            .from('schools')
-            .select('*')
-            .eq('id', profile.school_id)
-            .maybeSingle();
-          
-          if (schoolData) {
-            setSchool(schoolData);
+          const { data, error } = await offlineFetch<any>(`bulletins_school:${profile.school_id}`, async () => {
+            return await supabase
+              .from('schools')
+              .select('*')
+              .eq('id', profile.school_id)
+              .maybeSingle();
+          });
+          if (error) throw error;
+          if (data) {
+            setSchool(data);
           }
         }
       } catch (error) {
@@ -91,13 +97,27 @@ export default function EngineScolaire() {
   async function loadClassData() {
     if (!selectedYearId) return;
     setLoading(true);
-    const { data: sub } = await supabase.from('class_subjects').select('*').eq('class_id', selectedClassId).eq('academic_year_id', selectedYearId);
-    const { data: stu } = await supabase.from('students').select('*').eq('class_id', selectedClassId).eq('academic_year_id', selectedYearId);
-    const { data: grd } = await supabase.from('student_grades')
-      .select('*')
-      .eq('class_id', selectedClassId)
-      .eq('period', period)
-      .eq('academic_year', year);
+
+    const { data: sub, error: subError } = await offlineFetch<any[]>(`bulletins_subjects:${selectedClassId}:${selectedYearId}`, async () => {
+      return await supabase.from('class_subjects').select('*').eq('class_id', selectedClassId).eq('academic_year_id', selectedYearId);
+    });
+
+    const { data: stu, error: stuError } = await offlineFetch<any[]>(`bulletins_students:${selectedClassId}:${selectedYearId}`, async () => {
+      return await supabase.from('students').select('*').eq('class_id', selectedClassId).eq('academic_year_id', selectedYearId);
+    });
+
+    const { data: grd, error: grdError } = await offlineFetch<any[]>(`bulletins_grades:${selectedClassId}:${period}:${year}`, async () => {
+      return await supabase.from('student_grades')
+        .select('*')
+        .eq('class_id', selectedClassId)
+        .eq('period', period)
+        .eq('academic_year', year);
+    });
+
+    if (subError) console.error('Erreur de récupération des matières hors ligne :', subError);
+    if (stuError) console.error('Erreur de récupération des élèves hors ligne :', stuError);
+    if (grdError) console.error('Erreur de récupération des notes hors ligne :', grdError);
+
     setSubjects(sub || []);
     setStudents(stu || []);
     setRawGrades(grd || []);
@@ -108,13 +128,25 @@ export default function EngineScolaire() {
   }
 
   const addSubject = async () => {
-    if (!selectedClassId || !newSubName || isReadOnly) return;
-    const { error } = await supabase.from('class_subjects').insert({
-      class_id: selectedClassId,
-      subject_name: newSubName,
-      coefficient: parseFloat(newSubCoeff),
-      academic_year_id: selectedYearId
+    if (!selectedClassId || !newSubName || isReadOnly || !selectedYearId) return;
+    const { error } = await offlineWrite({
+      table: 'class_subjects',
+      action: 'INSERT',
+      payload: {
+        class_id: selectedClassId,
+        subject_name: newSubName,
+        coefficient: parseFloat(newSubCoeff),
+        academic_year_id: selectedYearId
+      },
+      cacheKey: `bulletins_subjects:${selectedClassId}:${selectedYearId}`,
+      optimisticUpdate: () => {
+        setSubjects((prev) => [
+          { id: `offline-${Date.now()}`, class_id: selectedClassId, subject_name: newSubName, coefficient: parseFloat(newSubCoeff), academic_year_id: selectedYearId },
+          ...prev,
+        ]);
+      }
     });
+
     if (!error) {
       setNewSubName('');
       loadClassData();
@@ -123,7 +155,16 @@ export default function EngineScolaire() {
 
   const deleteSubject = async (id: string) => {
     if (isReadOnly) return;
-    const { error } = await supabase.from('class_subjects').delete().eq('id', id);
+    const { error } = await offlineWrite({
+      table: 'class_subjects',
+      action: 'DELETE',
+      payload: {},
+      options: { keyColumn: 'id', keyValue: id },
+      cacheKey: `bulletins_subjects:${selectedClassId}:${selectedYearId}`,
+      optimisticUpdate: () => {
+        setSubjects((prev) => prev.filter((s) => String(s.id) !== id));
+      }
+    });
     if (!error) loadClassData();
   };
 
@@ -331,14 +372,19 @@ export default function EngineScolaire() {
     const val = parseFloat(value);
     const maxGrade = isSecondCycle ? 20 : 10;
     if (isNaN(val) || val < 0 || val > maxGrade) return;
-    const { error } = await supabase.from('student_grades').upsert({
-      student_id: studentId,
-      class_id: selectedClassId,
-      subject_name: subjectName,
-      period: period,
-      academic_year: year,
-      [field]: val
-    }, { onConflict: 'student_id, subject_name, period, academic_year' });
+    const { error } = await offlineWrite({
+      table: 'student_grades',
+      action: 'UPSERT',
+      payload: {
+        student_id: studentId,
+        class_id: selectedClassId,
+        subject_name: subjectName,
+        period: period,
+        academic_year: year,
+        [field]: val
+      },
+      cacheKey: `bulletins_grades:${selectedClassId}:${period}:${year}`
+    });
     if (!error) {
       const key = `${studentId}-${subjectName}-${field}`;
       setSavedGrades(prev => new Set(prev).add(key));

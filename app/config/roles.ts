@@ -34,7 +34,7 @@ export const ROLES_CONFIG: Record<RoleType, RoleInfo> = {
     pin: "1228",
     description: "Gestion pédagogique & Personnel",
     // ❌ Pas d'accès à /finance
-    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/bulletins', '/performance', '/admin/settings', 'App'],
+    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/bulletins', '/performance', '/admin/settings', ],
   },
   [ROLES.CAISSIER]: {
     label: "Caissier",

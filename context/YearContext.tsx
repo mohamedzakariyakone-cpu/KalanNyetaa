@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { supabase } from '@/utils/supabase';
+import { offlineFetch } from '@/utils/offlineApi';
 
 export interface AcademicYear {
   id: number;
@@ -32,10 +33,12 @@ export function YearProvider({ children }: { children: ReactNode }) {
 
   const fetchYears = async () => {
     try {
-      const { data, error } = await supabase
-        .from('academic_years')
-        .select('*')
-        .order('label', { ascending: false });
+      const { data, error } = await offlineFetch<AcademicYear[]>('academic_years', async () => {
+        return await supabase
+          .from('academic_years')
+          .select('*')
+          .order('label', { ascending: false });
+      });
 
       if (error) throw error;
 

@@ -3,6 +3,7 @@
 import { Suspense, useState, useEffect, useCallback, useMemo, type ChangeEvent } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabase';
+import { getLocalCache, queueOfflineRequest, setLocalCache } from '@/utils/offlineStorage';
 import { useYear } from '@/context/YearContext';
 import {
   Search, ArrowUpRight, Loader2, Phone, X, Trash2, Plus, Lock, 
@@ -36,6 +37,7 @@ type StudentRecord = {
   address?: string | null;
   birth_date?: string | null;
   last_exam_avg?: number | string | null;
+  academic_year_id?: string | number | null;
   classes?: { name?: string | null };
 };
 
@@ -165,27 +167,47 @@ function StudentsPageContent() {
     
     setLoading(true);
     try {
-      let query = supabase.from('students').select('*, classes(name)').eq('academic_year_id', selectedYearId);
-      if (classFilter) query = query.eq('class_id', classFilter);
-      const { data: stData } = await query.order('last_name', { ascending: true });
-      setStudents(stData || []);
+      if (typeof window !== 'undefined' && !navigator.onLine) {
+        const cacheKey = `students:${selectedYearId}:${classFilter || 'all'}`
+        const cached = await getLocalCache<{ students: StudentRecord[]; classes: ClassRecord[]; currentClassInfo: ClassRecord | null }>(cacheKey)
 
-      const { data: clData } = await supabase.from('classes').select('*').eq('academic_year_id', selectedYearId).order('name');
-      setClasses(clData || []);
-
-      if (classFilter && clData) {
-        const current = clData.find((c: ClassRecord) => String(c.id) === classFilter);
-        setCurrentClassInfo(current || null);
-      } else {
-        setCurrentClassInfo(null);
+        if (cached) {
+          setStudents(cached.students || [])
+          setClasses(cached.classes || [])
+          setCurrentClassInfo(cached.currentClassInfo || null)
+          return
+        }
       }
 
+      let query = supabase.from('students').select('*, classes(name)').eq('academic_year_id', selectedYearId)
+      if (classFilter) query = query.eq('class_id', classFilter)
+      const { data: stData } = await query.order('last_name', { ascending: true })
+      setStudents(stData || [])
+
+      const { data: clData } = await supabase.from('classes').select('*').eq('academic_year_id', selectedYearId).order('name')
+      setClasses(clData || [])
+
+      if (classFilter && clData) {
+        const current = clData.find((c: ClassRecord) => String(c.id) === classFilter)
+        setCurrentClassInfo(current || null)
+      } else {
+        setCurrentClassInfo(null)
+      }
+
+      if (typeof window !== 'undefined' && navigator.onLine) {
+        const cacheKey = `students:${selectedYearId}:${classFilter || 'all'}`
+        await setLocalCache(cacheKey, {
+          students: stData || [],
+          classes: clData || [],
+          currentClassInfo: classFilter ? clData?.find((c: ClassRecord) => String(c.id) === classFilter) ?? null : null,
+        })
+      }
     } catch (error: unknown) {
-      console.error('Erreur de synchronisation :', error);
+      console.error('Erreur de synchronisation :', error)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, [classFilter, selectedYearId]);
+  }, [classFilter, selectedYearId])
 
   useEffect(() => { 
     if (!yearLoading && selectedYearId) {
@@ -244,13 +266,13 @@ function StudentsPageContent() {
   }, [students, searchTerm, financialFilter, academicFilter]);
 
   const addStudent = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.classId || isReadOnly) return;
-    setIsSubmitting(true);
+    e.preventDefault()
+    if (!formData.classId || isReadOnly) return
+    setIsSubmitting(true)
     
-    const feeValue = parseFloat(formData.annualFee || '0');
-
-    const { error } = await supabase.from('students').insert([{
+    const feeValue = parseFloat(formData.annualFee || '0')
+    const newStudent: StudentRecord = {
+      id: `offline-${Date.now()}`,
       first_name: formData.firstName,
       last_name: formData.lastName,
       class_id: formData.classId,
@@ -261,23 +283,57 @@ function StudentsPageContent() {
       address: formData.address || null,
       birth_date: formData.birthDate || null,
       last_exam_avg: parseFloat(formData.lastExamAvg || '0'),
-      academic_year_id: selectedYearId
-    }]);
+      academic_year_id: selectedYearId,
+    }
+
+    if (typeof window !== 'undefined' && !navigator.onLine) {
+      await queueOfflineRequest({
+        table: 'students',
+        action: 'INSERT',
+        payload: newStudent,
+        options: {},
+      })
+
+      setStudents((prev) => [newStudent, ...prev])
+      setFormData({ firstName: '', lastName: '', classId: classFilter || '', annualFee: '', parentPhone: '', address: '', birthDate: '', lastExamAvg: '0' })
+      setShowMobileForm(false)
+      setIsSubmitting(false)
+      return
+    }
+
+    const { error } = await supabase.from('students').insert([{ ...newStudent, id: undefined }])
 
     if (!error) {
-      setFormData({ firstName: '', lastName: '', classId: classFilter || '', annualFee: '', parentPhone: '', address: '', birthDate: '', lastExamAvg: '0' });
-      setShowMobileForm(false);
-      fetchData();
+      setFormData({ firstName: '', lastName: '', classId: classFilter || '', annualFee: '', parentPhone: '', address: '', birthDate: '', lastExamAvg: '0' })
+      setShowMobileForm(false)
+      fetchData()
     }
-    setIsSubmitting(false);
+    setIsSubmitting(false)
   };
 
   const handleDeleteStudent = async (id: string) => {
     if (isReadOnly) return;
-    const { error } = await supabase.from('students').delete().eq('id', id);
-    if (!error) { 
-      setConfirmDeleteId(null); 
-      fetchData(); 
+
+    if (typeof window !== 'undefined' && !navigator.onLine) {
+      await queueOfflineRequest({
+        table: 'students',
+        action: 'DELETE',
+        payload: {},
+        options: {
+          keyColumn: 'id',
+          keyValue: id,
+        },
+      })
+
+      setStudents((prev) => prev.filter((student) => String(student.id) !== id))
+      setConfirmDeleteId(null)
+      return
+    }
+
+    const { error } = await supabase.from('students').delete().eq('id', id)
+    if (!error) {
+      setConfirmDeleteId(null)
+      fetchData()
     }
   };
 

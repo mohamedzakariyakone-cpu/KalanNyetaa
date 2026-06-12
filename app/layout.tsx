@@ -1,6 +1,7 @@
 import './globals.css'
 import MobileShell from '@/components/MobileShell'
-import Sidebar from '@/components/Sidebar' 
+import Sidebar from '@/components/Sidebar'
+import OfflineSync from '@/components/OfflineSync'
 import { Inter } from 'next/font/google'
 import { YearProvider } from '@/context/YearContext'
 import type { Metadata, Viewport } from 'next'
@@ -77,6 +78,7 @@ export default function RootLayout({
               {children}
             </div>
           </MobileShell>
+          <OfflineSync />
         </YearProvider>
 
       </body>

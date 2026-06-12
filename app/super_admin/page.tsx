@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/utils/supabase';
+import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
 import { 
   Plus, School, UserPlus, Trash2, ShieldAlert, Edit3, 
   CheckCircle, XCircle, Search, Settings, Loader2, 
@@ -39,9 +40,16 @@ export default function Super_admin() {
 
   async function fetchEverything() {
     setLoading(true);
-    const { data: schoolsData } = await supabase.from('schools').select('*').order('created_at', { ascending: false });
-    const { data: profilesData } = await supabase.from('profiles').select('*, schools(name)').order('created_at', { ascending: false });
-    
+    const { data: schoolsData, error: schoolsError } = await offlineFetch<any[]>('super_admin_schools', async () => {
+      return await supabase.from('schools').select('*').order('created_at', { ascending: false });
+    });
+    const { data: profilesData, error: profilesError } = await offlineFetch<any[]>('super_admin_profiles', async () => {
+      return await supabase.from('profiles').select('*, schools(name)').order('created_at', { ascending: false });
+    });
+
+    if (schoolsError) console.error('Erreur hors ligne écoles :', schoolsError);
+    if (profilesError) console.error('Erreur hors ligne profils :', profilesError);
+
     setSchools(schoolsData || []);
     setProfiles(profilesData || []);
     setLoading(false);
@@ -70,18 +78,24 @@ export default function Super_admin() {
     try {
       if (editingId) {
         // --- LOGIQUE DE MODIFICATION ---
-        const { error } = await supabase
-          .from('schools')
-          .update({ 
-            name: formData.schoolName, 
+        const { error } = await offlineWrite({
+          table: 'schools',
+          action: 'UPDATE',
+          payload: {
+            name: formData.schoolName,
             address: formData.address,
             city: formData.city,
             rive: formData.rive,
             cap: formData.cap,
             academie: formData.academie,
             phone: formData.phone
-          })
-          .eq('id', editingId);
+          },
+          options: { keyColumn: 'id', keyValue: editingId },
+          cacheKey: 'super_admin_schools',
+          optimisticUpdate: () => {
+            setSchools((prev) => prev.map((school) => school.id === editingId ? { ...school, name: formData.schoolName, address: formData.address, city: formData.city, rive: formData.rive, cap: formData.cap, academie: formData.academie, phone: formData.phone } : school));
+          }
+        });
         
         if (error) throw error;
         alert("Informations de l'école mises à jour.");
@@ -130,7 +144,20 @@ export default function Super_admin() {
 
   const deleteAnything = async (table: string, id: string) => {
     if (!confirm("Confirmer la suppression ?")) return;
-    const { error } = await supabase.from(table).delete().eq('id', id);
+    const { error } = await offlineWrite({
+      table,
+      action: 'DELETE',
+      payload: {},
+      options: { keyColumn: 'id', keyValue: id },
+      cacheKey: table === 'schools' ? 'super_admin_schools' : 'super_admin_profiles',
+      optimisticUpdate: () => {
+        if (table === 'schools') {
+          setSchools((prev) => prev.filter((item) => String(item.id) !== id));
+        } else {
+          setProfiles((prev) => prev.filter((item) => String(item.id) !== id));
+        }
+      }
+    });
     if (!error) fetchEverything();
   };
 

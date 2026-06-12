@@ -13,6 +13,10 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
+    "types": [
+      "@serwist/next/typings"
+    ],
+    "lib": ["dom", "dom.iterable", "esnext", "webworker"],
     "plugins": [
       {
         "name": "next"

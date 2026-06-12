@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/utils/supabase';
+import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
 import { useYear } from '@/context/YearContext';
 import { 
   UserCheck, Plus, Search, Mail, Phone, 
@@ -34,14 +35,18 @@ export default function TeachersPage() {
     if (!selectedYearId) return;
     
     setLoading(true);
-    const { data, error } = await supabase
-      .from('teachers')
-      .select('*')
-      .eq('academic_year_id', selectedYearId)
-      .order('created_at', { ascending: false });
+    const { data, error } = await offlineFetch<any[]>(`teachers:${selectedYearId}`, async () => {
+      return await supabase
+        .from('teachers')
+        .select('*')
+        .eq('academic_year_id', selectedYearId)
+        .order('created_at', { ascending: false });
+    });
     
-    if (error) console.error("Erreur:", error);
-    else setTeachers(data || []);
+    if (error) {
+      console.error("Erreur:", error);
+    }
+    setTeachers(data || []);
     setLoading(false);
   }, [selectedYearId]);
 
@@ -57,19 +62,30 @@ export default function TeachersPage() {
     
     setIsSubmitting(true);
     
-    const { error } = await supabase.from('teachers').insert([{
-      first_name: formData.firstName,
-      last_name: formData.lastName,
-      email: formData.email,
-      phone: formData.phone,
-      specialty: formData.specialty,
-      status: formData.status,
-      academic_year_id: selectedYearId
-    }]);
+    const { error } = await offlineWrite({
+      table: 'teachers',
+      action: 'INSERT',
+      payload: {
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        email: formData.email,
+        phone: formData.phone,
+        specialty: formData.specialty,
+        status: formData.status,
+        academic_year_id: selectedYearId
+      },
+      cacheKey: `teachers:${selectedYearId}`,
+      optimisticUpdate: () => {
+        setTeachers((prev) => [
+          { id: `offline-${Date.now()}`, first_name: formData.firstName, last_name: formData.lastName, email: formData.email, phone: formData.phone, specialty: formData.specialty, status: formData.status, academic_year_id: selectedYearId },
+          ...prev,
+        ]);
+      }
+    });
 
     if (!error) {
       setFormData({ firstName: '', lastName: '', email: '', phone: '', specialty: '', status: 'Actif' });
-      await fetchTeachers(); // RECHARGE la liste immédiatement
+      await fetchTeachers();
     } else {
       alert("Erreur lors de l'enregistrement.");
     }
@@ -80,7 +96,16 @@ export default function TeachersPage() {
     if (isReadOnly) return;
     
     setDeletingId(id);
-    const { error } = await supabase.from('teachers').delete().eq('id', id);
+    const { error } = await offlineWrite({
+      table: 'teachers',
+      action: 'DELETE',
+      payload: {},
+      options: { keyColumn: 'id', keyValue: id },
+      cacheKey: `teachers:${selectedYearId}`,
+      optimisticUpdate: () => {
+        setTeachers((prev) => prev.filter((teacher) => String(teacher.id) !== id));
+      }
+    });
     if (!error) {
       setConfirmDeleteId(null);
       await fetchTeachers();

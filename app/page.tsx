@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabase';
+import { offlineFetch } from '@/utils/offlineApi';
 import { ROLES_CONFIG, RoleType, ROLES } from './config/roles';
 import { ShieldCheck, Landmark, GraduationCap, FolderLock, Lock, X, Loader2 } from 'lucide-react';
 
@@ -18,11 +19,13 @@ export default function RoleSelectionPage() {
   useEffect(() => {
     async function fetchSchoolName() {
       try {
-        const { data, error } = await supabase
-          .from('schools')
-          .select('name')
-          .limit(1)
-          .single();
+        const { data, error } = await offlineFetch<{ name: string } | null>('school_name', async () => {
+          return await supabase
+            .from('schools')
+            .select('name')
+            .limit(1)
+            .single();
+        });
 
         if (data && data.name) {
           setSchoolName(data.name);
@@ -31,7 +34,7 @@ export default function RoleSelectionPage() {
         }
       } catch (err) {
         console.error("Erreur de récupération du nom de l'école :", err);
-        setSchoolName('KalanNyetaa'); // Fallback en cas d'erreur ou table vide
+        setSchoolName('KalanNyetaa');
       } finally {
         setFetchingSchool(false);
       }

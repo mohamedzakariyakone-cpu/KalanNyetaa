@@ -6,3 +6,6 @@ build
 .env.local
 .vercel
 *.log
+
+# Serwist PWA service worker files
+public/sw*
