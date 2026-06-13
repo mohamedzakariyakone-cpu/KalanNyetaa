@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation'; 
-import { LayoutDashboard, School, Users, GraduationCap, Wallet, Settings, LogOut, NotebookTabs, ChartLine, MoreHorizontal } from 'lucide-react';
+import { LayoutDashboard, School, Users, GraduationCap, Wallet, Settings, LogOut, NotebookTabs, ChartLine, MoreHorizontal, Layers } from 'lucide-react';
 import { supabase } from '@/utils/supabase';
 import { useState, useEffect, useRef } from 'react';
 import YearSelector from '@/components/YearSelector';
@@ -90,6 +90,7 @@ const Sidebar = ({ onClose }: SidebarProps) => {
     { name: 'Élèves', href: '/students', icon: Users },
     { name: 'Professeurs', href: '/teachers', icon: GraduationCap },
     { name: 'Comptabilité', href: '/finance', icon: Wallet },
+    { name: 'Recouvrement', href: '/recouvrement', icon: Layers },
     { name: 'Bulletins', href: '/bulletins', icon: NotebookTabs },
     { name: 'Performance', href: '/performance', icon: ChartLine },
     { name: 'Paramètres', href: '/admin/settings', icon: Settings },
@@ -219,7 +220,7 @@ const Sidebar = ({ onClose }: SidebarProps) => {
                   className={`transition-transform duration-300 ${showMoreMenu ? 'rotate-90' : ''}`}
                 />
               </div>
-                <span className={`text-[10.5px] tracking-tight transition-colors duration-200 ${showMoreMenu || hiddenMobileItems.some(item => pathname === item.href) ? 'text-[#1763FF] font-black' : 'text-gray-500 font-medium'}`}>
+              <span className={`text-[10.5px] tracking-tight transition-colors duration-200 ${showMoreMenu || hiddenMobileItems.some(item => pathname === item.href) ? 'text-[#1763FF] font-black' : 'text-gray-500 font-medium'}`}>
                 Plus
               </span>
             </button>

@@ -3,14 +3,69 @@
 import { Suspense, useState, useEffect, useCallback, useMemo, type ChangeEvent } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabase';
-import { getLocalCache, queueOfflineRequest, setLocalCache } from '@/utils/offlineStorage';
 import { useYear } from '@/context/YearContext';
 import {
   Search, ArrowUpRight, Loader2, Phone, X, Trash2, Plus, Lock, 
-  AlertCircle, FileText, DollarSign, Award, GraduationCap, ArrowLeft
+  AlertCircle, DollarSign, Award, GraduationCap, ArrowLeft, FileDown
 } from 'lucide-react';
 import Link from 'next/link';
 import NumericInput from '@/components/NumericInput';
+
+// --- UTILITAIRES DE GESTION INDEXEDDB ---
+const DB_NAME = 'KalanNyetaaCacheDB';
+const DB_VERSION = 1;
+
+// On garde une seule connexion ouverte pour éviter de ré-ouvrir la DB à chaque appel
+// (chaque ouverture coûte un aller-retour asynchrone qui retarde l'affichage instantané)
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+function initIndexedDB(): Promise<IDBDatabase> {
+  if (typeof window === 'undefined') return Promise.reject('Environnement serveur');
+  if (dbPromise) return dbPromise;
+
+  dbPromise = new Promise((resolve, reject) => {
+    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = (event: any) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('students_cache')) {
+        db.createObjectStore('students_cache', { keyPath: 'cacheKey' });
+      }
+    };
+    request.onsuccess = (event: any) => resolve(event.target.result);
+    request.onerror = (event: any) => {
+      dbPromise = null; // permet de retenter une ouverture plus tard si celle-ci échoue
+      reject(event.target.error);
+    };
+  });
+
+  return dbPromise;
+}
+
+function getLocalCache(cacheKey: string): Promise<any | null> {
+  return initIndexedDB().then(db => {
+    return new Promise((resolve) => {
+      const transaction = db.transaction('students_cache', 'readonly');
+      const store = transaction.objectStore('students_cache');
+      const request = store.get(cacheKey);
+      request.onsuccess = () => resolve(request.result ? request.result.data : null);
+      request.onerror = () => resolve(null);
+    });
+  }).catch(() => null);
+}
+async function setLocalCache(cacheKey: string, data: any): Promise<void> {
+  const db = await initIndexedDB();
+
+  const transaction = db.transaction('students_cache', 'readwrite');
+  const store = transaction.objectStore('students_cache');
+
+  store.put({ cacheKey, data, updatedAt: Date.now() });
+
+  await new Promise<void>((resolve) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => resolve();
+  });
+}
+// ----------------------------------------
 
 export default function StudentsPage() {
   return (
@@ -37,7 +92,6 @@ type StudentRecord = {
   address?: string | null;
   birth_date?: string | null;
   last_exam_avg?: number | string | null;
-  academic_year_id?: string | number | null;
   classes?: { name?: string | null };
 };
 
@@ -58,10 +112,8 @@ function StudentsPageContent() {
   const [currentClassInfo, setCurrentClassInfo] = useState<ClassRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  
   const [financialFilter, setFinancialFilter] = useState<'all' | 'paid' | 'debtor'>('all');
   const [academicFilter, setAcademicFilter] = useState<'all' | 'passed' | 'failed'>('all');
-
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isReenrolling, setIsReenrolling] = useState(false);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -72,24 +124,14 @@ function StudentsPageContent() {
   const [targetNextClassId, setTargetNextClassId] = useState('');
   const [nextYearClasses, setNextYearClasses] = useState<ClassRecord[]>([]);
   const [showReenrollmentSection, setShowReenrollmentSection] = useState(false);
-
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [formData, setFormData] = useState({
     firstName: '', lastName: '', classId: classFilter || '', annualFee: '',
     parentPhone: '', address: '', birthDate: '', lastExamAvg: '0'
   });
 
   const { selectedYearId, selectedYear, years, isReadOnly, isLoading: yearLoading } = useYear();
-  const [userRole, setUserRole] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const match = document.cookie.match(new RegExp('(^| )userRole=([^;]+)'));
-      const role = match ? match[2] : localStorage.getItem('userRole');
-      setUserRole(role);
-    }
-  }, []);
-
-  const shouldHideFinancials = userRole === 'directeur' || userRole === 'caissier';
 
   useEffect(() => {
     if (classFilter) {
@@ -135,6 +177,13 @@ function StudentsPageContent() {
       return;
     }
 
+    // Chargement immédiat du cache des prochaines classes depuis IndexedDB
+    const cacheKey = `next_classes_${nextAcademicYear.id}`;
+    const cachedData = await getLocalCache(cacheKey);
+    if (cachedData) {
+      setNextYearClasses(cachedData);
+    }
+
     const { data, error } = await supabase
       .from('classes')
       .select('*')
@@ -143,11 +192,12 @@ function StudentsPageContent() {
 
     if (error) {
       console.error('Erreur lors de la récupération des prochaines classes :', error.message);
-      setNextYearClasses([]);
+      if (!cachedData) setNextYearClasses([]);
       return;
     }
 
     setNextYearClasses(data || []);
+    await setLocalCache(cacheKey, data || []);
   }, [nextAcademicYear]);
 
   useEffect(() => {
@@ -165,49 +215,54 @@ function StudentsPageContent() {
   const fetchData = useCallback(async () => {
     if (!selectedYearId) return;
     
-    setLoading(true);
+    // Clé unique pour isoler le cache par année et par classe filtrée
+    const cacheKey = `students_data_${selectedYearId}_${classFilter || 'all'}`;
+    
     try {
-      if (typeof window !== 'undefined' && !navigator.onLine) {
-        const cacheKey = `students:${selectedYearId}:${classFilter || 'all'}`
-        const cached = await getLocalCache<{ students: StudentRecord[]; classes: ClassRecord[]; currentClassInfo: ClassRecord | null }>(cacheKey)
-
-        if (cached) {
-          setStudents(cached.students || [])
-          setClasses(cached.classes || [])
-          setCurrentClassInfo(cached.currentClassInfo || null)
-          return
-        }
-      }
-
-      let query = supabase.from('students').select('*, classes(name)').eq('academic_year_id', selectedYearId)
-      if (classFilter) query = query.eq('class_id', classFilter)
-      const { data: stData } = await query.order('last_name', { ascending: true })
-      setStudents(stData || [])
-
-      const { data: clData } = await supabase.from('classes').select('*').eq('academic_year_id', selectedYearId).order('name')
-      setClasses(clData || [])
-
-      if (classFilter && clData) {
-        const current = clData.find((c: ClassRecord) => String(c.id) === classFilter)
-        setCurrentClassInfo(current || null)
+      // ÉTAPE 1 : Extraire instantanément les données enregistrées localement
+      const cached = await getLocalCache(cacheKey);
+      if (cached) {
+        setStudents(cached.students || []);
+        setClasses(cached.classes || []);
+        setCurrentClassInfo(cached.currentClassInfo || null);
+        setLoading(false); // Le chargement devient instantané pour l'utilisateur
       } else {
-        setCurrentClassInfo(null)
+        setLoading(true);
       }
 
-      if (typeof window !== 'undefined' && navigator.onLine) {
-        const cacheKey = `students:${selectedYearId}:${classFilter || 'all'}`
-        await setLocalCache(cacheKey, {
-          students: stData || [],
-          classes: clData || [],
-          currentClassInfo: classFilter ? clData?.find((c: ClassRecord) => String(c.id) === classFilter) ?? null : null,
-        })
+      // ÉTAPE 2 : Récupérer silencieusement les nouvelles données depuis Supabase
+      let query = supabase.from('students').select('*, classes(name)').eq('academic_year_id', selectedYearId);
+      if (classFilter) query = query.eq('class_id', classFilter);
+      const { data: stData } = await query.order('last_name', { ascending: true });
+
+      const { data: clData } = await supabase.from('classes').select('*').eq('academic_year_id', selectedYearId).order('name');
+      
+      let computedClassInfo = null;
+      if (classFilter && clData) {
+        const current = clData.find((c: ClassRecord) => String(c.id) === classFilter);
+        computedClassInfo = current || null;
       }
+
+      const freshStudents = stData || [];
+      const freshClasses = clData || [];
+
+      // ÉTAPE 3 : Mettre à jour l'état et sauvegarder dans IndexedDB pour la prochaine visite
+      setStudents(freshStudents);
+      setClasses(freshClasses);
+      setCurrentClassInfo(computedClassInfo);
+      
+      await setLocalCache(cacheKey, {
+        students: freshStudents,
+        classes: freshClasses,
+        currentClassInfo: computedClassInfo
+      });
+
     } catch (error: unknown) {
-      console.error('Erreur de synchronisation :', error)
+      console.error('Erreur de synchronisation :', error);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [classFilter, selectedYearId])
+  }, [classFilter, selectedYearId]);
 
   useEffect(() => { 
     if (!yearLoading && selectedYearId) {
@@ -266,13 +321,12 @@ function StudentsPageContent() {
   }, [students, searchTerm, financialFilter, academicFilter]);
 
   const addStudent = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!formData.classId || isReadOnly) return
-    setIsSubmitting(true)
-    
-    const feeValue = parseFloat(formData.annualFee || '0')
-    const newStudent: StudentRecord = {
-      id: `offline-${Date.now()}`,
+    e.preventDefault();
+    if (!formData.classId || isReadOnly) return;
+    setIsSubmitting(true);
+    const feeValue = parseFloat(formData.annualFee || '0');
+
+    const { error } = await supabase.from('students').insert([{
       first_name: formData.firstName,
       last_name: formData.lastName,
       class_id: formData.classId,
@@ -283,57 +337,23 @@ function StudentsPageContent() {
       address: formData.address || null,
       birth_date: formData.birthDate || null,
       last_exam_avg: parseFloat(formData.lastExamAvg || '0'),
-      academic_year_id: selectedYearId,
-    }
-
-    if (typeof window !== 'undefined' && !navigator.onLine) {
-      await queueOfflineRequest({
-        table: 'students',
-        action: 'INSERT',
-        payload: newStudent,
-        options: {},
-      })
-
-      setStudents((prev) => [newStudent, ...prev])
-      setFormData({ firstName: '', lastName: '', classId: classFilter || '', annualFee: '', parentPhone: '', address: '', birthDate: '', lastExamAvg: '0' })
-      setShowMobileForm(false)
-      setIsSubmitting(false)
-      return
-    }
-
-    const { error } = await supabase.from('students').insert([{ ...newStudent, id: undefined }])
+      academic_year_id: selectedYearId
+    }]);
 
     if (!error) {
-      setFormData({ firstName: '', lastName: '', classId: classFilter || '', annualFee: '', parentPhone: '', address: '', birthDate: '', lastExamAvg: '0' })
-      setShowMobileForm(false)
-      fetchData()
+      setFormData({ firstName: '', lastName: '', classId: classFilter || '', annualFee: '', parentPhone: '', address: '', birthDate: '', lastExamAvg: '0' });
+      setShowMobileForm(false);
+      fetchData();
     }
-    setIsSubmitting(false)
+    setIsSubmitting(false);
   };
 
   const handleDeleteStudent = async (id: string) => {
     if (isReadOnly) return;
-
-    if (typeof window !== 'undefined' && !navigator.onLine) {
-      await queueOfflineRequest({
-        table: 'students',
-        action: 'DELETE',
-        payload: {},
-        options: {
-          keyColumn: 'id',
-          keyValue: id,
-        },
-      })
-
-      setStudents((prev) => prev.filter((student) => String(student.id) !== id))
-      setConfirmDeleteId(null)
-      return
-    }
-
-    const { error } = await supabase.from('students').delete().eq('id', id)
-    if (!error) {
-      setConfirmDeleteId(null)
-      fetchData()
+    const { error } = await supabase.from('students').delete().eq('id', id);
+    if (!error) { 
+      setConfirmDeleteId(null); 
+      fetchData();
     }
   };
 
@@ -411,8 +431,187 @@ function StudentsPageContent() {
     setIsReenrolling(false);
   };
 
-  const triggerPrint = () => {
-    if (typeof window !== 'undefined') window.print();
+  // Génère un PDF professionnel du registre, avec ou sans les données financières
+  const generatePdf = async (includeFinancial: boolean) => {
+    setIsExporting(true);
+    try {
+      const { jsPDF } = await import('jspdf');
+      const autoTableModule = await import('jspdf-autotable');
+      const autoTable = autoTableModule.default;
+
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 12;
+
+      const today = new Date().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' });
+      const titleClasse = classFilter && currentClassInfo ? `Classe : ${currentClassInfo.name}` : 'Registre Général des Élèves';
+      const sousTitre = selectedYear?.label ? `Année scolaire ${selectedYear.label}` : '';
+
+      // --- EN-TÊTE DU DOCUMENT ---
+      doc.setFillColor(15, 23, 42); // slate-900
+      doc.rect(0, 0, pageWidth, 22, 'F');
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(15);
+      doc.text('KALAN NYETAA', margin, 10);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(203, 213, 225); // slate-300
+      doc.text('Système de gestion scolaire', margin, 15.5);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.setTextColor(255, 255, 255);
+      doc.text(titleClasse.toUpperCase(), pageWidth - margin, 10, { align: 'right' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(203, 213, 225);
+      doc.text(`${sousTitre}${sousTitre ? ' — ' : ''}Généré le ${today}`, pageWidth - margin, 15.5, { align: 'right' });
+
+      // --- BLOCS STATISTIQUES ---
+      let cursorY = 30;
+      const statBoxes = includeFinancial
+        ? [
+            { label: 'EFFECTIF', value: `${stats.total} élève(s)`, color: [15, 23, 42] },
+            { label: 'TOTAL RECOUVRÉ', value: `${stats.totalPaid.toLocaleString('fr-FR')} FCFA`, color: [5, 150, 105] },
+            { label: 'RESTANT DÛ', value: `${stats.totalDue.toLocaleString('fr-FR')} FCFA`, color: [225, 29, 72] },
+            { label: 'MOYENNE GÉNÉRALE', value: `${stats.generalAvg.toFixed(2)} / 20`, color: [79, 70, 229] },
+          ]
+        : [
+            { label: 'EFFECTIF', value: `${stats.total} élève(s)`, color: [15, 23, 42] },
+            { label: 'MOYENNE GÉNÉRALE', value: `${stats.generalAvg.toFixed(2)} / 20`, color: [79, 70, 229] },
+          ];
+
+      const boxGap = 4;
+      const boxWidth = (pageWidth - margin * 2 - boxGap * (statBoxes.length - 1)) / statBoxes.length;
+      const boxHeight = 16;
+
+      statBoxes.forEach((box, i) => {
+        const x = margin + i * (boxWidth + boxGap);
+        doc.setFillColor(248, 250, 252); // slate-50
+        doc.setDrawColor(226, 232, 240); // slate-200
+        doc.roundedRect(x, cursorY, boxWidth, boxHeight, 1.5, 1.5, 'FD');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.5);
+        doc.setTextColor(148, 163, 184); // slate-400
+        doc.text(box.label, x + 4, cursorY + 5.5);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11.5);
+        doc.setTextColor(box.color[0], box.color[1], box.color[2]);
+        doc.text(box.value, x + 4, cursorY + 12.5);
+      });
+
+      cursorY += boxHeight + 8;
+
+      // --- TABLEAU DES ÉLÈVES ---
+      const head = includeFinancial
+        ? [['#', 'Nom & Prénom', 'Classe', 'Contact Parent', 'Frais (FCFA)', 'Payé (FCFA)', 'Restant (FCFA)', 'Moyenne']]
+        : [['#', 'Nom & Prénom', 'Classe', 'Contact Parent', 'Moyenne']];
+
+      const body = filteredStudents.map((s: StudentRecord, idx: number) => {
+        const totalFee = Number(s.scolarite_totale || s.annual_fee || 0);
+        const paidFee = Number(s.scolarite_payee || 0);
+        const due = totalFee - paidFee;
+        const examAvg = Number(s.last_exam_avg ?? 0);
+        const fullName = `${(s.last_name || '').toUpperCase()} ${s.first_name || ''}`.trim();
+        const className = s.classes?.name || 'Inconnu';
+        const phone = s.parent_phone || '-';
+        const avgStr = `${examAvg.toFixed(2)}/20`;
+
+        return includeFinancial
+          ? [String(idx + 1), fullName, className, phone, totalFee.toLocaleString('fr-FR'), paidFee.toLocaleString('fr-FR'), due.toLocaleString('fr-FR'), avgStr]
+          : [String(idx + 1), fullName, className, phone, avgStr];
+      });
+
+      autoTable(doc, {
+        head,
+        body,
+        startY: cursorY,
+        margin: { left: margin, right: margin, bottom: 16 },
+        theme: 'grid',
+        styles: {
+          fontSize: 8.5,
+          cellPadding: 2.2,
+          textColor: [30, 41, 59], // slate-800
+          lineColor: [226, 232, 240], // slate-200
+          lineWidth: 0.1,
+        },
+        headStyles: {
+          fillColor: [15, 23, 42], // slate-900
+          textColor: [255, 255, 255],
+          fontStyle: 'bold',
+          fontSize: 8,
+          halign: 'left',
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 252], // slate-50
+        },
+        columnStyles: includeFinancial
+          ? {
+              0: { halign: 'center', cellWidth: 8 },
+              1: { fontStyle: 'bold' },
+              4: { halign: 'right' },
+              5: { halign: 'right', textColor: [5, 150, 105] },
+              6: { halign: 'right', textColor: [225, 29, 72] },
+              7: { halign: 'center', fontStyle: 'bold' },
+            }
+          : {
+              0: { halign: 'center', cellWidth: 8 },
+              1: { fontStyle: 'bold' },
+              4: { halign: 'center', fontStyle: 'bold' },
+            },
+        didParseCell: (data: any) => {
+          // Colore la moyenne selon le résultat (réussite / échec)
+          const avgColIndex = includeFinancial ? 7 : 4;
+          if (data.section === 'body' && data.column.index === avgColIndex) {
+            const raw = String(data.cell.raw || '');
+            const value = parseFloat(raw.replace('/20', ''));
+            if (!isNaN(value)) {
+              data.cell.styles.textColor = value >= 10 ? [79, 70, 229] : [225, 29, 72];
+            }
+          }
+        },
+        didDrawPage: (data: any) => {
+          // Pied de page : numéro de page + signature
+          const pageCount = doc.getNumberOfPages();
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(7.5);
+          doc.setTextColor(148, 163, 184);
+          doc.text(
+            `Page ${data.pageNumber} / ${pageCount}`,
+            pageWidth - margin,
+            pageHeight - 7,
+            { align: 'right' }
+          );
+          doc.text(
+            'Document généré automatiquement — Kalan Nyetaa',
+            margin,
+            pageHeight - 7
+          );
+        },
+      });
+
+      const fileSuffix = includeFinancial ? 'complet' : 'simplifie';
+      const classSuffix = classFilter && currentClassInfo?.name ? `_${currentClassInfo.name}` : '';
+      doc.save(`registre_eleves${classSuffix}_${fileSuffix}.pdf`);
+    } catch (error) {
+      console.error('Erreur lors de la génération du PDF :', error);
+      alert('Une erreur est survenue lors de la génération du PDF.');
+    } finally {
+      setIsExporting(false);
+      setShowExportModal(false);
+    }
+  };
+
+  // Navigation vers la fiche détaillée d'un élève (clic sur la ligne/carte)
+  const goToStudentDetail = (studentId: string | number) => {
+    router.push(`/students/${studentId}`);
   };
 
   if (yearLoading) {
@@ -435,7 +634,6 @@ function StudentsPageContent() {
   }
 
   return (
-    // Protection globale contre le debordement horizontal sur mobile et occupation de toute la surface
     <div className="space-y-4 sm:space-y-6 pb-10 max-w-7xl mx-auto px-0 sm:px-6 w-full overflow-x-hidden print:p-0 print:bg-white">
       
       {/* HEADER : Adapté à la taille des écrans */}
@@ -463,10 +661,10 @@ function StudentsPageContent() {
         {/* Actions d'entête responsives */}
         <div className="flex items-center justify-between sm:justify-end gap-2 print:hidden">
           <button
-            onClick={triggerPrint}
+            onClick={() => setShowExportModal(true)}
             className="flex items-center justify-center gap-2 bg-white border border-slate-200 text-slate-800 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl font-bold text-xs shadow-sm hover:bg-slate-50 transition-all flex-1 sm:flex-none"
           >
-            <FileText size={15} className="text-slate-500" />
+            <FileDown size={15} className="text-slate-500" />
             <span>Exporter PDF</span>
           </button>
 
@@ -504,7 +702,7 @@ function StudentsPageContent() {
           </div>
           <div className="min-w-0">
             <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase truncate">Recouvré</p>
-            <p className="text-sm sm:text-lg font-black text-emerald-600 leading-tight truncate">{shouldHideFinancials ? '••••••' : stats.totalPaid.toLocaleString()} <span className="text-[8px] font-bold text-emerald-400">FCFA</span></p>
+            <p className="text-sm sm:text-lg font-black text-emerald-600 leading-tight truncate">{stats.totalPaid.toLocaleString()} <span className="text-[8px] font-bold text-emerald-400">FCFA</span></p>
           </div>
         </div>
 
@@ -514,7 +712,7 @@ function StudentsPageContent() {
           </div>
           <div className="min-w-0">
             <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase truncate">Restant dû</p>
-            <p className="text-sm sm:text-lg font-black text-rose-600 leading-tight truncate">{shouldHideFinancials ? '••••••' : stats.totalDue.toLocaleString()} <span className="text-[8px] font-bold text-rose-400">FCFA</span></p>
+            <p className="text-sm sm:text-lg font-black text-rose-600 leading-tight truncate">{stats.totalDue.toLocaleString()} <span className="text-[8px] font-bold text-rose-400">FCFA</span></p>
           </div>
         </div>
 
@@ -599,7 +797,12 @@ function StudentsPageContent() {
                   <div className="flex items-center justify-between">
                     <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-black">Réinscription de classe</p>
                     <button 
-                      onClick={() => { setShowReenrollmentSection(false); setIsSelectionMode(false); setSelectedStudentIds([]); setSelectAll(false); }}
+                      onClick={() => { 
+                        setShowReenrollmentSection(false);
+                        setIsSelectionMode(false); 
+                        setSelectedStudentIds([]); 
+                        setSelectAll(false); 
+                      }}
                       className="text-slate-400 hover:text-slate-600 sm:hidden"
                     >
                       <X size={16} />
@@ -678,19 +881,47 @@ function StudentsPageContent() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase text-slate-400">Prénom</label>
-              <input type="text" placeholder="Moussa" className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-800" value={formData.firstName} onChange={(e) => setFormData({...formData, firstName: e.target.value})} disabled={isReadOnly} required />
+              <input 
+                type="text" 
+                placeholder="Moussa" 
+                className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-800"
+                value={formData.firstName}
+                onChange={(e) => setFormData({...formData, firstName: e.target.value})}
+                disabled={isReadOnly}
+                required 
+              />
             </div>
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase text-slate-400">Nom</label>
-              <input type="text" placeholder="Diarra" className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-800" value={formData.lastName} onChange={(e) => setFormData({...formData, lastName: e.target.value})} disabled={isReadOnly} required />
+              <input 
+                type="text" 
+                placeholder="Diarra" 
+                className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-800"
+                value={formData.lastName}
+                onChange={(e) => setFormData({...formData, lastName: e.target.value})}
+                disabled={isReadOnly}
+                required 
+              />
             </div>
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase text-slate-400">Naissance</label>
-              <input type="date" className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-600" value={formData.birthDate} onChange={(e) => setFormData({...formData, birthDate: e.target.value})} disabled={isReadOnly} />
+              <input 
+                type="date" 
+                className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-600"
+                value={formData.birthDate}
+                onChange={(e) => setFormData({...formData, birthDate: e.target.value})}
+                disabled={isReadOnly}
+              />
             </div>
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase text-slate-400">Classe</label>
-              <select className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-800" value={formData.classId} onChange={(e) => setFormData({...formData, classId: e.target.value})} disabled={isReadOnly || !!classFilter} required >
+              <select 
+                className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-800"
+                value={formData.classId}
+                onChange={(e) => setFormData({...formData, classId: e.target.value})}
+                disabled={isReadOnly || !!classFilter}
+                required 
+              >
                 <option value="">Sélectionner...</option>
                 {classes.map((c: ClassRecord) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -700,16 +931,30 @@ function StudentsPageContent() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase text-slate-400">Téléphone Parent</label>
-              <input type="text" placeholder="70000000" className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-800" value={formData.parentPhone} onChange={(e) => setFormData({...formData, parentPhone: e.target.value})} disabled={isReadOnly} />
+              <input 
+                type="text" 
+                placeholder="70000000" 
+                className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-800"
+                value={formData.parentPhone}
+                onChange={(e) => setFormData({...formData, parentPhone: e.target.value})}
+                disabled={isReadOnly}
+              />
             </div>
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase text-slate-400">Adresse</label>
-              <input type="text" placeholder="Quartier..." className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-800" value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} disabled={isReadOnly} />
+              <input 
+                type="text" 
+                placeholder="Quartier..." 
+                className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-800"
+                value={formData.address}
+                onChange={(e) => setFormData({...formData, address: e.target.value})}
+                disabled={isReadOnly}
+              />
             </div>
             <div className="space-y-1">
               <label className="text-[9px] font-black uppercase text-slate-400">Frais Annuels (FCFA)</label>
-              <NumericInput
-                placeholder="Montant total..."
+              <NumericInput 
+                placeholder="Montant total..." 
                 className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-slate-900 text-xs"
                 value={formData.annualFee === '' ? undefined : Number(formData.annualFee)}
                 onChange={(v) => setFormData({...formData, annualFee: v === undefined ? '' : String(v)})}
@@ -718,7 +963,11 @@ function StudentsPageContent() {
             </div>
           </div>
 
-          <button type="submit" disabled={isSubmitting || isReadOnly} className="w-full md:w-auto bg-slate-900 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wide shadow-sm disabled:opacity-50">
+          <button 
+            type="submit" 
+            disabled={isSubmitting || isReadOnly}
+            className="w-full md:w-auto bg-slate-900 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wide shadow-sm disabled:opacity-50"
+          >
             {isSubmitting ? <Loader2 className="animate-spin mx-auto" size={14} /> : 'Valider l\'inscription'}
           </button>
         </form>
@@ -732,11 +981,11 @@ function StudentsPageContent() {
               <tr>
                 {classFilter && isSelectionMode && (
                   <th className="px-4 py-4 text-center">
-                    <input
-                      type="checkbox"
-                      checked={selectAll}
-                      onChange={toggleSelectAll}
-                      className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                    <input 
+                      type="checkbox" 
+                      checked={selectAll} 
+                      onChange={toggleSelectAll} 
+                      className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500" 
                     />
                   </th>
                 )}
@@ -750,9 +999,9 @@ function StudentsPageContent() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan={6} className="p-10 text-center"><Loader2 className="animate-spin mx-auto text-slate-900" size={20} /></td></tr>
+                <tr><td colSpan={7} className="p-10 text-center"><Loader2 className="animate-spin mx-auto text-slate-900" size={20} /></td></tr>
               ) : filteredStudents.length === 0 ? (
-                <tr><td colSpan={6} className="p-8 text-center text-xs font-semibold text-slate-400">Aucun élève trouvé.</td></tr>
+                <tr><td colSpan={7} className="p-8 text-center text-xs font-semibold text-slate-400">Aucun élève trouvé.</td></tr>
               ) : filteredStudents.map((s: StudentRecord) => {
                 const totalFee = Number(s.scolarite_totale || s.annual_fee || 0);
                 const paidFee = Number(s.scolarite_payee || 0);
@@ -760,14 +1009,21 @@ function StudentsPageContent() {
                 const isSettled = paidFee >= totalFee && totalFee > 0;
 
                 return (
-                  <tr key={s.id} className="hover:bg-slate-50/50 transition-colors print:break-inside-avoid">
+                  <tr 
+                    key={s.id} 
+                    onClick={() => goToStudentDetail(s.id)}
+                    className="hover:bg-slate-50/50 transition-colors print:break-inside-avoid cursor-pointer"
+                  >
                     {classFilter && isSelectionMode && (
-                      <td className="px-4 py-3.5 text-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedStudentIds.includes(String(s.id))}
-                          onChange={() => toggleStudentSelection(String(s.id))}
-                          className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                      <td 
+                        className="px-4 py-3.5 text-center"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input 
+                          type="checkbox" 
+                          checked={selectedStudentIds.includes(String(s.id))} 
+                          onChange={() => toggleStudentSelection(String(s.id))} 
+                          className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500" 
                         />
                       </td>
                     )}
@@ -782,22 +1038,36 @@ function StudentsPageContent() {
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3.5 text-center font-medium text-slate-600 text-xs whitespace-nowrap">{s.parent_phone || '---'}</td>
-                    <td className="px-4 py-3.5 text-right font-bold text-slate-900 text-xs">{totalFee.toLocaleString()}</td>
+                    <td className="px-4 py-3.5 text-center font-medium text-slate-600 text-xs whitespace-nowrap">
+                      {s.parent_phone || <span className="text-slate-300">-</span>}
+                    </td>
+                    <td className="px-4 py-3.5 text-right font-black text-slate-900 text-xs">
+                      {totalFee.toLocaleString()}
+                    </td>
                     <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                      <span className={`text-xs font-black ${isSettled ? 'text-emerald-600' : 'text-amber-600'}`}>
-                        {paidFee.toLocaleString()}
+                      <span className={`inline-block px-2 py-1 rounded-md font-bold text-[10px] ${isSettled ? 'bg-emerald-50 text-emerald-700' : paidFee > 0 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                        {paidFee.toLocaleString()} FCFA
                       </span>
                     </td>
                     <td className="px-4 py-3.5 text-center">
-                      <span className={`px-2 py-0.5 rounded text-xs font-black ${examAvg >= 10 ? 'text-emerald-700 bg-emerald-50 print:bg-transparent' : 'text-rose-700 bg-rose-50 print:bg-transparent'}`}>
-                        {examAvg.toFixed(2)}/20
+                      <span className={`font-black text-xs ${examAvg >= 10 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                        {examAvg.toFixed(2)}
                       </span>
                     </td>
-                    <td className="px-6 py-3.5 text-right whitespace-nowrap print:hidden">
-                      <div className="flex justify-end gap-3 items-center">
-                        <button onClick={() => !isReadOnly && setConfirmDeleteId(String(s.id))} disabled={isReadOnly} className={`transition-colors ${isReadOnly ? 'text-slate-100 cursor-not-allowed' : 'text-slate-300 hover:text-rose-600'}`}><Trash2 size={14} /></button>
-                        <Link href={`/students/${s.id}`} className="h-8 w-8 bg-slate-900 text-white rounded-lg flex items-center justify-center shadow-sm active:scale-95"><ArrowUpRight size={15} /></Link>
+                    <td 
+                      className="px-6 py-3.5 text-right print:hidden"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-end gap-2">
+                        {!isReadOnly && (
+                          <button
+                            onClick={() => setConfirmDeleteId(String(s.id))}
+                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                            title="Radier l'élève"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -808,12 +1078,12 @@ function StudentsPageContent() {
         </div>
       </div>
 
-      {/* 📱 AFFICHAGE SMARTPHONE (MOBILE-ONLY) : Liste de fiches fluides et optimisées au toucher */}
-      <div className="block md:hidden space-y-2.5 print:block">
+      {/* 📱 AFFICHAGE ÉCRANS SMARTPHONES (MOBILE) : Cartes empilées compactes */}
+      <div className="grid grid-cols-1 gap-2.5 px-3 sm:px-0 md:hidden print:hidden">
         {loading ? (
-          <div className="py-10 text-center"><Loader2 className="animate-spin mx-auto text-slate-900" size={20} /></div>
+          <div className="p-10 text-center bg-white rounded-xl"><Loader2 className="animate-spin mx-auto text-slate-900" size={20} /></div>
         ) : filteredStudents.length === 0 ? (
-          <p className="text-xs font-semibold text-slate-400 py-6 text-center">Aucun étudiant trouvé.</p>
+          <div className="p-8 text-center text-xs font-semibold text-slate-400 bg-white rounded-xl">Aucun élève trouvé.</div>
         ) : filteredStudents.map((s: StudentRecord) => {
           const totalFee = Number(s.scolarite_totale || s.annual_fee || 0);
           const paidFee = Number(s.scolarite_payee || 0);
@@ -821,52 +1091,63 @@ function StudentsPageContent() {
           const isSettled = paidFee >= totalFee && totalFee > 0;
 
           return (
-            <div key={s.id} className="bg-white p-3.5 rounded-none border-b border-slate-100 shadow-none flex flex-col gap-2.5 print:break-inside-avoid print:border-b">
-              {/* Entête de carte : Identité & Note */}
-              <div className="flex items-center gap-3">
-                {classFilter && isSelectionMode && (
-                  <label className="inline-flex items-center justify-center h-9 w-9 rounded-lg bg-slate-50 border border-slate-200 text-slate-600">
-                    <input
-                      type="checkbox"
-                      checked={selectedStudentIds.includes(String(s.id))}
-                      onChange={() => toggleStudentSelection(String(s.id))}
-                      className="h-4 w-4 rounded border-slate-300 text-green-600"
+            <div 
+              key={s.id} 
+              onClick={() => goToStudentDetail(s.id)}
+              className="bg-white p-3.5 rounded-xl border border-slate-100 shadow-sm space-y-3 cursor-pointer active:bg-slate-50 hover:bg-slate-50/70 transition-colors"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {classFilter && isSelectionMode && (
+                    <input 
+                      type="checkbox" 
+                      checked={selectedStudentIds.includes(String(s.id))} 
+                      onChange={() => toggleStudentSelection(String(s.id))} 
+                      onClick={(e) => e.stopPropagation()}
+                      className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 mr-1 shrink-0" 
                     />
-                  </label>
-                )}
-                <div className="h-9 w-9 rounded-lg bg-slate-900 text-white flex items-center justify-center font-black text-xs uppercase shrink-0">
-                  {s.first_name?.[0]}{s.last_name?.[0]}
+                  )}
+                  <div className="h-8 w-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-black text-xs uppercase shrink-0">
+                    {s.first_name?.[0]}{s.last_name?.[0]}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-bold text-slate-900 text-xs uppercase truncate">{s.last_name} <span className="capitalize font-medium text-slate-700">{s.first_name}</span></p>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-tight mt-0.5">{s.classes?.name || 'Inconnu'}</p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-slate-900 text-xs sm:text-sm truncate uppercase">{s.last_name} {s.first_name}</p>
-                  <p className="text-[10px] font-bold text-slate-400 truncate uppercase">{s.classes?.name || 'Sans Division'}</p>
-                </div>
-                <div className={`px-2 py-0.5 rounded font-black text-[10px] shrink-0 ${examAvg >= 10 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                  {examAvg.toFixed(1)}/20
-                </div>
-              </div>
-              
-              {/* Détails financiers tactiles */}
-              <div className="grid grid-cols-2 bg-slate-50 p-2 rounded-lg text-[11px] gap-1">
-                <div>
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Dû Annuel</span>
-                  <span className="font-bold text-slate-900">{totalFee.toLocaleString()} F</span>
-                </div>
-                <div className="text-right">
-                  <span className="text-slate-400 block text-[9px] uppercase font-bold">Total Payé</span>
-                  <span className={`font-black ${isSettled ? 'text-emerald-600' : 'text-amber-600'}`}>{paidFee.toLocaleString()} F</span>
+
+                <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  {s.parent_phone && (
+                    <a 
+                      href={`tel:${s.parent_phone}`} 
+                      className="h-7 w-7 bg-emerald-50 text-emerald-700 rounded-lg flex items-center justify-center border border-emerald-100"
+                    >
+                      <Phone size={12} />
+                    </a>
+                  )}
+                  {!isReadOnly && (
+                    <button 
+                      onClick={() => setConfirmDeleteId(String(s.id))} 
+                      className="h-7 w-7 bg-rose-50 text-rose-600 rounded-lg flex items-center justify-center border border-rose-100"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Pied de carte : Contact parent & Actions */}
-              <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-                <div className="flex items-center gap-1 text-slate-500 font-bold text-[10px]">
-                  <Phone size={11} className="text-slate-400" />
-                  <span>{s.parent_phone || '---'}</span>
+              <div className="grid grid-cols-3 gap-2 pt-2.5 border-t border-slate-50 text-center">
+                <div className="bg-slate-50/60 p-1.5 rounded-lg">
+                  <p className="text-[8px] font-bold text-slate-400 uppercase">Scolarité</p>
+                  <p className="text-[10px] font-black text-slate-800 mt-0.5">{totalFee.toLocaleString()}</p>
                 </div>
-                <div className="flex items-center gap-4 print:hidden">
-                  <button onClick={() => !isReadOnly && setConfirmDeleteId(String(s.id))} disabled={isReadOnly} className={`${isReadOnly ? 'text-slate-100' : 'text-slate-300 hover:text-rose-600'}`}><Trash2 size={14} /></button>
-                  <Link href={`/students/${s.id}`} className="h-7 w-7 bg-slate-900 text-white rounded-lg flex items-center justify-center shadow-sm"><ArrowUpRight size={14} /></Link>
+                <div className="bg-slate-50/60 p-1.5 rounded-lg">
+                  <p className="text-[8px] font-bold text-slate-400 uppercase">Payé</p>
+                  <p className={`text-[10px] font-black mt-0.5 ${isSettled ? 'text-emerald-600' : 'text-amber-600'}`}>{paidFee.toLocaleString()}</p>
+                </div>
+                <div className="bg-slate-50/60 p-1.5 rounded-lg">
+                  <p className="text-[8px] font-bold text-slate-400 uppercase">Moyenne</p>
+                  <p className={`text-[10px] font-black mt-0.5 ${examAvg >= 10 ? 'text-indigo-600' : 'text-rose-600'}`}>{examAvg.toFixed(2)}/20</p>
                 </div>
               </div>
             </div>
@@ -878,7 +1159,7 @@ function StudentsPageContent() {
       <style jsx global>{`
         @media print {
           body { background: white; color: black; font-size: 11px; }
-          .print\\:hidden { display: none !important; }
+          .print\:hidden { display: none !important; }
           .no-scrollbar::-webkit-scrollbar { display: none; }
           table { width: 100% !important; border-collapse: collapse; }
           th, td { border-bottom: 1px solid #e2e8f0 !important; padding: 6px !important; }
@@ -892,7 +1173,63 @@ function StudentsPageContent() {
             <p className="font-black text-slate-900 text-xs uppercase mb-4">Confirmer la suppression ?</p>
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => handleDeleteStudent(confirmDeleteId)} className="bg-rose-600 text-white py-2 rounded-lg font-bold text-xs uppercase">Supprimer</button>
-              <button onClick={() => setConfirmDeleteId(null)} className="bg-slate-100 text-slate-500 py-2 rounded-lg font-bold text-xs uppercase">Annuler</button>
+              <button onClick={() => setConfirmDeleteId(null)} className="bg-slate-100 text-slate-700 py-2 rounded-lg font-bold text-xs uppercase">Annuler</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal d'export PDF : choix d'inclure ou non les données financières */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/30 backdrop-blur-sm print:hidden">
+          <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm border border-slate-100">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0">
+                  <FileDown size={16} />
+                </div>
+                <div>
+                  <p className="font-black text-slate-900 text-sm uppercase tracking-tight">Export PDF</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase">Registre des élèves</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="text-slate-400 hover:text-slate-600"
+                disabled={isExporting}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="text-xs font-semibold text-slate-600 mt-4 mb-4">
+              Souhaitez-vous inclure les données financières (frais, montants payés et restant dû) dans le document exporté ?
+            </p>
+
+            <div className="space-y-2">
+              <button
+                onClick={() => generatePdf(true)}
+                disabled={isExporting}
+                className="w-full flex items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-200 hover:border-slate-900 hover:bg-slate-50 transition-all text-left disabled:opacity-50"
+              >
+                <div>
+                  <p className="font-black text-xs text-slate-900 uppercase">Avec données financières</p>
+                  <p className="text-[10px] font-semibold text-slate-400 mt-0.5">Frais, paiements et soldes restants inclus</p>
+                </div>
+                {isExporting ? <Loader2 className="animate-spin text-slate-900" size={16} /> : <DollarSign size={16} className="text-emerald-600 shrink-0" />}
+              </button>
+
+              <button
+                onClick={() => generatePdf(false)}
+                disabled={isExporting}
+                className="w-full flex items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-200 hover:border-slate-900 hover:bg-slate-50 transition-all text-left disabled:opacity-50"
+              >
+                <div>
+                  <p className="font-black text-xs text-slate-900 uppercase">Sans données financières</p>
+                  <p className="text-[10px] font-semibold text-slate-400 mt-0.5">Identité, classe et résultats académiques uniquement</p>
+                </div>
+                {isExporting ? <Loader2 className="animate-spin text-slate-900" size={16} /> : <Lock size={16} className="text-slate-400 shrink-0" />}
+              </button>
             </div>
           </div>
         </div>

@@ -21,20 +21,20 @@ export const ROLES_CONFIG: Record<RoleType, RoleInfo> = {
     label: "Promoteur",
     pin: "4210",
     description: "Propriétaire & Administration totale",
-    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/finance', '/bulletins', '/performance', '/admin/settings'],
+    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/finance', '/bulletins', '/performance', '/admin/settings', '/recouvrement'],
   },
   [ROLES.COMPTABLE]: {
     label: "Comptable",
     pin: "4321",
     description: "Gestion financière & Recouvrements",
-    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/finance', '/performance', '/admin/settings'],
+    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/finance', '/performance', '/admin/settings', '/recouvrement'],
   },
   [ROLES.DIRECTEUR]: {
     label: "Directeur",
     pin: "1228",
     description: "Gestion pédagogique & Personnel",
     // ❌ Pas d'accès à /finance
-    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/bulletins', '/performance', '/admin/settings', ],
+    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/bulletins', '/performance', '/admin/settings', '/recouvrement' ],
   },
   [ROLES.CAISSIER]: {
     label: "Caissier",

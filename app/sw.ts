@@ -1,132 +1,163 @@
-import { defaultCache } from '@serwist/next/worker';
-import type { PrecacheEntry, SerwistGlobalConfig } from 'serwist';
-import {
-  Serwist,
-  CacheFirst,
-  NetworkFirst,
-  ExpirationPlugin,
-} from 'serwist';
+import { defaultCache } from "@serwist/next/worker";
+import type { PrecacheEntry } from "serwist";
+import { Serwist, CacheFirst, NetworkOnly, StaleWhileRevalidate } from "serwist";
 
+// 1. Déclarations des types globaux
 declare global {
-  interface WorkerGlobalScope extends SerwistGlobalConfig {
+  interface WorkerGlobalScope {
     __SW_MANIFEST: (PrecacheEntry | string)[] | undefined;
   }
 }
 
 declare const self: ServiceWorkerGlobalScope;
 
+// Ligne obligatoire pour le bundler
+const manifest = self.__SW_MANIFEST;
+
+// 2. Configuration des stratégies de cache avec Serwist
 const serwist = new Serwist({
-  precacheEntries: self.__SW_MANIFEST,
+  precacheEntries: manifest,
   skipWaiting: true,
   clientsClaim: true,
   navigationPreload: true,
 
   runtimeCaching: [
-    // Supabase API
+    // API Supabase - Stale-While-Revalidate pour les GET
     {
-      matcher: ({ url }) => url.origin === 'https://your-supabase-url.supabase.co',
-      handler: new CacheFirst({
-        cacheName: 'supabase-api-cache',
+      matcher: ({ url, request }) => {
+        return url.origin === "https://your-supabase-url.supabase.co" && request.method === "GET";
+      },
+      handler: new StaleWhileRevalidate({
+        cacheName: "supabase-api-cache",
+        // Dans Serwist, l'expiration se passe dans la liste des plugins de la stratégie
         plugins: [
-          new ExpirationPlugin({
-            maxEntries: 500,
-            maxAgeSeconds: 7 * 24 * 60 * 60, // 7 jours
-          }),
-        ],
+          {
+            cacheWillUpdate: async ({ response }) => response,
+          }
+        ]
       }),
     },
 
-    // Images externes
+    // API Supabase POST/PUT/DELETE - Network only (pas de cache)
     {
-      matcher: ({ url }) => url.origin === 'https://ui-avatars.com',
-      handler: new CacheFirst({
-        cacheName: 'external-images-cache',
-        plugins: [
-          new ExpirationPlugin({
-            maxEntries: 100,
-            maxAgeSeconds: 30 * 24 * 60 * 60, // 30 jours
-          }),
-        ],
+      matcher: ({ url, request }) => {
+        return (
+          url.origin === "https://your-supabase-url.supabase.co" &&
+          (request.method === "POST" || request.method === "PUT" || request.method === "DELETE")
+        );
+      },
+      handler: new NetworkOnly({
+        networkTimeoutSeconds: 10,
       }),
     },
 
-    // Assets statiques
+    // Images externes - Cache first
+    {
+      matcher: ({ url }) => url.origin === "https://ui-avatars.com",
+      handler: new CacheFirst({
+        cacheName: "external-images-cache",
+      }),
+    },
+
+    // Assets statiques (JS, CSS) - Cache first
     {
       matcher: ({ request }) =>
-        request.destination === 'style' ||
-        request.destination === 'script' ||
-        request.destination === 'font',
+        request.destination === "style" || request.destination === "script" || request.destination === "font",
       handler: new CacheFirst({
-        cacheName: 'static-assets-cache',
-        plugins: [
-          new ExpirationPlugin({
-            maxEntries: 200,
-            maxAgeSeconds: 30 * 24 * 60 * 60, // 30 jours
-          }),
-        ],
+        cacheName: "static-assets-cache",
       }),
     },
 
-    // Pages HTML
+    // Documents HTML - Stale-While-Revalidate
     {
-      matcher: ({ request }) => request.destination === 'document',
-      handler: new NetworkFirst({
-        cacheName: 'html-pages-cache',
-        networkTimeoutSeconds: 5,
-        plugins: [
-          new ExpirationPlugin({
-            maxEntries: 50,
-            maxAgeSeconds: 24 * 60 * 60, // 24 heures
-          }),
-        ],
+      matcher: ({ request }) => request.destination === "document",
+      handler: new StaleWhileRevalidate({
+        cacheName: "html-pages-cache",
       }),
     },
 
+    // Autres requêtes par défaut
     ...defaultCache,
   ],
 
+  // Gestion de la page offline
   fallbacks: {
     entries: [
       {
-        url: '/offline',
+        url: "/offline",
         matcher({ request }) {
-          return request.destination === 'document';
+          return request.destination === "document";
         },
       },
     ],
   },
 });
 
-// Gestion des messages de communication (Ex: Demande de synchronisation)
-self.addEventListener('message', (event) => {
-  if (event.data?.type === 'SKIP_WAITING') {
+// 3. Événement pour gérer les messages du client
+self.addEventListener("message", (event) => {
+  if (!event.data) return;
+
+  if (event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
 
-  if (event.data?.type === 'SYNC_OFFLINE_DATA') {
+  if (event.data.type === "SYNC_OFFLINE_DATA") {
     event.waitUntil(
       (async () => {
-        const clients = await self.clients.matchAll();
-        clients.forEach((client) => {
-          client.postMessage({
-            type: 'SYNC_OFFLINE_DATA_REQUEST',
-            timestamp: Date.now(),
+        try {
+          const clients = await self.clients.matchAll();
+          clients.forEach((client) => {
+            client.postMessage({
+              type: "SYNC_OFFLINE_DATA_REQUEST",
+              timestamp: Date.now(),
+            });
           });
-        });
+        } catch (error) {
+          console.error("Erreur lors du sync en arrière-plan:", error);
+        }
+      })()
+    );
+  }
+
+  if (event.data.type === "BACKGROUND_PRELOAD") {
+    event.waitUntil(
+      (async () => {
+        try {
+          const clients = await self.clients.matchAll();
+          clients.forEach((client) => {
+            client.postMessage({
+              type: "BACKGROUND_PRELOAD_REQUEST",
+              timestamp: Date.now(),
+            });
+          });
+        } catch (error) {
+          console.error("Erreur lors du préchargement en arrière-plan:", error);
+        }
       })()
     );
   }
 });
 
-// Les événements standards 'install' et 'activate' restants sont optionnels 
-// mais préservés s'ils sont nécessaires au cycle de vie de tes composants tiers.
-self.addEventListener('install', (event) => {
-  event.waitUntil(self.skipWaiting());
+// 4. Nettoyage personnalisé des anciens caches
+self.addEventListener("activate", (event) => {
+  console.log("Service Worker activating & cleaning custom caches...");
+  event.waitUntil(
+    (async () => {
+      const cacheNames = await caches.keys();
+      const cachesToDelete = cacheNames.filter(
+        (name) =>
+          !name.includes("supabase-api-cache") &&
+          !name.includes("external-images-cache") &&
+          !name.includes("static-assets-cache") &&
+          !name.includes("html-pages-cache") &&
+          !name.includes("serwist") &&
+          !name.includes("workbox")
+      );
+
+      await Promise.all(cachesToDelete.map((name) => caches.delete(name)));
+    })()
+  );
 });
 
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
-});
-
-// Point d'entrée principal Serwist pour l'écoute globale
+// 5. Initialisation
 serwist.addEventListeners();

@@ -20,7 +20,11 @@ export default function ClassesPage() {
 
   const fetchClasses = useCallback(async () => {
     if (!selectedYearId) return;
-    setLoading(true);
+
+    // Suppression du setLoading(true) bloquant s'il y a déjà des données affichées à l'écran
+    if (classes.length === 0) {
+      setLoading(true);
+    }
 
     const { data, error } = await offlineFetch<any[]>(`classes:${selectedYearId}`, async () => {
       return await supabase
@@ -36,7 +40,7 @@ export default function ClassesPage() {
 
     setClasses(data || []);
     setLoading(false);
-  }, [selectedYearId]);
+  }, [selectedYearId, classes.length]);
 
   useEffect(() => { 
     if (!yearLoading && selectedYearId) {
@@ -217,8 +221,9 @@ export default function ClassesPage() {
             />
           </div>
 
-          {loading ? (
-            <div className="flex items-center gap-3 text-slate-500 p-6"><Loader2 className="animate-spin"/> Chargement...</div>
+          {/* L'indicateur de chargement global ne bloque la vue que si l'état local contient 0 classe */}
+          {loading && classes.length === 0 ? (
+            <div className="flex items-center gap-3 text-slate-500 p-6"><Loader2 className="animate-spin text-green-600"/> Chargement des classes...</div>
           ) : filteredClasses.length === 0 ? (
             <div className="bg-white text-center p-12 rounded-3xl border border-dashed border-slate-200 text-slate-500">Aucune classe enregistrée.</div>
           ) : (

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, cloneElement, useRef } from 'react';
+import { useState, useEffect, cloneElement, useRef, useCallback } from 'react';
 import { supabase } from '@/utils/supabase';
 import { offlineFetch } from '@/utils/offlineApi';
+import { getLocalCache, setLocalCache } from '@/utils/offlineStorage'; // Ajout pour la revalidation directe
 import { useYear } from '@/context/YearContext';
 import { 
   Users, TrendingUp, Clock, 
@@ -14,6 +15,7 @@ import {
 export default function Dashboard() {
   // Récupération de l'état global de l'année scolaire
   const { selectedYearId, selectedYear, years, isLoading, isReadOnly, changeYear } = useYear();
+
   const [stats, setStats] = useState({
     totalStudents: 0,
     totalClasses: 0,
@@ -22,10 +24,12 @@ export default function Dashboard() {
     totalExpected: 0,
     totalExpenses: 0,
   });
+
   const [recentPayments, setRecentPayments] = useState<any[]>([]);
   const [criticalDebtors, setCriticalDebtors] = useState<any[]>([]);
   const [classDistribution, setClassDistribution] = useState<any[]>([]);
   const [recentIncidents, setRecentIncidents] = useState<any[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
 
@@ -59,92 +63,96 @@ export default function Dashboard() {
   const currentMonth = new Date().toLocaleDateString('fr-FR', { month: 'long' });
   const formattedMonth = currentMonth.charAt(0).toUpperCase() + currentMonth.slice(1);
 
-  useEffect(() => {
-    if (selectedYearId) {
-      fetchDashboardData();
-    }
-  }, [selectedYearId]);
+  // Utilisation de useCallback pour stabiliser la fonction et éviter les re-renders infinis
+ const fetchDashboardData = useCallback(async (yearId: number) => {
+    // 1. TENTATIVE DE CHARGEMENT DU CACHE IMMÉDIAT (Évite le loading bloquant)
+    const cachedDashboard = await getLocalCache<{
+      stats: typeof stats;
+      recentPayments: any[];
+      criticalDebtors: any[];
+      classDistribution: any[];
+      recentIncidents: any[];
+    }>(`dashboard_compiled_data:${yearId}`);
 
-  const fetchDashboardData = async () => {
-    setLoading(true);
+    if (cachedDashboard) {
+      setStats(cachedDashboard.stats);
+      setRecentPayments(cachedDashboard.recentPayments);
+      setCriticalDebtors(cachedDashboard.criticalDebtors);
+      setClassDistribution(cachedDashboard.classDistribution);
+      setRecentIncidents(cachedDashboard.recentIncidents);
+      setLoading(false); // On coupe immédiatement le chargement visuel
+    } else {
+      setLoading(true);
+    }
+
+    // 2. REQUÊTE ET REVALIDATION EN ARRIÈRE-PLAN
     try {
-      const { data: students, error: studentsError } = await offlineFetch<any[]>(
-        `dashboard_students:${selectedYearId}`,
-        async () => {
+      // Extraction parallèle des données via offlineFetch pour maintenir tes durées de cache
+      const [
+        studentsRes,
+        classesRes,
+        teachersRes,
+        paymentsRes,
+        expensesRes,
+        disciplineRes
+      ] = await Promise.all([
+        offlineFetch<any[]>(`dashboard_students:${yearId}`, async () => {
           return await supabase
             .from('students')
             .select('id, first_name, last_name, scolarite_totale, scolarite_payee, class_id')
-            .eq('academic_year_id', selectedYearId);
-        },
-        { cacheDuration: 3600 } // Cache 1 heure
-      );
+            .eq('academic_year_id', yearId);
+        }, { cacheDuration: 3600 }),
 
-      if (studentsError && !students) throw studentsError;
-
-      const { data: classes, error: classesError } = await offlineFetch<any[]>(
-        `dashboard_classes:${selectedYearId}`,
-        async () => {
+        offlineFetch<any[]>(`dashboard_classes:${yearId}`, async () => {
           return await supabase
             .from('classes')
             .select('id, name')
-            .eq('academic_year_id', selectedYearId);
-        },
-        { cacheDuration: 3600 }
-      );
+            .eq('academic_year_id', yearId);
+        }, { cacheDuration: 3600 }),
 
-      if (classesError && !classes) throw classesError;
-
-      const { data: teacherData, error: teacherError } = await offlineFetch<any[]>(
-        `dashboard_teachers:${selectedYearId}`,
-        async () => {
+        offlineFetch<any[]>(`dashboard_teachers:${yearId}`, async () => {
           return await supabase
             .from('teachers')
             .select('id')
-            .eq('academic_year_id', selectedYearId);
-        },
-        { cacheDuration: 3600 }
-      );
+            .eq('academic_year_id', yearId);
+        }, { cacheDuration: 3600 }),
 
-      const teacherCount = teacherData?.length || 0;
-
-      const { data: payments, error: paymentsError } = await offlineFetch<any[]>(
-        `dashboard_payments:${selectedYearId}`,
-        async () => {
+        offlineFetch<any[]>(`dashboard_payments:${yearId}`, async () => {
           return await supabase
             .from('payments')
             .select('id, amount, created_at, student_id')
-            .eq('academic_year_id', selectedYearId)
+            .eq('academic_year_id', yearId)
             .order('created_at', { ascending: false });
-        },
-        { cacheDuration: 1800 } // Cache 30 min
-      );
+        }, { cacheDuration: 1800 }),
 
-      if (paymentsError && !payments) throw paymentsError;
-
-      const { data: expenses } = await offlineFetch<any[]>(
-        `dashboard_expenses:${selectedYearId}`,
-        async () => {
+        offlineFetch<any[]>(`dashboard_expenses:${yearId}`, async () => {
           return await supabase
             .from('expenses')
             .select('amount')
-            .eq('academic_year_id', selectedYearId);
-        },
-        { cacheDuration: 3600 }
-      );
+            .eq('academic_year_id', yearId);
+        }, { cacheDuration: 3600 }),
 
-      const { data: discipline } = await offlineFetch<any[]>(
-        `dashboard_discipline:${selectedYearId}`,
-        async () => {
+        offlineFetch<any[]>(`dashboard_discipline:${yearId}`, async () => {
           return await supabase
             .from('discipline')
             .select('id, reason, severity, incident_date, student_id')
-            .eq('academic_year_id', selectedYearId)
+            .eq('academic_year_id', yearId)
             .order('incident_date', { ascending: false })
             .range(0, 2);
-        },
-        { cacheDuration: 1800 }
-      ).then(result => ({ data: result.data }));
+        }, { cacheDuration: 1800 }).then(result => ({ data: result.data, error: result.error }))
+      ]);
 
+      if (studentsRes.error && !studentsRes.data) throw studentsRes.error;
+      if (classesRes.error && !classesRes.data) throw classesRes.error;
+
+      const students = studentsRes.data;
+      const classes = classesRes.data;
+      const teacherCount = teachersRes.data?.length || 0;
+      const payments = paymentsRes.data;
+      const expenses = expensesRes.data;
+      const discipline = disciplineRes.data;
+
+      // Traitement et formatage des structures de données
       const classMap: Record<string, string> = {};
       classes?.forEach((c: { id: string | number; name: string; }) => { classMap[c.id] = c.name; });
 
@@ -195,35 +203,53 @@ export default function Dashboard() {
         studentName: studentMap[d.student_id]?.fullName || 'Élève'
       }));
 
-      setStats({
+      const finalStats = {
         totalStudents: students?.length || 0,
         totalClasses: classes?.length || 0,
         totalTeachers: teacherCount || 0,
         totalCollected: collected,
         totalExpected: expected,
         totalExpenses: totalExp
-      });
+      };
+
+      // Injection fluide des états mis à jour (sans coupure visuelle)
+      setStats(finalStats);
       setRecentPayments(enrichedPayments);
       setCriticalDebtors(debtors);
       setClassDistribution(distribution);
       setRecentIncidents(enrichedIncidents);
 
+      // Sauvegarde du dashboard compilé localement pour la prochaine ouverture instantanée
+      await setLocalCache(`dashboard_compiled_data:${yearId}`, {
+        stats: finalStats,
+        recentPayments: enrichedPayments,
+        criticalDebtors: debtors,
+        classDistribution: distribution,
+        recentIncidents: enrichedIncidents
+      });
+
     } catch (error) {
-      console.error('Erreur lors du chargement du dashboard:', error);
+      console.error('Erreur lors du rafraîchissement du dashboard:', error);
     } finally {
-      loading && setLoading(false);
+      setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (selectedYearId) {
+      fetchDashboardData(selectedYearId);
+    }
+  }, [selectedYearId, fetchDashboardData]);
 
   const remaining = stats.totalExpected - stats.totalCollected;
   const recoveryRate = stats.totalExpected > 0 ? Math.round((stats.totalCollected / stats.totalExpected) * 100) : 0;
   const netCaisse = stats.totalCollected - stats.totalExpenses;
-
   const mobileRadius = 50;
   const mobileCircumference = 2 * Math.PI * mobileRadius;
   const mobileStrokeDashoffset = mobileCircumference - (recoveryRate / 100) * mobileCircumference;
 
-  if (loading) {
+  // L'écran blanc de chargement n'apparaît que si l'application n'a absolument rien en mémoire cache (ex: premier démarrage)
+  if (loading && stats.totalExpected === 0) {
     return (
       <div className="w-full min-h-[500px] flex flex-col items-center justify-center p-6 bg-slate-50">
         <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4" />

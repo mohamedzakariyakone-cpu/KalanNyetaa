@@ -1,18 +1,21 @@
 'use client';
 
-import { useState, useEffect, useCallback, cloneElement } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { supabase } from '@/utils/supabase';
+import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
+import { useYear } from '@/context/YearContext';
 import { 
   Wallet, ShieldAlert, ArrowLeft, Plus, 
   Loader2, AlertTriangle, Phone, MapPin, 
-  Edit3, X, CheckCircle2, Settings2, Save, Receipt, Trash2
+  Edit3, X, CheckCircle2, Settings2, Save, Receipt, Trash2, Lock
 } from 'lucide-react';
 import Link from 'next/link';
-import NumericInput from '@/components/NumericInput';
 
 export default function StudentDetails() {
   const { id } = useParams();
+  const { isReadOnly } = useYear();
+  
   const [student, setStudent] = useState<any>(null);
   const [payments, setPayments] = useState<any[]>([]);
   const [extraPayments, setExtraPayments] = useState<any[]>([]);
@@ -43,18 +46,37 @@ export default function StudentDetails() {
     payment_plan_tranches: 1
   });
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  // Fetch initial : Ne met "loading" à true QUE si on n'a pas encore de données de l'élève
+  const fetchData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
-      // Jointure sécurisée à plat sur classes
-      const { data: st } = await supabase.from('students').select('*, classes(name)').eq('id', id).single();
-      const { data: pay } = await supabase.from('payments').select('*').eq('student_id', id).order('created_at', { ascending: false });
-      const { data: inc } = await supabase.from('discipline').select('*').eq('student_id', id).order('incident_date', { ascending: false });
-      const { data: exPay } = await supabase.from('student_extra_payments').select('*, extra_fee_types(name)').eq('student_id', id).order('payment_date', { ascending: false });
-      const { data: exTypes } = await supabase.from('extra_fee_types').select('*');
+      // 1. Profil de l'élève
+      const { data: st } = await offlineFetch<any>(`student:${id}`, async () => {
+        return await supabase.from('students').select('*, classes(name)').eq('id', id).single();
+      });
 
-      setStudent(st);
+      // 2. Journal de scolarité
+      const { data: pay } = await offlineFetch<any[]>(`payments:${id}`, async () => {
+        return await supabase.from('payments').select('*').eq('student_id', id).order('created_at', { ascending: false });
+      });
+
+      // 3. Discipline
+      const { data: inc } = await offlineFetch<any[]>(`discipline:${id}`, async () => {
+        return await supabase.from('discipline').select('*').eq('student_id', id).order('incident_date', { ascending: false });
+      });
+
+      // 4. Paiements Annexes
+      const { data: exPay } = await offlineFetch<any[]>(`extra_payments:${id}`, async () => {
+        return await supabase.from('student_extra_payments').select('*, extra_fee_types(name)').eq('student_id', id).order('payment_date', { ascending: false });
+      });
+
+      // 5. Types de frais généraux
+      const { data: exTypes } = await offlineFetch<any[]>(`extra_fee_types`, async () => {
+        return await supabase.from('extra_fee_types').select('*');
+      });
+
       if (st) {
+        setStudent(st);
         setEditForm({
           first_name: st.first_name || '',
           last_name: st.last_name || '',
@@ -63,7 +85,7 @@ export default function StudentDetails() {
           annual_fee: Number(st.scolarite_totale || st.annual_fee || 0),
           payment_plan_tranches: st.payment_plan_tranches || 1
         });
-        setNewAvg(st.last_exam_avg ? String(st.last_exam_avg) : '');
+        setNewAvg(st.last_exam_avg !== null && st.last_exam_avg !== undefined ? String(st.last_exam_avg) : '');
       }
       setPayments(pay || []);
       setIncidents(inc || []);
@@ -76,9 +98,10 @@ export default function StudentDetails() {
     }
   }, [id]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { 
+    if (id) fetchData(false); 
+  }, [id, fetchData]);
 
-  // Fonction pour formater le prix à la saisie (ex: 50000 -> 50 000)
   const formatInputDisplay = (val: string) => {
     const clean = val.replace(/\s/g, '');
     if (!clean) return '';
@@ -105,91 +128,223 @@ export default function StudentDetails() {
     window.open(`https://wa.me/${cleanNumber}?text=${message}`, '_blank');
   };
 
-  // Mise à jour de la moyenne de l'élève en direct
+  // ⚡ INSTANTANÉ : Mise à jour de la moyenne de l'élève
   const handleUpdateAvg = async (e: React.FormEvent) => {
     e.preventDefault();
-    setUpdatingAvg(true);
-    const { error } = await supabase
-      .from('students')
-      .update({ last_exam_avg: newAvg === '' ? null : parseFloat(newAvg) })
-      .eq('id', id);
+    setShowAvgForm(false); // On ferme directement le volet pour le confort visuel
+
+    const numericAvg = newAvg === '' ? null : parseFloat(newAvg);
+    const backupAvg = student?.last_exam_avg;
+
+    // Mise à jour optimiste immédiate de l'UI
+    setStudent((prev: any) => prev ? { ...prev, last_exam_avg: numericAvg } : null);
+
+    const { error } = await offlineWrite({
+      table: 'students',
+      action: 'UPDATE',
+      payload: { last_exam_avg: numericAvg },
+      options: { keyColumn: 'id', keyValue: Array.isArray(id) ? id[0] : id },
+      cacheKey: `student:${id}`,
+      optimisticUpdate: () => {}
+    });
     
-    if (!error) {
-      setShowAvgForm(false);
-      fetchData();
+    if (error) {
+      // Rollback si problème
+      setStudent((prev: any) => prev ? { ...prev, last_exam_avg: backupAvg } : null);
+    } else {
+      fetchData(true); // Rafraîchissement silencieux en tâche de fond
     }
-    setUpdatingAvg(false);
   };
 
+  // ⚡ INSTANTANÉ : Mise à jour de la fiche de configuration
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Synchronisation sur scolarite_totale lors du changement du montant annuel
-    const { error } = await supabase
-      .from('students')
-      .update({
-        first_name: editForm.first_name,
-        last_name: editForm.last_name,
-        parent_phone: editForm.parent_phone,
-        address: editForm.address,
-        annual_fee: editForm.annual_fee,
-        scolarite_totale: editForm.annual_fee,
-        payment_plan_tranches: editForm.payment_plan_tranches
-      })
-      .eq('id', id);
-    if (!error) { setIsEditModalOpen(false); fetchData(); }
+    setIsEditModalOpen(false); // On ferme la modal instantanément
+
+    const updatedFields = {
+      first_name: editForm.first_name,
+      last_name: editForm.last_name,
+      parent_phone: editForm.parent_phone,
+      address: editForm.address,
+      annual_fee: editForm.annual_fee,
+      scolarite_totale: editForm.annual_fee,
+      payment_plan_tranches: editForm.payment_plan_tranches
+    };
+    const backupStudent = { ...student };
+
+    // Application instantanée à l'écran
+    setStudent((prev: any) => prev ? { ...prev, ...updatedFields } : null);
+
+    const { error } = await offlineWrite({
+      table: 'students',
+      action: 'UPDATE',
+      payload: updatedFields,
+      options: { keyColumn: 'id', keyValue: Array.isArray(id) ? id[0] : id },
+      cacheKey: `student:${id}`,
+      optimisticUpdate: () => {}
+    });
+
+    if (error) {
+      setStudent(backupStudent); // Rollback
+    } else {
+      fetchData(true); // Sync silencieuse
+    }
   };
 
-  // Encaissement Scolarité
+  // ⚡ INSTANTANÉ : Encaissement Scolarité sans aucun loader
   const handleBasePayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Nettoyage des espaces pour récupérer le nombre pur
+    if (isReadOnly) return;
+
     const payAmount = parseFloat(amount.replace(/\s/g, ''));
     if (isNaN(payAmount)) return;
 
-    // Nouveau calcul cumulatif
+    const currentMonth = month;
     const newCollectedTotal = Number(student?.scolarite_payee || 0) + payAmount;
+    const todayStr = new Date().toISOString().split('T')[0];
 
-    // Insertion transactionnelle dans payments + mise à jour compteur élève
-    const { error: payError } = await supabase.from('payments').insert([{ 
-      student_id: id, 
-      amount: payAmount, 
-      month,
-      academic_year_id: student?.academic_year_id,
-      school_id: student?.school_id
-    }]);
+    // Sauvegarde pour rollback potentiel
+    const backupStudent = { ...student };
+    const backupPayments = [...payments];
+
+    // 1. Mise à jour instantanée des states UI (Compteurs + Ligne du tableau)
+    setStudent((prev: any) => prev ? { ...prev, scolarite_payee: newCollectedTotal, dernier_paiement: todayStr } : null);
+    setPayments((prev) => [
+      { id: `temp-${Date.now()}`, student_id: id, amount: payAmount, month: currentMonth, created_at: new Date().toISOString() },
+      ...prev
+    ]);
+
+    // Nettoyage immédiat des champs de saisie pour donner l'impression de rapidité
+    setAmount(''); 
+    setMonth('');
+
+    // 2. Exécution de la mutation en arrière-plan
+    const { error: payError } = await offlineWrite({
+      table: 'payments',
+      action: 'INSERT',
+      payload: { 
+        student_id: id, 
+        amount: payAmount, 
+        month: currentMonth,
+        academic_year_id: student?.academic_year_id,
+        school_id: student?.school_id
+      },
+      cacheKey: `payments:${id}`,
+      optimisticUpdate: () => {}
+    });
 
     if (!payError) {
-      await supabase.from('students').update({ scolarite_payee: newCollectedTotal, dernier_paiement: new Date().toISOString().split('T')[0] }).eq('id', id);
-      sendReceiptWhatsApp(payAmount, month, 'SCOLAIRE');
-      setAmount(''); setMonth(''); fetchData();
+      await offlineWrite({
+        table: 'students',
+        action: 'UPDATE',
+        payload: { scolarite_payee: newCollectedTotal, dernier_paiement: todayStr },
+        options: { keyColumn: 'id', keyValue: Array.isArray(id) ? id[0] : id },
+        cacheKey: `student:${id}`,
+        optimisticUpdate: () => {}
+      });
+
+      sendReceiptWhatsApp(payAmount, currentMonth, 'SCOLAIRE');
+      fetchData(true); // Resynchronise silencieusement les id réels de la bdd
+    } else {
+      // Rollback immédiat si le serveur ou le cache local renvoie une erreur
+      setStudent(backupStudent);
+      setPayments(backupPayments);
     }
   };
 
+  // ⚡ INSTANTANÉ : Frais Compléments & Annexes
   const handleExtraPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Nettoyage des espaces pour récupérer le nombre pur
+    if (isReadOnly) return;
+
     const payAmount = parseFloat(extraAmount.replace(/\s/g, ''));
     if (isNaN(payAmount)) return;
 
-    const { error } = await supabase.from('student_extra_payments').insert([{
-      student_id: id,
-      fee_type_id: selectedExtraType,
-      amount_paid: payAmount,
-      academic_year_id: student?.academic_year_id,
-      school_id: student?.school_id
-    }]);
+    const typeLabel = extraFeeTypes.find(t => String(t.id) === String(selectedExtraType))?.name || 'Frais Divers';
+    const backupExtraPayments = [...extraPayments];
+
+    // Injection visuelle immédiate dans le journal comptable
+    setExtraPayments((prev) => [
+      { 
+        id: `temp-extra-${Date.now()}`, 
+        student_id: id, 
+        fee_type_id: selectedExtraType, 
+        amount_paid: payAmount, 
+        payment_date: new Date().toISOString(),
+        extra_fee_types: { name: typeLabel }
+      },
+      ...prev
+    ]);
+
+    setExtraAmount('');
+    setSelectedExtraType('');
+
+    const { error } = await offlineWrite({
+      table: 'student_extra_payments',
+      action: 'INSERT',
+      payload: {
+        student_id: id,
+        fee_type_id: selectedExtraType,
+        amount_paid: payAmount,
+        academic_year_id: student?.academic_year_id,
+        school_id: student?.school_id
+      },
+      cacheKey: `extra_payments:${id}`,
+      optimisticUpdate: () => {}
+    });
 
     if (!error) {
-      const typeLabel = extraFeeTypes.find(t => t.id === selectedExtraType)?.name;
-      sendReceiptWhatsApp(payAmount, typeLabel || 'Frais Divers', 'EXTRA');
-      setExtraAmount(''); fetchData();
+      sendReceiptWhatsApp(payAmount, typeLabel, 'EXTRA');
+      fetchData(true);
+    } else {
+      setExtraPayments(backupExtraPayments); // Rollback
     }
   };
 
-  if (loading) return <div className="flex justify-center p-20"><Loader2 className="animate-spin text-[#1763FF]" size={40} /></div>;
+  // ⚡ INSTANTANÉ : Incident disciplinaire
+  const handleAddIncident = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isReadOnly) return;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const currentReason = reason;
+    const currentSeverity = severity;
+    const backupIncidents = [...incidents];
+
+    // Ajout instantané dans la liste à l'écran
+    setIncidents((prev) => [
+      { id: `temp-inc-${Date.now()}`, student_id: id, reason: currentReason, severity: currentSeverity, incident_date: todayStr, created_at: new Date().toISOString() },
+      ...prev
+    ]);
+
+    setReason('');
+
+    const { error } = await offlineWrite({
+      table: 'discipline',
+      action: 'INSERT',
+      payload: { 
+        student_id: id, 
+        reason: currentReason, 
+        severity: currentSeverity, 
+        incident_date: todayStr, 
+        academic_year_id: student?.academic_year_id, 
+        school_id: student?.school_id 
+      },
+      cacheKey: `discipline:${id}`,
+      optimisticUpdate: () => {}
+    });
+
+    if (!error) {
+      fetchData(true);
+    } else {
+      setIncidents(backupIncidents); // Rollback
+    }
+  };
+
+  // Ne bloque l'écran que lors du TOUT PREMIER chargement à l'ouverture de la page
+  if (loading && !student) return <div className="flex justify-center p-20"><Loader2 className="animate-spin text-[#1763FF]" size={40} /></div>;
   if (!student) return <div className="text-center p-20 font-bold text-slate-800">Élève non trouvé.</div>;
 
-  // Utilisation exclusive des colonnes réelles de ton schéma
   const annualFee = Number(student.scolarite_totale || student.annual_fee || 0);
   const totalPaid = Number(student.scolarite_payee || 0);
   
@@ -214,7 +369,7 @@ export default function StudentDetails() {
         </button>
       </div>
 
-      {/* BANDEAU COMPLET FILTRÉ PROFIL */}
+      {/* BANDEAU COMPLET PROFIL */}
       <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-slate-200/60 shadow-sm flex flex-col md:flex-row items-center gap-6 relative">
         <div className="h-20 w-20 md:h-24 md:w-24 bg-gradient-to-br from-[#1763FF] to-[#00246B] text-white rounded-2xl flex items-center justify-center text-2xl font-black shadow-md shrink-0">
           {student.first_name?.[0]}{student.last_name?.[0]}
@@ -237,7 +392,7 @@ export default function StudentDetails() {
         <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-50 text-center w-full md:w-auto min-w-[130px] relative shrink-0">
           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Dernière Moyenne</p>
           <p className="text-2xl font-black text-[#1763FF]">
-            {student.last_exam_avg !== null ? Number(student.last_exam_avg).toFixed(2) : "00"}
+            {student.last_exam_avg !== null && student.last_exam_avg !== undefined ? Number(student.last_exam_avg).toFixed(2) : "00"}
             <span className="text-xs text-slate-400 font-medium">/20</span>
           </p>
           <button onClick={() => setShowAvgForm(!showAvgForm)} className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 bg-[#1763FF] text-white p-1.5 rounded-lg shadow-md hover:bg-[#1252D4] transition-all">
@@ -260,8 +415,8 @@ export default function StudentDetails() {
             onChange={(e) => setNewAvg(e.target.value)}
             required 
           />
-          <button type="submit" disabled={updatingAvg} className="bg-[#1763FF] text-white text-xs px-4 py-2.5 rounded-xl font-bold uppercase shrink-0 hover:bg-[#1252D4] transition-colors">
-            {updatingAvg ? '...' : 'Valider'}
+          <button type="submit" className="bg-[#1763FF] text-white text-xs px-4 py-2.5 rounded-xl font-bold uppercase shrink-0 hover:bg-[#1252D4] transition-colors">
+            Valider
           </button>
         </form>
       )}
@@ -275,7 +430,7 @@ export default function StudentDetails() {
             <div className="bg-white p-5 rounded-[2rem] border border-slate-200/60 shadow-sm">
                 <h3 className="font-black mb-4 flex items-center gap-2 text-[10px] uppercase tracking-widest text-slate-900"><Plus size={14} className="text-[#1763FF]" /> Compléments & Annexes</h3>
                 <form onSubmit={handleExtraPayment} className="space-y-3">
-                    <select className="w-full p-3.5 bg-slate-50 border-none rounded-xl text-xs font-bold outline-none text-slate-800" value={selectedExtraType} onChange={(e)=>setSelectedExtraType(e.target.value)} required>
+                    <select className="w-full p-3.5 bg-slate-50 border-none rounded-xl text-xs font-bold outline-none text-slate-800" value={selectedExtraType} onChange={(e)=>setSelectedExtraType(e.target.value)} disabled={isReadOnly} required>
                         <option value="">Sélectionner frais divers...</option>
                         {extraFeeTypes.map(t => <option key={t.id} value={t.id}>{t.name} ({Number(t.default_amount).toLocaleString()} F)</option>)}
                     </select>
@@ -285,27 +440,24 @@ export default function StudentDetails() {
                       className="w-full p-3.5 bg-slate-50 border-none rounded-xl text-xs font-bold outline-none text-slate-800"
                       value={formatInputDisplay(extraAmount)}
                       onChange={(e) => setExtraAmount(e.target.value)}
+                      disabled={isReadOnly}
                       required
                     />
-                    <button type="submit" className="w-full bg-[#1763FF] text-white p-3.5 rounded-xl font-black text-[10px] uppercase hover:bg-[#1252D4] transition-all shadow-md shadow-blue-500/10">Valider l'encaissement</button>
+                    <button type="submit" disabled={isReadOnly} className="w-full bg-[#1763FF] text-white p-3.5 rounded-xl font-black text-[10px] uppercase hover:bg-[#1252D4] transition-all shadow-md shadow-blue-500/10">Valider l'encaissement</button>
                 </form>
             </div>
 
-            {/* DISCIPLINE ENRICHIE */}
+            {/* DISCIPLINE */}
             <div className="bg-white p-5 rounded-[2rem] border border-slate-200/60 shadow-sm space-y-4">
                 <h3 className="font-black flex items-center gap-2 text-[10px] uppercase tracking-widest text-slate-900"><ShieldAlert size={14} className="text-rose-500" /> Dossier Discipline</h3>
-                <form onSubmit={async (e) => { 
-                  e.preventDefault(); 
-                  await supabase.from('discipline').insert([{ student_id: id, reason, severity, incident_date: new Date().toISOString().split('T')[0], academic_year_id: student?.academic_year_id, school_id: student?.school_id }]); 
-                  setReason(''); fetchData(); 
-                }} className="space-y-3">
-                    <textarea placeholder="Rédiger le motif du rapport..." className="w-full p-3.5 bg-slate-50 border border-slate-100 rounded-xl text-xs h-16 resize-none outline-none font-medium text-slate-800" value={reason} onChange={(e) => setReason(e.target.value)} required />
+                <form onSubmit={handleAddIncident} className="space-y-3">
+                    <textarea placeholder="Rédiger le motif du rapport..." className="w-full p-3.5 bg-slate-50 border border-slate-100 rounded-xl text-xs h-16 resize-none outline-none font-medium text-slate-800" value={reason} onChange={(e) => setReason(e.target.value)} disabled={isReadOnly} required />
                     <div className="flex gap-1">
                         {['Bas', 'Moyen', 'Grave'].map(l => (
-                            <button key={l} type="button" onClick={() => setSeverity(l)} className={`flex-1 py-1.5 rounded-lg text-[9px] font-bold uppercase transition-all ${severity === l ? 'bg-rose-600 text-white font-black' : 'bg-slate-100 text-slate-500'}`}>{l}</button>
+                            <button key={l} type="button" onClick={() => setSeverity(l)} disabled={isReadOnly} className={`flex-1 py-1.5 rounded-lg text-[9px] font-bold uppercase transition-all ${severity === l ? 'bg-rose-600 text-white font-black' : 'bg-slate-100 text-slate-500'}`}>{l}</button>
                         ))}
                     </div>
-                    <button type="submit" className="w-full bg-[#1763FF] text-white p-3.5 rounded-xl font-black text-[10px] uppercase hover:bg-[#1252D4] transition-colors">Enregistrer l'incident</button>
+                    <button type="submit" disabled={isReadOnly} className="w-full bg-[#1763FF] text-white p-3.5 rounded-xl font-black text-[10px] uppercase hover:bg-[#1252D4] transition-colors">Enregistrer l'incident</button>
                 </form>
 
                 {/* Historique interne de l'étudiant */}
@@ -392,13 +544,14 @@ export default function StudentDetails() {
                       className="p-3.5 bg-slate-50 rounded-xl font-bold outline-none text-xs text-slate-800"
                       value={formatInputDisplay(amount)}
                       onChange={(e) => setAmount(e.target.value)}
+                      disabled={isReadOnly}
                       required
                     />
-                    <select className="p-3.5 bg-slate-50 rounded-xl outline-none font-bold text-xs text-slate-800" value={month} onChange={(e)=>setMonth(e.target.value)} required>
+                    <select className="p-3.5 bg-slate-50 rounded-xl outline-none font-bold text-xs text-slate-800" value={month} onChange={(e)=>setMonth(e.target.value)} disabled={isReadOnly} required>
                         <option value="">Sélectionner période...</option>
                         {['Tranche 1', 'Tranche 2', 'Tranche 3', 'Mensualité'].map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
-                    <button className="bg-[#1763FF] text-white p-3.5 rounded-xl font-black text-[10px] uppercase hover:bg-[#1252D4] transition-colors shadow-md shadow-blue-500/10">Valider & Générer Reçu</button>
+                    <button disabled={isReadOnly} className="bg-[#1763FF] text-white p-3.5 rounded-xl font-black text-[10px] uppercase hover:bg-[#1252D4] transition-colors shadow-md shadow-blue-500/10">Valider & Générer Reçu</button>
                 </form>
             </div>
 

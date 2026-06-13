@@ -19,6 +19,7 @@
     "html2pdf.js": "^0.14.0",
     "idb": "^8.0.3",
     "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lodash": "^4.18.1",
     "lucide-react": "^1.4.0",
     "next": "16.2.1",
