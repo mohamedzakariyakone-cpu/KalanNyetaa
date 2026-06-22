@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { supabase } from '@/utils/supabase';
 import { useRouter } from 'next/navigation';
 import { LogIn, ShieldCheck, Loader2, Eye, EyeOff } from 'lucide-react';
+import PWAInstallPrompt from '@/components/PWAInstallPrompt';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -66,11 +67,13 @@ export default function LoginPage() {
   };
 
   return (
-    /* L'astuce magique : "md:fixed md:inset-0 md:z-[9999]" 
-      Sur PC, la page se détache complètement du Layout, passe par-dessus tout le monde,
-      s'étale sur 100% de la largeur/hauteur et se centre parfaitement.
-    */
-    <div 
+    <>
+      <PWAInstallPrompt />
+      {/* L'astuce magique : "md:fixed md:inset-0 md:z-[9999]" 
+        Sur PC, la page se détache complètement du Layout, passe par-dessus tout le monde,
+        s'étale sur 100% de la largeur/hauteur et se centre parfaitement.
+      */}
+      <div
       id="login-page" 
       className="min-h-screen bg-[#f8fafc] flex flex-col justify-center py-12 px-6 lg:px-8 w-full md:fixed md:inset-0 md:z-[9999] md:overflow-y-auto"
     >
@@ -179,5 +182,6 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+    </>
   );
 }

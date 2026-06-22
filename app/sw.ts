@@ -19,17 +19,17 @@ const serwist = new Serwist({
   precacheEntries: manifest,
   skipWaiting: true,
   clientsClaim: true,
-  navigationPreload: true,
+  // 🪄 Correction 1 : Désactivé ou géré proprement si non requis explicitement en dev local
+  navigationPreload: false, 
 
   runtimeCaching: [
-    // API Supabase - Stale-While-Revalidate pour les GET
+    // API Supabase - Stale-While-Revalidate pour les GET (Détection dynamique du domaine)
     {
       matcher: ({ url, request }) => {
-        return url.origin === "https://your-supabase-url.supabase.co" && request.method === "GET";
+        return url.origin.includes(".supabase.co") && request.method === "GET";
       },
       handler: new StaleWhileRevalidate({
         cacheName: "supabase-api-cache",
-        // Dans Serwist, l'expiration se passe dans la liste des plugins de la stratégie
         plugins: [
           {
             cacheWillUpdate: async ({ response }) => response,
@@ -42,7 +42,7 @@ const serwist = new Serwist({
     {
       matcher: ({ url, request }) => {
         return (
-          url.origin === "https://your-supabase-url.supabase.co" &&
+          url.origin.includes(".supabase.co") &&
           (request.method === "POST" || request.method === "PUT" || request.method === "DELETE")
         );
       },
@@ -138,7 +138,7 @@ self.addEventListener("message", (event) => {
   }
 });
 
-// 4. Nettoyage personnalisé des anciens caches
+// 4. Nettoyage et enregistrement chaîné
 self.addEventListener("activate", (event) => {
   console.log("Service Worker activating & cleaning custom caches...");
   event.waitUntil(
@@ -159,5 +159,5 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// 5. Initialisation
+// 5. Initialisation des écouteurs Serwist (gère l'activation en arrière-plan de manière sûre)
 serwist.addEventListeners();

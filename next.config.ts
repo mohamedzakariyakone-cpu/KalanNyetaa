@@ -5,14 +5,16 @@ const withSerwist = withSerwistInit({
   swSrc: "app/sw.ts",
   swDest: "public/sw.js",
   register: false,
-  disable: process.env.NODE_ENV === "development",
+  // 🪄 Correction finale : Un simple booléen forcé à false pour vos tests locaux
+  disable: false, 
   scope: "/",
   reloadOnOnline: true,
   cacheOnNavigation: true,
 });
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ['192.168.198.67'],
+  // Prise en compte de votre adresse IP locale actuelle (.1.6)
+  allowedDevOrigins: ['192.168.1.6', '192.168.1.5'],
 
   images: {
     remotePatterns: [

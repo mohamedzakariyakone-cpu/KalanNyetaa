@@ -5,6 +5,8 @@ import OfflineSync from '@/components/OfflineSync'
 import ConnectionStatus from '@/components/ConnectionStatus'
 import PWAInstaller from '@/components/PWAInstaller' // Importation du bouton/bannière de téléchargement
 import PWAInit from '@/components/PWAInit' // Importation du gestionnaire d'enregistrement d'arrière-plan
+import ServiceWorkerRegister from '@/components/ServiceWorkerRegister' // Enregistrement du Service Worker
+import PWAInstallPrompt from '@/components/PWAInstallPrompt' // Invite d'installation PWA
 import { Inter } from 'next/font/google'
 import { YearProvider } from '@/context/YearContext'
 import type { Metadata, Viewport } from 'next'
@@ -17,7 +19,7 @@ export const metadata: Metadata = {
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'default',
+    statusBarStyle: 'black-translucent',
     title: 'KalanNyetaa',
   },
   formatDetection: {
@@ -48,8 +50,14 @@ export default function RootLayout({
     >
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+        <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png" />
+        <link rel="icon" type="image/png" sizes="384x384" href="/icons/icon-384x384.png" />
+        <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512x512.png" />
         <meta name="color-scheme" content="light" />
         <meta name="supported-color-schemes" content="light" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         
         {/* 🪄 SÉCURITÉ ABSOLUE : CSS natif injecté pour forcer le masquage 
             si l'un des deux écrans d'accès est détecté dans la page */}
@@ -75,6 +83,7 @@ export default function RootLayout({
         
         {/* ⚙️ Initialisation discrète de la PWA (Enregistrement du service worker en arrière-plan) */}
         <PWAInit />
+        <ServiceWorkerRegister />
 
         <YearProvider>
           <ConnectionStatus />
