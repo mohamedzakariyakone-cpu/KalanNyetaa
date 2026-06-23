@@ -21,15 +21,6 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "Tableau de bord",
-      "short_name": "Stats",
-      "description": "Voir le tableau de bord de l'école",
-      "url": "/dashboard",
-      "icons": [{ "src": "/icon-192x192.png", "sizes": "192x192" }]
-    }
+      }
   ]
 }
