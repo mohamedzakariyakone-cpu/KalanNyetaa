@@ -6,7 +6,7 @@ const withSerwist = withSerwistInit({
   swDest: "public/sw.js",
   register: false,
   // 🪄 Correction finale : Un simple booléen forcé à false pour vos tests locaux
-  disable: false, 
+  disable: process.env.NODE_ENV === "development" ? false : false, 
   scope: "/",
   reloadOnOnline: true,
   cacheOnNavigation: true,

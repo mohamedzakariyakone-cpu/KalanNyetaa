@@ -45,14 +45,19 @@ export function usePWAInstall(): PWAInstallState {
 
     // Écouter l'événement beforeinstallprompt
     const handleBeforeInstallPrompt = (e: Event) => {
+      console.log('beforeinstallprompt event fired');
       e.preventDefault();
       const event = e as BeforeInstallPromptEvent;
       setDeferredPrompt(event);
       setIsInstallable(true);
-      // Afficher le prompt automatiquement après 3 secondes
+      
+      // Sur Android, on veut être plus agressif pour l'affichage
+      const isAndroidDevice = /android/.test(navigator.userAgent.toLowerCase());
+      const delay = isAndroidDevice ? 1000 : 3000;
+
       setTimeout(() => {
         setShowPrompt(true);
-      }, 3000);
+      }, delay);
     };
 
     // Écouter l'événement d'installation réussie

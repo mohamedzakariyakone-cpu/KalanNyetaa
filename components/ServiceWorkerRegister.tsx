@@ -9,6 +9,7 @@ export default function ServiceWorkerRegister() {
   useEffect(() => {
     // Enregistrer le Service Worker uniquement si le navigateur le supporte
     if ('serviceWorker' in navigator) {
+      console.log('Tentative d\'enregistrement du Service Worker...');
       navigator.serviceWorker
         .register('/sw.js', {
           scope: '/',

@@ -39,8 +39,8 @@ export default function PWAInstallPrompt() {
   };
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 p-4 md:bottom-4 md:right-4 md:left-auto md:max-w-sm">
-      <div className="bg-gradient-to-r from-[#1763FF] to-[#00246B] rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
+    <div className="fixed bottom-0 left-0 right-0 z-[99999] p-4 md:bottom-4 md:right-4 md:left-auto md:max-w-sm">
+      <div className="bg-gradient-to-r from-[#1763FF] to-[#00246B] rounded-3xl shadow-[0_20px_60px_rgba(0,0,0,0.3)] overflow-hidden animate-in slide-in-from-bottom-4 duration-500">
         {/* En-tête */}
         <div className="bg-white/10 backdrop-blur-sm px-6 py-4 flex items-center justify-between border-b border-white/20">
           <div className="flex items-center gap-3">

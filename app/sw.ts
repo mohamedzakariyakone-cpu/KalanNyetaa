@@ -161,3 +161,7 @@ self.addEventListener("activate", (event) => {
 
 // 5. Initialisation des écouteurs Serwist (gère l'activation en arrière-plan de manière sûre)
 serwist.addEventListeners();
+
+self.addEventListener("install", () => {
+  self.skipWaiting();
+});

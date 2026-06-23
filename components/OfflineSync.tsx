@@ -18,18 +18,11 @@ export default function OfflineSync() {
     // Initialiser le statut online
     setIsOnline(navigator.onLine)
 
-    // Enregistrer le Service Worker
+    // La Background Sync sera enregistrée quand le Service Worker sera prêt
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .register('/sw.js', { scope: '/' })
-        .then((registration) => {
-          console.log('Service Worker registered:', registration)
-          // Enregistrer la Background Sync
-          registerBackgroundSync()
-        })
-        .catch((error) => {
-          console.error('Service Worker registration failed:', error)
-        })
+      navigator.serviceWorker.ready.then(() => {
+        registerBackgroundSync()
+      })
     }
 
     // Initialiser les listeners de sync

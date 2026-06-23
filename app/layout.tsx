@@ -3,8 +3,6 @@ import MobileShell from '@/components/MobileShell'
 import Sidebar from '@/components/Sidebar'
 import OfflineSync from '@/components/OfflineSync'
 import ConnectionStatus from '@/components/ConnectionStatus'
-import PWAInstaller from '@/components/PWAInstaller' // Importation du bouton/bannière de téléchargement
-import PWAInit from '@/components/PWAInit' // Importation du gestionnaire d'enregistrement d'arrière-plan
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister' // Enregistrement du Service Worker
 import PWAInstallPrompt from '@/components/PWAInstallPrompt' // Invite d'installation PWA
 import { Inter } from 'next/font/google'
@@ -82,7 +80,6 @@ export default function RootLayout({
         [&:has(#role-selection-page)]_._admin-content:md:pl-0">
         
         {/* ⚙️ Initialisation discrète de la PWA (Enregistrement du service worker en arrière-plan) */}
-        <PWAInit />
         <ServiceWorkerRegister />
 
         <YearProvider>
@@ -101,7 +98,7 @@ export default function RootLayout({
           <OfflineSync />
           
           {/* 📲 Popup / Bannière de téléchargement PWA personnalisée */}
-          <PWAInstaller />
+          <PWAInstallPrompt />
         </YearProvider>
 
       </body>
