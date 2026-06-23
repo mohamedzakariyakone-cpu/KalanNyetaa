@@ -75,9 +75,9 @@ export default function RoleSelectionPage() {
     }
   };
 
-  const handleVerifyPin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedRole) return;
+  const handleVerifyPin = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedRole || !pin) return;
 
     const config = ROLES_CONFIG[selectedRole];
     if (pin === config.pin) {
@@ -87,6 +87,14 @@ export default function RoleSelectionPage() {
     } else {
       setError('Code PIN incorrect. Veuillez réessayer.');
       setPin('');
+    }
+  };
+
+  // Gérer la soumission instantanée quand l'utilisateur appuie sur "Entrée" du clavier virtuel
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleVerifyPin();
     }
   };
 
@@ -168,21 +176,26 @@ export default function RoleSelectionPage() {
             </div>
 
             {/* Formulaire de saisie */}
-            <form onSubmit={handleVerifyPin} className="space-y-4">
+            <form onSubmit={handleVerifyPin} noValidate autoComplete="off" className="space-y-4">
               <p className="text-xs font-medium text-slate-500 leading-relaxed">
                 Veuillez entrer le code secret pour déverrouiller l'accès de cet espace scolaire.
               </p>
 
               <div className="space-y-2">
                 <input
-                  type="password"
+                  type="text"
                   inputMode="numeric"
                   pattern="[0-9]*"
                   maxLength={6}
                   value={pin}
                   onChange={(e) => setPin(e.target.value)}
+                  onKeyDown={handleKeyDown}
                   placeholder="••••"
                   autoFocus
+                  autoComplete="one-time-code"
+                  name={`school-pin-security-${selectedRole}`}
+                  id="school-pin-input"
+                  style={{ WebkitTextSecurity: 'disc' } as React.CSSProperties}
                   className="w-full text-center tracking-[1em] text-2xl font-black bg-slate-50 border border-slate-200 rounded-2xl py-4 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
                 />
                 {error && (

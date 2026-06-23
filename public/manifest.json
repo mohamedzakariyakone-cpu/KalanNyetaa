@@ -1,114 +1,35 @@
 {
-  "theme_color": "#F8FAFC",
-  "background_color": "#F8FAFC",
-  "display": "standalone",
-  "scope": "/",
-  "start_url": "/",
+  "id": "com.kalannyetaa.app",
   "name": "KalanNyetaa - Gestion Scolaire",
   "short_name": "KalanNyetaa",
-  "description": "Application de gestion scolaire pour les établissements éducatifs, offrant des fonctionnalités de gestion des élèves, des enseignants, des classes, des emplois du temps et des bulletins scolaires. Fonctionne en mode hors-ligne avec synchronisation automatique.",
-  "orientation": "portrait-primary",
-  "categories": ["education", "productivity"],
-  "id": "com.kalannyetaa.gestion",
+  "description": "Application de gestion scolaire complète avec mode hors-ligne.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F8FAFC",
+  "theme_color": "#1763FF",
   "icons": [
     {
       "src": "/icons/icon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-192x192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     },
     {
       "src": "/icons/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/icons/icon-384x384.png",
-      "sizes": "384x384",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-384x384.png",
-      "sizes": "384x384",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/icons/icon-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icons/icon-512x512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     }
   ],
   "shortcuts": [
     {
       "name": "Tableau de bord",
-      "short_name": "Tableau de bord",
-      "description": "Accéder au tableau de bord principal",
+      "short_name": "Stats",
+      "description": "Voir le tableau de bord de l'école",
       "url": "/dashboard",
-      "icons": [
-        {
-          "src": "/icons/icon-192x192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "Élèves",
-      "short_name": "Élèves",
-      "description": "Gérer les élèves",
-      "url": "/students",
-      "icons": [
-        {
-          "src": "/icons/icon-192x192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "Classes",
-      "short_name": "Classes",
-      "description": "Gérer les classes",
-      "url": "/classes",
-      "icons": [
-        {
-          "src": "/icons/icon-192x192.png",
-          "sizes": "192x192",
-          "type": "image/png"
-        }
-      ]
+      "icons": [{ "src": "/icons/icon-192x192.png", "sizes": "192x192" }]
     }
-  ],
-  "share_target": {
-    "action": "/share",
-    "method": "POST",
-    "enctype": "multipart/form-data",
-    "params": {
-      "title": "title",
-      "text": "text",
-      "url": "url"
-    }
-  }
+  ]
 }
