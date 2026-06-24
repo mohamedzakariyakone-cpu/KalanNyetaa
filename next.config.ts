@@ -4,8 +4,7 @@ import withSerwistInit from "@serwist/next";
 const withSerwist = withSerwistInit({
   swSrc: "app/sw.ts",
   swDest: "public/sw.js",
-  register: false,
-  // 🪄 Correction : Activer le service worker aussi en local pour tester l'installation Android.
+  register: true,
   disable: false,
   scope: "/",
   reloadOnOnline: true,

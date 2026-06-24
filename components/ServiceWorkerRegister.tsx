@@ -5,8 +5,14 @@ import { useEffect } from 'react';
 export default function ServiceWorkerRegister() {
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      const register = async () => {
+      const registerServiceWorker = async () => {
         try {
+          if ((window as any).serwist && typeof (window as any).serwist.register === 'function') {
+            await (window as any).serwist.register();
+            console.log('Service Worker Serwist enregistré avec succès.');
+            return;
+          }
+
           const registration = await navigator.serviceWorker.register('/sw.js', {
             scope: '/',
           });
@@ -17,10 +23,10 @@ export default function ServiceWorkerRegister() {
       };
 
       if (document.readyState === 'complete') {
-        register();
+        registerServiceWorker();
       } else {
-        window.addEventListener('load', register);
-        return () => window.removeEventListener('load', register);
+        window.addEventListener('load', registerServiceWorker);
+        return () => window.removeEventListener('load', registerServiceWorker);
       }
     }
   }, []);
