@@ -75,8 +75,9 @@ export default function RoleSelectionPage() {
     }
   };
 
-  const handleVerifyPin = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
+  const handleVerifyPin = (e: React.FormEvent) => {
+    // Bloque le rechargement natif de la page à 100%
+    e.preventDefault();
     if (!selectedRole || !pin) return;
 
     const config = ROLES_CONFIG[selectedRole];
@@ -87,14 +88,6 @@ export default function RoleSelectionPage() {
     } else {
       setError('Code PIN incorrect. Veuillez réessayer.');
       setPin('');
-    }
-  };
-
-  // Gérer la soumission instantanée quand l'utilisateur appuie sur "Entrée" du clavier virtuel
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleVerifyPin();
     }
   };
 
@@ -154,7 +147,7 @@ export default function RoleSelectionPage() {
         {fetchingSchool ? 'Chargement...' : schoolName} - Tous droits réservés © {new Date().getFullYear()}
       </div>
 
-      {/* MODALE DE SAISIE DE CODE PIN (Style Banque / Wave) */}
+      {/* MODALE DE SAISIE DE CODE PIN */}
       {selectedRole && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/40 backdrop-blur-sm p-0 sm:p-4 animate-fade-in">
           <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] p-6 shadow-xl space-y-6 transform animate-slide-up transition-all">
@@ -189,7 +182,6 @@ export default function RoleSelectionPage() {
                   maxLength={6}
                   value={pin}
                   onChange={(e) => setPin(e.target.value)}
-                  onKeyDown={handleKeyDown}
                   placeholder="••••"
                   autoFocus
                   autoComplete="one-time-code"

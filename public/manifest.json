@@ -1,26 +1,38 @@
 {
-  "id": "com.kalannyetaa.app",
   "name": "KalanNyetaa - Gestion Scolaire",
   "short_name": "KalanNyetaa",
-  "description": "Application de gestion scolaire complète avec mode hors-ligne.",
+  "description": "Application de gestion scolaire complète.",
   "start_url": "/",
-  "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
   "background_color": "#F8FAFC",
-  "theme_color": "#1763FF",
+  "theme_color": "#F8FAFC",
+  "orientation": "portrait",
+  "scope": "/",
+  "id": "/",
   "icons": [
     {
-      "src": "/icon-192x192.png",
+      "src": "/icons/icon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "/icon-512x512.png",
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
-      }
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }

@@ -47,6 +47,12 @@ export default function RootLayout({
       data-theme="light"
     >
       <head>
+        <script dangerouslySetInnerHTML={{ __html: `
+          window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            window.deferredPrompt = e;
+          });
+        `}} />
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png" />
         <link rel="icon" type="image/png" sizes="384x384" href="/icons/icon-384x384.png" />

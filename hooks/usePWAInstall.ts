@@ -71,6 +71,14 @@ export function usePWAInstall(): PWAInstallState {
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
 
+    // Détection de secours si l'événement a déjà été tiré
+    if (window.hasOwnProperty('deferredPrompt')) {
+       // @ts-ignore
+       setDeferredPrompt(window.deferredPrompt);
+       setIsInstallable(true);
+       setShowPrompt(true);
+    }
+
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
