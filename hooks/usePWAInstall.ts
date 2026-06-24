@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
 
+declare global {
+  interface Window {
+    deferredPrompt?: BeforeInstallPromptEvent;
+  }
+}
+
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
@@ -36,7 +42,7 @@ export function usePWAInstall(): PWAInstallState {
     setIsAndroid(isAndroidDevice);
     setIsDesktop(!isMobile);
 
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
     if (isStandalone) {
       setIsInstalled(true);
       return;
