@@ -27,7 +27,6 @@ export function usePWAInstall(): PWAInstallState {
   const [isDesktop, setIsDesktop] = useState(false);
 
   useEffect(() => {
-    // Détecter le type d'appareil
     const userAgent = navigator.userAgent.toLowerCase();
     const isIOSDevice = /iphone|ipad|ipod/.test(userAgent);
     const isAndroidDevice = /android/.test(userAgent);
@@ -37,30 +36,26 @@ export function usePWAInstall(): PWAInstallState {
     setIsAndroid(isAndroidDevice);
     setIsDesktop(!isMobile);
 
-    // Vérifier si l'app est déjà installée
-    if (window.matchMedia('(display-mode: standalone)').matches) {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    if (isStandalone) {
       setIsInstalled(true);
       return;
     }
 
-    // Écouter l'événement beforeinstallprompt
     const handleBeforeInstallPrompt = (e: Event) => {
       console.log('beforeinstallprompt event fired');
       e.preventDefault();
       const event = e as BeforeInstallPromptEvent;
+      window.deferredPrompt = event;
       setDeferredPrompt(event);
       setIsInstallable(true);
-      
-      // Sur Android, on veut être plus agressif pour l'affichage
-      const isAndroidDevice = /android/.test(navigator.userAgent.toLowerCase());
-      const delay = isAndroidDevice ? 1000 : 3000;
 
+      const delay = isAndroidDevice ? 1000 : 3000;
       setTimeout(() => {
         setShowPrompt(true);
       }, delay);
     };
 
-    // Écouter l'événement d'installation réussie
     const handleAppInstalled = () => {
       setIsInstalled(true);
       setIsInstallable(false);
@@ -71,12 +66,11 @@ export function usePWAInstall(): PWAInstallState {
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
 
-    // Détection de secours si l'événement a déjà été tiré
-    if (window.hasOwnProperty('deferredPrompt')) {
-       // @ts-ignore
-       setDeferredPrompt(window.deferredPrompt);
-       setIsInstallable(true);
-       setShowPrompt(true);
+    const pendingPrompt = (window as any).deferredPrompt;
+    if (pendingPrompt) {
+      setDeferredPrompt(pendingPrompt as BeforeInstallPromptEvent);
+      setIsInstallable(true);
+      setShowPrompt(true);
     }
 
     return () => {

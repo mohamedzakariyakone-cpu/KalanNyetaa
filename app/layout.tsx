@@ -46,41 +46,6 @@ export default function RootLayout({
       style={{ colorScheme: 'light' }}
       data-theme="light"
     >
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: `
-          window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            window.deferredPrompt = e;
-          });
-        `}} />
-        <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
-        <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png" />
-        <link rel="icon" type="image/png" sizes="384x384" href="/icons/icon-384x384.png" />
-        <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512x512.png" />
-        <meta name="color-scheme" content="light" />
-        <meta name="supported-color-schemes" content="light" />
-        <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        
-        {/* 🪄 SÉCURITÉ ABSOLUE : CSS natif injecté pour forcer le masquage 
-            si l'un des deux écrans d'accès est détecté dans la page */}
-        <style>{`
-          body:has(#login-page) .app-sidebar,
-          body:has(#role-selection-page) .app-sidebar {
-            display: none !important;
-          }
-          body:has(#login-page) .admin-content,
-          body:has(#role-selection-page) .admin-content {
-            padding-left: 0 !important;
-          }
-          body:has(#login-page) .pwa-install-banner,
-          body:has(#role-selection-page) .pwa-install-banner {
-            display: none !important;
-          }
-        `}</style>
-      </head>
-      
       <body className="!bg-[#F8FAFC] !text-slate-900 bg-[#F8FAFC] text-slate-900 antialiased min-h-screen
         [&:has(#login-page)]_._admin-content:md:pl-0
         [&:has(#role-selection-page)]_._admin-content:md:pl-0">

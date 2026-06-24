@@ -5,9 +5,8 @@ const withSerwist = withSerwistInit({
   swSrc: "app/sw.ts",
   swDest: "public/sw.js",
   register: false,
-  // 🪄 Correction : On désactive Serwist UNIQUEMENT en dev si besoin, 
-  // mais surtout on laisse la production se builder proprement.
-  disable: process.env.NODE_ENV === "development", 
+  // 🪄 Correction : Activer le service worker aussi en local pour tester l'installation Android.
+  disable: false,
   scope: "/",
   reloadOnOnline: true,
   cacheOnNavigation: true,

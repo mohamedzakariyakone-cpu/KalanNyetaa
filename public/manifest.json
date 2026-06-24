@@ -2,13 +2,14 @@
   "name": "KalanNyetaa - Gestion Scolaire",
   "short_name": "KalanNyetaa",
   "description": "Application de gestion scolaire complète.",
-  "start_url": "/",
+  "lang": "fr-FR",
+  "start_url": "/?source=pwa",
   "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "minimal-ui"],
   "background_color": "#F8FAFC",
   "theme_color": "#F8FAFC",
-  "orientation": "portrait",
+  "orientation": "portrait-primary",
   "scope": "/",
-  "id": "/",
   "icons": [
     {
       "src": "/icons/icon-192x192.png",
