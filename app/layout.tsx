@@ -46,9 +46,7 @@ export default function RootLayout({
       style={{ colorScheme: 'light' }}
       data-theme="light"
     >
-      <body className="!bg-[#F8FAFC] !text-slate-900 bg-[#F8FAFC] text-slate-900 antialiased min-h-screen
-        [&:has(#login-page)]_._admin-content:md:pl-0
-        [&:has(#role-selection-page)]_._admin-content:md:pl-0">
+      <body className="!bg-[#F8FAFC] !text-slate-900 bg-[#F8FAFC] text-slate-900 antialiased min-h-screen">
         
         {/* ⚙️ Initialisation discrète de la PWA (Enregistrement du service worker en arrière-plan) */}
         <ServiceWorkerRegister />
@@ -61,8 +59,11 @@ export default function RootLayout({
               <Sidebar /> 
             </div>
             
-            {/* Contenu principal */}
-            <div className="admin-content flex-1 pb-28 md:pb-0 md:pl-72 transition-all duration-150">
+            {/* CORRECTION : Utilisation directe de [&:has(#role-selection-page)]:md:pl-0 et [&:has(#login-page)]:md:pl-0
+              Cela force instantanément le padding à 0 si l'une des deux pages est présente à l'écran, 
+              annulant parfaitement le décalage provoqué par la barre latérale sur PC.
+            */}
+            <div className="admin-content flex-1 pb-28 md:pb-0 md:pl-72 [&:has(#role-selection-page)]:md:pl-0 [&:has(#login-page)]:md:pl-0 transition-all duration-150">
               {children}
             </div>
           </MobileShell>

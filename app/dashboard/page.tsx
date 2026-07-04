@@ -408,7 +408,7 @@ export default function Dashboard() {
           </h2>
           
           <div className="relative w-36 h-36 flex items-center justify-center mb-6">
-            <svg className="w-full h-full transform -rotate-90">
+            <svg viewBox="0 0 144 144" preserveAspectRatio="xMidYMid meet" className="w-full h-full block transform origin-center -rotate-90">
               <circle cx="72" cy="72" r={mobileRadius} stroke="currentColor" strokeWidth="14" fill="transparent" className="text-slate-100" />
               <circle 
                 cx="72" cy="72" r={mobileRadius} 
@@ -422,7 +422,7 @@ export default function Dashboard() {
               />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-3xl font-black text-slate-900">{recoveryRate}%</span>
+              <span className="text-3xl leading-none font-black text-slate-900">{recoveryRate}%</span>
             </div>
           </div>
 
@@ -586,7 +586,7 @@ export default function Dashboard() {
 
               <div className="bg-slate-50/50 p-4 rounded-3xl border border-slate-100 flex items-center gap-4 shrink-0 w-full sm:w-auto">
                 <div className="relative flex items-center justify-center">
-                  <svg className="w-20 h-20 transform -rotate-90">
+                  <svg viewBox="0 0 80 80" preserveAspectRatio="xMidYMid meet" className="w-20 h-20 block transform origin-center -rotate-90">
                     <circle cx="40" cy="40" r="32" className="text-slate-200/60" strokeWidth="8" stroke="currentColor" fill="transparent" />
                     <circle cx="40" cy="40" r="32" className="text-emerald-500 transition-all duration-1000" strokeWidth="8" strokeDasharray={2 * Math.PI * 32} strokeDashoffset={(2 * Math.PI * 32) - (recoveryRate / 100) * (2 * Math.PI * 32)} strokeLinecap="round" stroke="currentColor" fill="transparent" />
                   </svg>

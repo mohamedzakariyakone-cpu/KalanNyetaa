@@ -11,11 +11,12 @@ export default function RoleSelectionPage() {
   const [selectedRole, setSelectedRole] = useState<RoleType | null>(null);
   const [pin, setPin] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [isVerifying, setIsVerifying] = useState<boolean>(false);
   const [schoolName, setSchoolName] = useState<string>('');
   const [fetchingSchool, setFetchingSchool] = useState<boolean>(true);
   const router = useRouter();
 
-  // Récupération dynamique du nom de l'école depuis la table "school"
+  // Récupération dynamique du nom de l'école depuis la table "schools"
   useEffect(() => {
     async function fetchSchoolName() {
       try {
@@ -56,7 +57,6 @@ export default function RoleSelectionPage() {
   // Helper pour stocker le rôle à la fois en local et dans les cookies pour le proxy
   const saveRoleSession = (role: RoleType) => {
     localStorage.setItem('userRole', role);
-    // Crée un cookie lisible par le serveur (valable 24 heures)
     document.cookie = `userRole=${role}; path=/; max-age=86400; SameSite=Lax`;
   };
 
@@ -66,56 +66,74 @@ export default function RoleSelectionPage() {
     const config = ROLES_CONFIG[role];
     
     if (config.pin === null) {
-      // Pas de PIN -> Enregistrement local + cookie et accès direct
       saveRoleSession(role);
       router.push('/dashboard');
     } else {
-      // Demande de PIN -> Ouverture de la modale
       setSelectedRole(role);
     }
   };
 
-  const handleVerifyPin = (e: React.FormEvent) => {
-    // Bloque le rechargement natif de la page à 100%
-    e.preventDefault();
-    if (!selectedRole || !pin) return;
+  // CORRECTION : Prise en compte de l'événement optionnel pour éviter les blocages de soumission
+  const handleVerifyPin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!selectedRole || !pin || isVerifying) return;
 
-    const config = ROLES_CONFIG[selectedRole];
-    if (pin === config.pin) {
-      // PIN correct -> Enregistrement local + cookie et accès direct
-      saveRoleSession(selectedRole);
-      router.push('/dashboard');
-    } else {
-      setError('Code PIN incorrect. Veuillez réessayer.');
-      setPin('');
+    setError('');
+    setIsVerifying(true);
+
+    try {
+      const config = ROLES_CONFIG[selectedRole];
+      if (pin === config.pin) {
+        saveRoleSession(selectedRole);
+        router.push('/dashboard');
+      } else {
+        setError('Code PIN incorrect. Veuillez réessayer.');
+        setPin('');
+      }
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  // CORRECTION CLAVIER : Passage explicite de l'événement à handleVerifyPin
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleVerifyPin(e as unknown as React.FormEvent);
     }
   };
 
   return (
-    <div id="role-selection-page" className="w-full min-h-screen bg-slate-50 flex flex-col justify-between px-4 py-8 font-sans">
+    // OPTIMISATION PC : Structure en flex-col avec un padding vertical équilibré pour occuper harmonieusement tout l'écran sans navbar
+    <div id="role-selection-page" className="w-full min-h-screen bg-slate-50 flex flex-col justify-between px-4 py-12 md:py-16 font-sans">
       
-      {/* Header */}
-      <div className="text-center mt-6">
+      {/* Header : Nom de l'école connectée affiché fièrement en haut */}
+      <div className="text-center">
         {fetchingSchool ? (
-          <div className="flex items-center justify-center h-9">
+          <div className="flex items-center justify-center h-10">
             <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
           </div>
         ) : (
-          <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight uppercase transition-all">
-            {schoolName}
-          </h1>
+          <>
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-slate-900 tracking-tight uppercase transition-all">
+              {schoolName}
+            </h1>
+            <p className="mt-3 text-sm sm:text-base font-semibold text-slate-600 leading-6">
+              Bienvenue dans votre espace de gestion. Veuillez choisir votre rôle pour commencer.
+            </p>
+          </>
         )}
-        <p className="text-sm font-bold text-slate-500 uppercase tracking-widest mt-1">Espace de Gestion</p>
+        <p className="text-xs sm:text-sm font-bold text-slate-500 uppercase tracking-widest mt-2">Espace de Gestion Scolaire</p>
       </div>
 
-      {/* Zone centrale adaptative (Responsive PC / Mobile) */}
-      <div className="w-full max-w-2xl mx-auto space-y-4 my-auto py-6">
-        <p className="text-center text-sm font-semibold text-slate-400 mb-2">
+      {/* Zone centrale adaptative (Optimisée PC / Mobile) */}
+      <div className="w-full max-w-2xl mx-auto space-y-6 flex-1 flex flex-col justify-center py-8">
+        <p className="text-center text-sm font-semibold text-slate-400">
           Sélectionnez votre espace de travail :
         </p>
 
-        {/* Grid intelligente : 1 colonne sur mobile, 2 colonnes sur PC de bureau */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Grid intelligente : 1 colonne sur mobile, 2 colonnes bien proportionnées sur PC */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
           {(Object.keys(ROLES_CONFIG) as RoleType[]).map((roleKey) => {
             const roleInfo = ROLES_CONFIG[roleKey];
             return (
@@ -143,7 +161,7 @@ export default function RoleSelectionPage() {
       </div>
 
       {/* Footer info */}
-      <div className="text-center text-xs font-medium text-slate-400">
+      <div className="text-center text-xs font-medium text-slate-400 mt-4">
         {fetchingSchool ? 'Chargement...' : schoolName} - Tous droits réservés © {new Date().getFullYear()}
       </div>
 
@@ -182,6 +200,7 @@ export default function RoleSelectionPage() {
                   maxLength={6}
                   value={pin}
                   onChange={(e) => setPin(e.target.value)}
+                  onKeyDown={handleKeyDown}
                   placeholder="••••"
                   autoFocus
                   autoComplete="one-time-code"
@@ -197,10 +216,17 @@ export default function RoleSelectionPage() {
 
               <button
                 type="submit"
-                disabled={!pin}
-                className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-bold py-4 rounded-2xl text-sm uppercase tracking-wider active:scale-[0.99] transition-all"
+                disabled={!pin || isVerifying}
+                className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-bold py-4 rounded-2xl text-sm uppercase tracking-wider active:scale-[0.99] transition-all flex items-center justify-center gap-2"
               >
-                Valider et Entrer
+                {isVerifying ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Chargement...</span>
+                  </>
+                ) : (
+                  'Valider et Entrer'
+                )}
               </button>
             </form>
 
