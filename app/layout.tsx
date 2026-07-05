@@ -1,8 +1,6 @@
 import './globals.css'
 import MobileShell from '@/components/MobileShell'
 import Sidebar from '@/components/Sidebar'
-import OfflineSync from '@/components/OfflineSync'
-import ConnectionStatus from '@/components/ConnectionStatus'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister' // Enregistrement du Service Worker
 import PWAInstallPrompt from '@/components/PWAInstallPrompt' // Invite d'installation PWA
 import { Inter } from 'next/font/google'
@@ -52,7 +50,6 @@ export default function RootLayout({
         <ServiceWorkerRegister />
 
         <YearProvider>
-          <ConnectionStatus />
           <MobileShell>
             {/* L'enveloppe de classe pour le ciblage CSS */}
             <div className="app-sidebar">
@@ -67,7 +64,6 @@ export default function RootLayout({
               {children}
             </div>
           </MobileShell>
-          <OfflineSync />
           
           {/* 📲 Popup / Bannière de téléchargement PWA personnalisée */}
           <PWAInstallPrompt />

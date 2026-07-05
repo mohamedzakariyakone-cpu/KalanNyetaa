@@ -93,6 +93,7 @@ const Sidebar = ({ onClose }: SidebarProps) => {
     { name: 'Recouvrement', href: '/recouvrement', icon: Layers },
     { name: 'Bulletins', href: '/bulletins', icon: NotebookTabs },
     { name: 'Performance', href: '/performance', icon: ChartLine },
+    { name: 'Rapport Promoteur', href: '/rapport-promoteur', icon: NotebookTabs },
     { name: 'Paramètres', href: '/admin/settings', icon: Settings },
     { name: 'Quitter', href: '/', icon: LogOut },
   ];

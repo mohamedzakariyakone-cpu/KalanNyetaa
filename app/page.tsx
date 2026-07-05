@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabase';
 import { offlineFetch } from '@/utils/offlineApi';
 import { ROLES_CONFIG, RoleType, ROLES } from './config/roles';
-import { ShieldCheck, Landmark, GraduationCap, FolderLock, Lock, X, Loader2 } from 'lucide-react';
+import { ShieldCheck, Landmark, GraduationCap, FolderLock, Lock, X, Loader2, Delete } from 'lucide-react';
 
 export default function RoleSelectionPage() {
   const [selectedRole, setSelectedRole] = useState<RoleType | null>(null);
@@ -16,35 +16,24 @@ export default function RoleSelectionPage() {
   const [fetchingSchool, setFetchingSchool] = useState<boolean>(true);
   const router = useRouter();
 
-  // Récupération dynamique du nom de l'école depuis la table "schools"
+  // Récupération du nom de l'école depuis la table "schools"
   useEffect(() => {
     async function fetchSchoolName() {
       try {
-        const { data, error } = await offlineFetch<{ name: string } | null>('school_name', async () => {
-          return await supabase
-            .from('schools')
-            .select('name')
-            .limit(1)
-            .single();
+        const { data } = await offlineFetch<{ name: string } | null>('school_name', async () => {
+          return await supabase.from('schools').select('name').limit(1).single();
         });
-
-        if (data && data.name) {
-          setSchoolName(data.name);
-        } else {
-          setSchoolName('KalanNyetaa');
-        }
+        if (data && data.name) setSchoolName(data.name);
+        else setSchoolName('KalanNyetaa');
       } catch (err) {
-        console.error("Erreur de récupération du nom de l'école :", err);
         setSchoolName('KalanNyetaa');
       } finally {
         setFetchingSchool(false);
       }
     }
-
     fetchSchoolName();
   }, []);
 
-  // Association des icônes pour un superbe rendu mobile et PC
   const getRoleIcon = (role: RoleType) => {
     switch (role) {
       case ROLES.PROMOTEUR: return <ShieldCheck className="w-7 h-7 text-indigo-600" />;
@@ -54,7 +43,6 @@ export default function RoleSelectionPage() {
     }
   };
 
-  // Helper pour stocker le rôle à la fois en local et dans les cookies pour le proxy
   const saveRoleSession = (role: RoleType) => {
     localStorage.setItem('userRole', role);
     document.cookie = `userRole=${role}; path=/; max-age=86400; SameSite=Lax`;
@@ -64,7 +52,6 @@ export default function RoleSelectionPage() {
     setError('');
     setPin('');
     const config = ROLES_CONFIG[role];
-    
     if (config.pin === null) {
       saveRoleSession(role);
       router.push('/dashboard');
@@ -73,7 +60,6 @@ export default function RoleSelectionPage() {
     }
   };
 
-  // CORRECTION : Prise en compte de l'événement optionnel pour éviter les blocages de soumission
   const handleVerifyPin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!selectedRole || !pin || isVerifying) return;
@@ -83,31 +69,58 @@ export default function RoleSelectionPage() {
 
     try {
       const config = ROLES_CONFIG[selectedRole];
+      await new Promise((resolve) => setTimeout(resolve, 550));
+
       if (pin === config.pin) {
         saveRoleSession(selectedRole);
         router.push('/dashboard');
       } else {
         setError('Code PIN incorrect. Veuillez réessayer.');
         setPin('');
+        setIsVerifying(false);
       }
-    } finally {
+    } catch (err) {
+      setError('Une erreur est survenue.');
       setIsVerifying(false);
     }
   };
 
-  // CORRECTION CLAVIER : Passage explicite de l'événement à handleVerifyPin
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleVerifyPin(e as unknown as React.FormEvent);
+  // Gestion de la saisie depuis le clavier virtuel personnalisé
+  const handleKeyPress = (num: string) => {
+    if (isVerifying) return;
+    setError('');
+    if (pin.length < 6) {
+      setPin((prev) => prev + num);
     }
   };
 
+  const handleDelete = () => {
+    if (isVerifying) return;
+    setPin((prev) => prev.slice(0, -1));
+  };
+
+  // Permet quand même aux utilisateurs sur PC de taper sur leur vrai clavier physique
+  useEffect(() => {
+    const handlePhysicalKeyDown = (e: KeyboardEvent) => {
+      if (!selectedRole || isVerifying) return;
+      
+      if (/[0-9]/.test(e.key) && pin.length < 6) {
+        setPin((prev) => prev + e.key);
+      } else if (e.key === 'Backspace') {
+        setPin((prev) => prev.slice(0, -1));
+      } else if (e.key === 'Enter' && pin.length > 0) {
+        handleVerifyPin();
+      }
+    };
+
+    window.addEventListener('keydown', handlePhysicalKeyDown);
+    return () => window.removeEventListener('keydown', handlePhysicalKeyDown);
+  }, [pin, selectedRole, isVerifying]);
+
   return (
-    // OPTIMISATION PC : Structure en flex-col avec un padding vertical équilibré pour occuper harmonieusement tout l'écran sans navbar
     <div id="role-selection-page" className="w-full min-h-screen bg-slate-50 flex flex-col justify-between px-4 py-12 md:py-16 font-sans">
       
-      {/* Header : Nom de l'école connectée affiché fièrement en haut */}
+      {/* Header */}
       <div className="text-center">
         {fetchingSchool ? (
           <div className="flex items-center justify-center h-10">
@@ -126,13 +139,12 @@ export default function RoleSelectionPage() {
         <p className="text-xs sm:text-sm font-bold text-slate-500 uppercase tracking-widest mt-2">Espace de Gestion Scolaire</p>
       </div>
 
-      {/* Zone centrale adaptative (Optimisée PC / Mobile) */}
+      {/* Zone centrale adaptative */}
       <div className="w-full max-w-2xl mx-auto space-y-6 flex-1 flex flex-col justify-center py-8">
         <p className="text-center text-sm font-semibold text-slate-400">
           Sélectionnez votre espace de travail :
         </p>
 
-        {/* Grid intelligente : 1 colonne sur mobile, 2 colonnes bien proportionnées sur PC */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
           {(Object.keys(ROLES_CONFIG) as RoleType[]).map((roleKey) => {
             const roleInfo = ROLES_CONFIG[roleKey];
@@ -165,67 +177,98 @@ export default function RoleSelectionPage() {
         {fetchingSchool ? 'Chargement...' : schoolName} - Tous droits réservés © {new Date().getFullYear()}
       </div>
 
-      {/* MODALE DE SAISIE DE CODE PIN */}
+      {/* MODALE DE SAISIE DE CODE PIN (Style Banque / Wave) */}
       {selectedRole && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/40 backdrop-blur-sm p-0 sm:p-4 animate-fade-in">
-          <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] p-6 shadow-xl space-y-6 transform animate-slide-up transition-all">
+          <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] p-6 shadow-xl space-y-5 transform animate-slide-up transition-all">
             
             {/* Header Modale */}
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <Lock className="w-5 h-5 text-indigo-600" />
-                <h2 className="font-black text-slate-900 text-lg">
+                <h2 className="font-black text-slate-900 text-base">
                   Code requis : {ROLES_CONFIG[selectedRole].label}
                 </h2>
               </div>
               <button 
-                onClick={() => setSelectedRole(null)}
-                className="p-1.5 bg-slate-100 rounded-full text-slate-500 active:scale-90 hover:bg-slate-200 transition-colors"
+                onClick={() => !isVerifying && setSelectedRole(null)}
+                disabled={isVerifying}
+                className="p-1.5 bg-slate-100 rounded-full text-slate-500 active:scale-90 hover:bg-slate-200 transition-colors disabled:opacity-30"
               >
                 <X size={18} />
               </button>
             </div>
 
-            {/* Formulaire de saisie */}
-            <form onSubmit={handleVerifyPin} noValidate autoComplete="off" className="space-y-4">
-              <p className="text-xs font-medium text-slate-500 leading-relaxed">
-                Veuillez entrer le code secret pour déverrouiller l'accès de cet espace scolaire.
-              </p>
-
+            {/* Formulaire principal */}
+            <form onSubmit={handleVerifyPin} className="space-y-4">
+              
+              {/* Champ PIN (Protégé contre le clavier physique natif via readOnly) */}
               <div className="space-y-2">
                 <input
                   type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={6}
+                  readOnly // 🪄 Magie : Bloque l'ouverture automatique du clavier du smartphone !
                   value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  onKeyDown={handleKeyDown}
                   placeholder="••••"
-                  autoFocus
-                  autoComplete="one-time-code"
-                  name={`school-pin-security-${selectedRole}`}
                   id="school-pin-input"
                   style={{ WebkitTextSecurity: 'disc' } as React.CSSProperties}
-                  className="w-full text-center tracking-[1em] text-2xl font-black bg-slate-50 border border-slate-200 rounded-2xl py-4 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+                  className="w-full text-center tracking-[1em] text-2xl font-black bg-slate-50 border border-slate-200 rounded-2xl py-3.5 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
                 />
                 {error && (
                   <p className="text-center text-xs font-bold text-rose-500 animate-pulse">{error}</p>
                 )}
               </div>
 
+              {/* 🔢 LE CLAVIER NUMÉRIQUE VIRTUEL ANIMÉ */}
+              <div className="grid grid-cols-3 gap-3 pt-2 max-w-[320px] mx-auto w-full">
+                {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((num) => (
+                  <button
+                    key={num}
+                    type="button"
+                    onClick={() => handleKeyPress(num)}
+                    className="h-14 bg-slate-50 text-slate-800 text-xl font-black rounded-xl active:bg-indigo-600 active:text-white transition-all duration-100 flex items-center justify-center shadow-sm hover:bg-slate-100"
+                  >
+                    {num}
+                  </button>
+                ))}
+                {/* Touche Vide / Décorative pour l'équilibre */}
+                <div className="h-14"></div>
+                
+                {/* Touche 0 */}
+                <button
+                  type="button"
+                  onClick={() => handleKeyPress('0')}
+                  className="h-14 bg-slate-50 text-slate-800 text-xl font-black rounded-xl active:bg-indigo-600 active:text-white transition-all duration-100 flex items-center justify-center shadow-sm hover:bg-slate-100"
+                >
+                  0
+                </button>
+
+                {/* Touche Retour/Effacer */}
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="h-14 bg-slate-50 text-slate-500 rounded-xl active:bg-rose-500 active:text-white transition-all duration-100 flex items-center justify-center shadow-sm hover:bg-slate-100"
+                >
+                  <Delete size={20} />
+                </button>
+              </div>
+
+              {/* Bouton de soumission */}
               <button
                 type="submit"
                 disabled={!pin || isVerifying}
-                className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-bold py-4 rounded-2xl text-sm uppercase tracking-wider active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+                className={`w-full text-white font-bold py-4 rounded-2xl text-sm uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-2.5 mt-2
+                  ${isVerifying 
+                    ? 'bg-slate-700 cursor-not-allowed shadow-inner animate-pulse' 
+                    : 'bg-slate-900 hover:bg-slate-800 active:scale-[0.99] disabled:opacity-30 shadow-md'
+                  }`}
               >
                 {isVerifying ? (
                   <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    <span>Chargement...</span>
+                    <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+                    <span className="normal-case tracking-normal font-medium text-slate-200">Vérification...</span>
                   </>
                 ) : (
-                  'Valider et Entrer'
+                  <span>Valider et Entrer</span>
                 )}
               </button>
             </form>

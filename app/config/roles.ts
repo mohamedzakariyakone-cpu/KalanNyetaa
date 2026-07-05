@@ -21,7 +21,7 @@ export const ROLES_CONFIG: Record<RoleType, RoleInfo> = {
     label: "Promoteur",
     pin: "4210",
     description: "Propriétaire & Administration totale",
-    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/finance', '/bulletins', '/performance', '/admin/settings', '/recouvrement'],
+    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/finance', '/bulletins', '/performance', '/admin/settings', '/recouvrement', '/rapport-promoteur'],
   },
   [ROLES.COMPTABLE]: {
     label: "Comptable",
