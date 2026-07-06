@@ -9,6 +9,11 @@ import {
   Zap, Users, Landmark, ArrowUpRight, PieChart, Lock, Calendar, Plus, X, Trash2, TrendingDown, Wallet, Users2
 } from 'lucide-react';
 
+const MONTHS = [
+  'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+  'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+];
+
 // --- Composants UI Internes Optimisés ---
 
 const GlassCard = ({ children, title, icon: Icon, className = "" }: { children: React.ReactNode, title?: string, icon?: React.ElementType, className?: string }) => (
@@ -84,6 +89,11 @@ interface Analytics {
   collected: number;
   expectedMonth: number;
   collectedMonth: number;
+  selectedPeriodLabel: string;
+  selectedPeriodCollected: number;
+  selectedPeriodTarget: number;
+  selectedPeriodProgress: number;
+  monthlyExpenses: number;
   healthScore: number;
   runway: number;
   totalExpenses: number;
@@ -109,6 +119,8 @@ export default function CFODashboardUltraResponsive() {
   const [searchTerm, setSearchTerm] = useState('');
   const [expenseSearchTerm, setExpenseSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'students' | 'expenses'>('students');
+  const [viewMode, setViewMode] = useState<'annual' | 'monthly'>('annual');
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState<number>(new Date().getMonth());
   const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
   const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
   const { selectedYearId, isReadOnly, isLoading: yearLoading, selectedYear } = useYear();
@@ -202,22 +214,39 @@ export default function CFODashboardUltraResponsive() {
   const analytics = useMemo(() => {
     const totalExp = expenses.reduce((sum: number, e: Expense) => sum + (Number(e.amount) || 0), 0);
     const monthlySalaries = teachers.reduce((sum: number, t: Teacher) => sum + (Number(t.salary) || 0), 0);
-    const annualSalaries = monthlySalaries * 10; 
+    const annualSalaries = monthlySalaries * 10;
 
-    if (!students.length) return { 
-      totalPotential: 0, collected: 0, expectedMonth: 0, 
-      collectedMonth: 0, healthScore: 0, runway: 0, totalExpenses: totalExp, 
-      monthlySalaries, annualSalaries, netCash: -totalExp,
-      classPerformance: [], processedStudents: []
-    };
+    if (!students.length) return {
+      totalPotential: 0,
+      collected: 0,
+      expectedMonth: 0,
+      collectedMonth: 0,
+      selectedPeriodLabel: 'Année',
+      selectedPeriodCollected: 0,
+      selectedPeriodTarget: 0,
+      selectedPeriodProgress: 0,
+      monthlyExpenses: 0,
+      healthScore: 0,
+      runway: 0,
+      totalExpenses: totalExp,
+      monthlySalaries,
+      annualSalaries,
+      netCash: -totalExp,
+      classPerformance: [],
+      processedStudents: []
+    } as Analytics;
 
     const now = new Date();
-    const currentMonth = settings?.current_month_index || (now.getMonth() + 1);
-    
+    const selectedMonth = selectedMonthIndex;
+    const selectedMonthName = MONTHS[selectedMonth];
+
     let totalPotential = 0;
     let collected = 0;
     let expectedMonth = 0;
     let collectedMonth = 0;
+    let selectedPeriodCollected = 0;
+    let selectedPeriodTarget = 0;
+    let selectedMonthExpenses = 0;
 
     const classStats: Record<string, { total: number; paid: number }> = {};
 
@@ -225,27 +254,40 @@ export default function CFODashboardUltraResponsive() {
       const fee = Number(s.annual_fee) || 0;
       const pays = s.payments || [];
       const totalPaid = pays.reduce((sum: number, p: Payment) => sum + (Number(p.amount) || 0), 0);
-      const className = Array.isArray(s.classes) 
-        ? (s.classes[0]?.name || "Sans Classe") 
+      const className = Array.isArray(s.classes)
+        ? (s.classes[0]?.name || "Sans Classe")
         : (s.classes?.name || "Sans Classe");
-      
+
       totalPotential += fee;
       collected += Math.min(totalPaid, fee);
-      const tranches = Number(s.payment_plan_tranches) || 1;
-      if (tranches === 9 && currentMonth <= 9) expectedMonth += (fee / 9);
-      else if (tranches === 3 && [1, 5, 9].includes(currentMonth)) expectedMonth += (fee / 3);
-      
+
+      const baseTranches = Number(s.payment_plan_tranches) || 1;
+      if (viewMode === 'annual') {
+        if (baseTranches === 9 && now.getMonth() < 9) expectedMonth += (fee / 9);
+        else if (baseTranches === 3 && [0, 4, 8].includes(now.getMonth())) expectedMonth += (fee / 3);
+      } else {
+        if (baseTranches === 9 && selectedMonth < 9) selectedPeriodTarget += (fee / 9);
+        else if (baseTranches === 3 && [0, 4, 8].includes(selectedMonth)) selectedPeriodTarget += (fee / 3);
+      }
+
       const paidMonth = pays.filter((p: Payment) => {
         const d = new Date(p.created_at);
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        return d.getMonth() === selectedMonth && d.getFullYear() === now.getFullYear();
       }).reduce((sum: number, p: Payment) => sum + (Number(p.amount) || 0), 0);
       collectedMonth += paidMonth;
+      selectedMonthExpenses += paidMonth;
+      if (viewMode === 'monthly') selectedPeriodCollected += paidMonth;
 
       if (!classStats[className]) classStats[className] = { total: 0, paid: 0 };
       classStats[className].total += fee;
       classStats[className].paid += totalPaid;
       return { ...s, totalPaid, className, annual_fee: fee };
     });
+
+    if (viewMode === 'annual') {
+      selectedPeriodCollected = collected;
+      selectedPeriodTarget = totalPotential;
+    }
 
     const burnRate = (totalExp / 6) + monthlySalaries;
     const runway = (collected - totalExp) / (burnRate || 1);
@@ -254,8 +296,13 @@ export default function CFODashboardUltraResponsive() {
     return {
       totalPotential,
       collected,
-      expectedMonth,
-      collectedMonth,
+      expectedMonth: selectedPeriodTarget,
+      collectedMonth: selectedPeriodCollected,
+      selectedPeriodLabel: viewMode === 'annual' ? 'Année' : selectedMonthName,
+      selectedPeriodCollected,
+      selectedPeriodTarget,
+      selectedPeriodProgress: selectedPeriodTarget > 0 ? Math.round((selectedPeriodCollected / selectedPeriodTarget) * 100) : 0,
+      monthlyExpenses: selectedMonthExpenses,
       totalExpenses: totalExp,
       monthlySalaries,
       annualSalaries,
@@ -268,7 +315,7 @@ export default function CFODashboardUltraResponsive() {
       })).sort((a, b) => b.percent - a.percent),
       processedStudents
     } as Analytics;
-  }, [students, expenses, teachers, settings]);
+  }, [students, expenses, teachers, settings, viewMode, selectedMonthIndex]);
 
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -391,6 +438,39 @@ export default function CFODashboardUltraResponsive() {
           </div>
         </div>
 
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5 px-4 sm:px-0">
+          <div className="flex flex-wrap gap-3 w-full sm:w-auto">
+            <label className="flex flex-col text-[10px] text-slate-500 font-black uppercase tracking-widest">
+              Vue
+              <select
+                value={viewMode}
+                onChange={(e) => setViewMode(e.target.value as 'annual' | 'monthly')}
+                className="mt-2 min-w-[140px] rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none"
+              >
+                <option value="annual">Annuel</option>
+                <option value="monthly">Mensuel</option>
+              </select>
+            </label>
+            {viewMode === 'monthly' && (
+              <label className="flex flex-col text-[10px] text-slate-500 font-black uppercase tracking-widest">
+                Mois
+                <select
+                  value={selectedMonthIndex}
+                  onChange={(e) => setSelectedMonthIndex(Number(e.target.value))}
+                  className="mt-2 min-w-[140px] rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none"
+                >
+                  {MONTHS.map((month, index) => (
+                    <option key={month} value={index}>{month}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+          <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+            Période : {viewMode === 'annual' ? 'Données annuelles' : MONTHS[selectedMonthIndex]}
+          </div>
+        </div>
+
         {error && (
           <div className="mx-4 sm:mx-0 bg-rose-50 border border-rose-100 text-rose-600 p-3.5 rounded-xl text-xs font-bold mb-6 flex items-center gap-2">
             <AlertTriangle size={16} /> {error}
@@ -419,13 +499,16 @@ export default function CFODashboardUltraResponsive() {
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between col-span-1 lg:col-span-3">
             <div>
-              <p className="text-[9px] font-black uppercase text-rose-400 tracking-tight">Total Sorties (Dépenses)</p>
+              <p className="text-[9px] font-black uppercase text-rose-400 tracking-tight">Dépenses Mensuelles</p>
               <div className="text-base sm:text-xl font-black italic text-rose-600 mt-1 truncate">
-                {analytics.totalExpenses.toLocaleString()} F
+                {analytics.monthlyExpenses.toLocaleString()} F
               </div>
             </div>
+            <div className="text-[10px] font-bold uppercase text-slate-500 mt-4">
+              Total annuel : {analytics.totalExpenses.toLocaleString()} F
+            </div>
             <div className="text-[8px] text-slate-400 font-bold uppercase mt-2 flex items-center gap-1">
-              <TrendingDown size={12} className="text-rose-400" /> Sorties cumulées
+              <TrendingDown size={12} className="text-rose-400" /> Dépense globale
             </div>
           </div>
 
@@ -463,16 +546,17 @@ export default function CFODashboardUltraResponsive() {
         {/* Objectifs Mensuels */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4 sm:mt-6 px-4 sm:px-0">
           <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm">
-            <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Encaissé ce Mois</p>
-            <div className="text-xl sm:text-2xl font-black italic text-slate-900">{analytics.collectedMonth.toLocaleString()} F</div>
+            <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Encaissé</p>
+            <div className="text-xl sm:text-2xl font-black italic text-slate-900">{analytics.selectedPeriodCollected.toLocaleString()} F</div>
             <div className="mt-2 flex items-center gap-1 text-[10px] font-bold text-green-600">
-              <ArrowUpRight size={14} /> {analytics.expectedMonth > 0 ? Math.round((analytics.collectedMonth / analytics.expectedMonth) * 100) : 0}% de l'objectif
+              <ArrowUpRight size={14} /> {analytics.selectedPeriodProgress}% de l'objectif
             </div>
+            <p className="text-[9px] text-slate-400 mt-2 uppercase">Période : {analytics.selectedPeriodLabel}</p>
           </div>
 
           <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm">
-            <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Objectif Attendu ce Mois</p>
-            <div className="text-xl sm:text-2xl font-black italic text-slate-900">{analytics.expectedMonth.toLocaleString()} F</div>
+            <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Objectif Attendu</p>
+            <div className="text-xl sm:text-2xl font-black italic text-slate-900">{analytics.selectedPeriodTarget.toLocaleString()} F</div>
             <div className="mt-2 text-[10px] font-bold text-slate-400 italic">Calculé selon les échelonnements</div>
           </div>
 

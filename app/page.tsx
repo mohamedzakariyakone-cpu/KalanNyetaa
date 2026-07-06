@@ -16,22 +16,111 @@ export default function RoleSelectionPage() {
   const [fetchingSchool, setFetchingSchool] = useState<boolean>(true);
   const router = useRouter();
 
-  // Récupération du nom de l'école depuis la table "schools"
+  const getSchoolNameCacheKey = (userId?: string) =>
+    userId ? `school_name:user:${userId}` : 'school_name:global';
+
+  const readCachedSchoolName = (userId?: string) => {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem(getSchoolNameCacheKey(userId));
+  };
+
+  const persistSchoolNameCache = (userId: string | null, name: string) => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(getSchoolNameCacheKey(userId || undefined), name);
+  };
+
+  // Récupération du nom de l'école liée à l'utilisateur connecté
   useEffect(() => {
-    async function fetchSchoolName() {
+    let isMounted = true;
+
+    async function fetchSchoolName(userId?: string) {
+      if (!isMounted) return;
+      setFetchingSchool(true);
+
       try {
-        const { data } = await offlineFetch<{ name: string } | null>('school_name', async () => {
+        let schoolId: number | null = null;
+
+        if (userId) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('school_id')
+            .eq('id', userId)
+            .maybeSingle();
+
+          schoolId = profile?.school_id ?? null;
+        }
+
+        const cacheKey = getSchoolNameCacheKey(userId);
+
+        const cachedName = readCachedSchoolName(userId);
+        if (cachedName) {
+          setSchoolName(cachedName);
+        }
+
+        const { data } = await offlineFetch<{ school_name?: string; name?: string } | null>(cacheKey, async () => {
+          if (schoolId) {
+            const { data: schoolSettings } = await supabase
+              .from('school_settings')
+              .select('school_name')
+              .eq('school_id', schoolId)
+              .maybeSingle();
+
+            if (schoolSettings?.school_name) {
+              return { data: { school_name: schoolSettings.school_name }, error: null };
+            }
+
+            return await supabase.from('schools').select('name').eq('id', schoolId).maybeSingle();
+          }
+
+          const { data: schoolSettings } = await supabase
+            .from('school_settings')
+            .select('school_name')
+            .limit(1)
+            .single();
+
+          if (schoolSettings?.school_name) {
+            return { data: { school_name: schoolSettings.school_name }, error: null };
+          }
+
           return await supabase.from('schools').select('name').limit(1).single();
-        });
-        if (data && data.name) setSchoolName(data.name);
-        else setSchoolName('KalanNyetaa');
+        }, { forceRefresh: true });
+
+        const displayName = data?.school_name ?? data?.name;
+        const finalName = displayName?.trim() || 'KalanNyetaa';
+
+        if (isMounted) {
+          setSchoolName(finalName);
+          persistSchoolNameCache(userId || null, finalName);
+        }
       } catch (err) {
-        setSchoolName('KalanNyetaa');
+        if (isMounted) {
+          const fallbackName = readCachedSchoolName(userId) || 'KalanNyetaa';
+          setSchoolName(fallbackName);
+        }
       } finally {
-        setFetchingSchool(false);
+        if (isMounted) {
+          setFetchingSchool(false);
+        }
       }
     }
-    fetchSchoolName();
+
+    async function initSchoolName() {
+      const { data: { user } } = await supabase.auth.getUser();
+      await fetchSchoolName(user?.id);
+    }
+
+    initSchoolName();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event: string, session: any) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED' || event === 'SIGNED_OUT') {
+        fetchSchoolName(session?.user?.id);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      authListener?.subscription?.unsubscribe?.();
+    };
   }, []);
 
   const getRoleIcon = (role: RoleType) => {
@@ -122,14 +211,14 @@ export default function RoleSelectionPage() {
       
       {/* Header */}
       <div className="text-center">
-        {fetchingSchool ? (
+        {fetchingSchool && !schoolName ? (
           <div className="flex items-center justify-center h-10">
             <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
           </div>
         ) : (
           <>
             <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-slate-900 tracking-tight uppercase transition-all">
-              {schoolName}
+              {schoolName || 'KalanNyetaa'}
             </h1>
             <p className="mt-3 text-sm sm:text-base font-semibold text-slate-600 leading-6">
               Bienvenue dans votre espace de gestion. Veuillez choisir votre rôle pour commencer.

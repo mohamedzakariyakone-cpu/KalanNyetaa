@@ -14,7 +14,13 @@ function ensureClient() {
 		throw new Error('Supabase env vars missing: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be set');
 	}
 	if (typeof window !== 'undefined') {
-		_client = createBrowserClient(supabaseUrl, supabaseAnonKey);
+		_client = createBrowserClient(supabaseUrl, supabaseAnonKey, {
+			auth: {
+				persistSession: true,
+				autoRefreshToken: true,
+				storage: window.localStorage,
+			},
+		});
 	} else {
 		_client = createClient(supabaseUrl, supabaseAnonKey);
 	}
