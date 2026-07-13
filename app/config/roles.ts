@@ -21,26 +21,26 @@ export const ROLES_CONFIG: Record<RoleType, RoleInfo> = {
     label: "Promoteur",
     pin: "4210",
     description: "Propriétaire & Administration totale",
-    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/finance', '/bulletins', '/performance', '/admin/settings', '/recouvrement', '/rapport-promoteur'],
+    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/finance', '/bulletins', '/performance', '/admin/settings', '/recouvrement', '/rapport-promoteur', '/attendance', '/timetables', '/announcements'],
   },
   [ROLES.COMPTABLE]: {
     label: "Comptable",
     pin: "4321",
     description: "Gestion financière & Recouvrements",
-    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/finance', '/performance', '/admin/settings', '/recouvrement'],
+    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/finance', '/performance', '/admin/settings', '/recouvrement', '/announcements'],
   },
   [ROLES.DIRECTEUR]: {
     label: "Directeur",
     pin: "1228",
     description: "Gestion pédagogique & Personnel",
     // ❌ Pas d'accès à /finance
-    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/bulletins', '/performance', '/admin/settings', '/recouvrement' ],
+    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/bulletins', '/performance', '/admin/settings', '/recouvrement', '/attendance', '/timetables', '/announcements'],
   },
   [ROLES.CAISSIER]: {
     label: "Caissier",
     pin: "5678",
     description: "Encaissements & Suivi des reçus",
     // ❌ Même accès que le Directeur sauf les bulletins (/bulletins) mais a accès à la fiche élève pour l'historique
-    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/performance', '/admin/settings'],
+    allowedPages: ['/dashboard', '/classes', '/students', '/teachers', '/performance', '/admin/settings', '/announcements'],
   },
 };

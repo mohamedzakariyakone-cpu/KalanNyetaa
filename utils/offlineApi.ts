@@ -1,10 +1,5 @@
 import { supabase } from '@/utils/supabase'
-import {
-  getLocalCache,
-  queueOfflineRequest,
-  setLocalCache,
-  getCacheMetadata,
-} from '@/utils/offlineStorage'
+import { getCacheInvalidationManager } from '@/utils/cacheInvalidation'
 
 export type OfflineFetchResult<T = any> = {
   data: T | null
@@ -30,67 +25,13 @@ export async function offlineFetch<T = any>(
   fetchFn: () => Promise<OfflineFetchResult<T>>,
   options?: OfflineFetchOptions
 ): Promise<OfflineFetchResult<T>> {
-  const online = typeof window !== 'undefined' ? navigator.onLine : true
-
-  // Si forceRefresh, ignorer le cache
-  if (options?.forceRefresh && online) {
-    try {
-      const result = await fetchFn()
-
-      if (result.error == null && result.data != null && options?.cacheOnOnline !== false) {
-        await setLocalCache(cacheKey, result.data, {
-          expiresIn: options?.cacheDuration,
-        })
-      }
-
-      return result
-    } catch (error) {
-      // En cas d'erreur, essayer le cache
-      const cached = await getLocalCache<T>(cacheKey)
-      return {
-        data: cached ?? null,
-        error: error,
-        isFromCache: !!cached,
-      }
-    }
-  }
-
-  // Si offline, retourner le cache
-  if (!online) {
-    const cached = await getLocalCache<T>(cacheKey)
-    return {
-      data: cached ?? null,
-      error: null,
-      isFromCache: !!cached,
-      isOffline: true,
-    }
-  }
-
-  // Online - Essayer de récupérer les données fraîches
   try {
     const result = await fetchFn()
-
-    if (result.error == null && result.data != null && options?.cacheOnOnline !== false) {
-      await setLocalCache(cacheKey, result.data, {
-        expiresIn: options?.cacheDuration,
-      })
-    }
-
     return result
   } catch (error) {
-    // En cas d'erreur réseau, essayer le cache
-    const cached = await getLocalCache<T>(cacheKey)
-    if (cached) {
-      return {
-        data: cached,
-        error: error,
-        isFromCache: true,
-      }
-    }
-
     return {
       data: null,
-      error: error,
+      error,
     }
   }
 }
@@ -123,29 +64,10 @@ export type OfflineWriteResult<T = any> = {
 export async function offlineWrite<T = any>(
   params: OfflineWriteParams<T>
 ): Promise<OfflineWriteResult<T>> {
-  const online = typeof window !== 'undefined' ? navigator.onLine : true
-
-  if (!online) {
-    // Offline - Mettre à jour l'UI de manière optimiste et mettre en queue
-    if (params.optimisticUpdate) {
-      params.optimisticUpdate()
-    }
-
-    await queueOfflineRequest({
-      table: params.table,
-      action: params.action,
-      payload: params.payload,
-      options: params.options,
-    })
-
-    return {
-      data: params.payload as T,
-      error: null,
-      offline: true,
-    }
+  if (params.optimisticUpdate) {
+    params.optimisticUpdate()
   }
 
-  // Online - Exécuter l'opération
   try {
     let response: any
 
@@ -158,7 +80,7 @@ export async function offlineWrite<T = any>(
       const keyValue = params.options?.keyValue
 
       if (keyValue === undefined || keyValue === null) {
-        throw new Error('Missing keyValue for offline update')
+        throw new Error('Missing keyValue for update')
       }
 
       response = await supabase
@@ -170,7 +92,7 @@ export async function offlineWrite<T = any>(
       const keyValue = params.options?.keyValue
 
       if (keyValue === undefined || keyValue === null) {
-        throw new Error('Missing keyValue for offline delete')
+        throw new Error('Missing keyValue for delete')
       }
 
       response = await supabase.from(params.table).delete().eq(keyColumn, keyValue)
@@ -182,87 +104,22 @@ export async function offlineWrite<T = any>(
       throw response.error
     }
 
-    // Mettre à jour le cache si nécessaire
-    if (params.cacheKey && response?.data) {
-      await setLocalCache(params.cacheKey, response.data)
+    const manager = getCacheInvalidationManager()
+    if (params.cacheKey) {
+      manager.invalidateKeys([params.cacheKey], `realtime:${params.table}`)
     }
-
-    // Appel optimiste si succès
-    if (params.optimisticUpdate) {
-      params.optimisticUpdate()
-    }
+    manager.invalidatePattern(new RegExp(`^${params.table}(?:[:_]|$)`), `realtime:${params.table}`)
 
     return {
       data: response?.data ?? (params.payload as T),
       error: null,
     }
   } catch (error) {
-    console.error(`Offline write error for ${params.table}:`, error)
-
-    // En cas d'erreur, mettre en queue pour retry
-    if (params.optimisticUpdate) {
-      params.optimisticUpdate()
-    }
-
-    await queueOfflineRequest({
-      table: params.table,
-      action: params.action,
-      payload: params.payload,
-      options: params.options,
-    })
+    console.error(`Write error for ${params.table}:`, error)
 
     return {
-      data: params.payload as T,
-      error: error,
-      offline: true,
+      data: null,
+      error,
     }
-  }
-}
-
-/**
- * Précharge les données critiques pour une utilisation offline
- */
-export async function preloadCriticalData(
-  dataToPreload: Array<{
-    key: string
-    fetchFn: () => Promise<OfflineFetchResult<any>>
-    cacheDuration?: number
-  }>
-) {
-  if (typeof window === 'undefined' || !navigator.onLine) {
-    return
-  }
-
-  const results = await Promise.allSettled(
-    dataToPreload.map(async (item) => {
-      try {
-        const result = await item.fetchFn()
-        if (result.data && !result.error) {
-          await setLocalCache(item.key, result.data, {
-            expiresIn: item.cacheDuration,
-          })
-          return { key: item.key, success: true }
-        }
-      } catch (error) {
-        console.error(`Failed to preload ${item.key}:`, error)
-      }
-      return { key: item.key, success: false }
-    })
-  )
-
-  return results
-}
-
-/**
- * Obtient le statut du cache pour une clé
- */
-export async function getCacheStatus(key: string) {
-  const metadata = await getCacheMetadata(key)
-  const data = await getLocalCache(key)
-
-  return {
-    exists: !!data,
-    metadata,
-    isExpired: metadata?.expiresAt ? metadata.expiresAt < Date.now() : false,
   }
 }

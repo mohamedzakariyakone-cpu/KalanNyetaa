@@ -3,6 +3,7 @@ import MobileShell from '@/components/MobileShell'
 import Sidebar from '@/components/Sidebar'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister' // Enregistrement du Service Worker
 import PWAInstallPrompt from '@/components/PWAInstallPrompt' // Invite d'installation PWA
+import RealtimeSyncInit from '@/components/RealtimeSyncInit'
 import { Inter } from 'next/font/google'
 import { YearProvider } from '@/context/YearContext'
 import type { Metadata, Viewport } from 'next'
@@ -67,6 +68,7 @@ export default function RootLayout({
           
           {/* 📲 Popup / Bannière de téléchargement PWA personnalisée */}
           <PWAInstallPrompt />
+          <RealtimeSyncInit />
         </YearProvider>
 
       </body>

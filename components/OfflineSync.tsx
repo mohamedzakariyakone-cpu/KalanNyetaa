@@ -34,8 +34,9 @@ export default function OfflineSync() {
       setSyncMessage(message || '')
       setShowIndicator(true)
 
-      // Masquer l'indicateur après 3 secondes si succès
+      // 📢 DÉCLENCHEUR : Si la synchronisation réussit, on émet un événement global
       if (status === 'success') {
+        window.dispatchEvent(new Event('global-sync-success'));
         setTimeout(() => setShowIndicator(false), 3000)
       }
     })
@@ -73,6 +74,8 @@ export default function OfflineSync() {
     if (result.success) {
       setSyncStatus('success')
       setSyncMessage(`${result.synced} élément(s) synchronisé(s)`)
+      // Émettre également l'événement lors d'un succès manuel
+      window.dispatchEvent(new Event('global-sync-success'));
     } else if (result.failed > 0) {
       setSyncStatus('error')
       setSyncMessage(`${result.failed} élément(s) échoué(s)`)

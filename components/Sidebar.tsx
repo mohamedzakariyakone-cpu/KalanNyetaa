@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation'; 
-import { LayoutDashboard, School, Users, GraduationCap, Wallet, Settings, LogOut, NotebookTabs, ChartLine, MoreHorizontal, Layers } from 'lucide-react';
+import { LayoutDashboard, School, Users, GraduationCap, Wallet, Settings, LogOut, NotebookTabs, ChartLine, MoreHorizontal, Layers, Clock, Calendar, Bell } from 'lucide-react';
 import { supabase } from '@/utils/supabase';
 import { useState, useEffect, useRef } from 'react';
 import YearSelector from '@/components/YearSelector';
@@ -94,6 +94,9 @@ const Sidebar = ({ onClose }: SidebarProps) => {
     { name: 'Bulletins', href: '/bulletins', icon: NotebookTabs },
     { name: 'Performance', href: '/performance', icon: ChartLine },
     { name: 'Rapport Promoteur', href: '/rapport-promoteur', icon: NotebookTabs },
+    { name: 'Absences & Retards', href: '/attendance', icon: Clock },
+    { name: 'Emplois du Temps', href: '/timetables', icon: Calendar },
+    { name: 'Annonces', href: '/announcements', icon: Bell },
     { name: 'Paramètres', href: '/admin/settings', icon: Settings },
     { name: 'Quitter', href: '/', icon: LogOut },
   ];

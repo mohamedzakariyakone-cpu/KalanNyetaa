@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/utils/supabase';
 import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
+import { useCacheRefresh } from '@/hooks/useCacheRefresh';
 import { useYear } from '@/context/YearContext';
 import {
   Target, Loader2, MessageSquare, Search, BellRing, AlertTriangle,
@@ -204,6 +205,21 @@ export default function CFODashboardUltraResponsive() {
       setLoading(false);
     }
   }, [selectedYearId]);
+
+  const financeCacheKeys = useMemo(() => {
+    if (!selectedYearId) return [];
+    return [`finance_expenses:${selectedYearId}`, `finance_students:${selectedYearId}`, `finance_teachers:${selectedYearId}`];
+  }, [selectedYearId]);
+
+  useCacheRefresh({
+    cacheKeys: financeCacheKeys,
+    cachePattern: /^finance_/, 
+    onInvalidate: () => fetchData(),
+    debounceMs: 150,
+    refreshOnFocus: true,
+    refreshOnVisibilityChange: true,
+    refreshIntervalMs: 120000,
+  });
 
   useEffect(() => { 
     if (!yearLoading && selectedYearId) {

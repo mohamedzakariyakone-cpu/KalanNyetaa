@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { supabase } from '@/utils/supabase';
 import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
+import { useCacheRefresh } from '@/hooks/useCacheRefresh';
 import { useYear } from '@/context/YearContext';
 import { Settings, PenTool, BarChart3, FileText, Plus, Save, Trash2, Download, Trophy, Target, Search, Menu, X, ChevronDown, ChevronUp, Check, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 
@@ -32,6 +33,19 @@ export default function EngineScolaire() {
   const inputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
   const [school, setSchool] = useState<any>(null);
   const [loadingSchool, setLoadingSchool] = useState(true);
+
+  useCacheRefresh({
+    cachePattern: /^(class_subjects:|student_grades:)/,
+    onInvalidate: () => {
+      if (selectedClassId) {
+        loadClassData()
+      }
+    },
+    debounceMs: 150,
+    refreshOnFocus: true,
+    refreshOnVisibilityChange: true,
+    refreshIntervalMs: 120000,
+  });
 
   // Mise à jour de la logique : Second cycle = 7, 8, 9
   const isSecondCycle = useMemo(() => {

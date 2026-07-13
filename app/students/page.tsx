@@ -3,12 +3,13 @@
 import { Suspense, useState, useEffect, useCallback, useMemo, type ChangeEvent } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabase';
+import { offlineWrite } from '@/utils/offlineApi';
 import { useYear } from '@/context/YearContext';
+import { useCacheRefresh } from '@/hooks/useCacheRefresh';
 import {
-  Search, ArrowUpRight, Loader2, Phone, X, Trash2, Plus, Lock, 
+  Search, Loader2, Phone, X, Trash2, Plus, Lock,
   AlertCircle, DollarSign, Award, GraduationCap, ArrowLeft, FileDown
 } from 'lucide-react';
-import Link from 'next/link';
 import NumericInput from '@/components/NumericInput';
 
 // --- UTILITAIRES DE GESTION INDEXEDDB ---
@@ -25,34 +26,34 @@ function initIndexedDB(): Promise<IDBDatabase> {
 
   dbPromise = new Promise((resolve, reject) => {
     const request = window.indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = (event: any) => {
-      const db = event.target.result;
+    request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
+      const db = (event.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains('students_cache')) {
         db.createObjectStore('students_cache', { keyPath: 'cacheKey' });
       }
     };
-    request.onsuccess = (event: any) => resolve(event.target.result);
-    request.onerror = (event: any) => {
+    request.onsuccess = (event: Event) => resolve((event.target as IDBOpenDBRequest).result);
+    request.onerror = (event: Event) => {
       dbPromise = null; // permet de retenter une ouverture plus tard si celle-ci échoue
-      reject(event.target.error);
+      reject((event.target as IDBOpenDBRequest).error);
     };
   });
 
   return dbPromise;
 }
 
-function getLocalCache(cacheKey: string): Promise<any | null> {
+function getLocalCache<T>(cacheKey: string): Promise<T | null> {
   return initIndexedDB().then(db => {
-    return new Promise((resolve) => {
+    return new Promise<T | null>((resolve) => {
       const transaction = db.transaction('students_cache', 'readonly');
       const store = transaction.objectStore('students_cache');
       const request = store.get(cacheKey);
-      request.onsuccess = () => resolve(request.result ? request.result.data : null);
+      request.onsuccess = () => resolve(request.result ? (request.result.data as T) : null);
       request.onerror = () => resolve(null);
     });
   }).catch(() => null);
 }
-async function setLocalCache(cacheKey: string, data: any): Promise<void> {
+async function setLocalCache(cacheKey: string, data: unknown): Promise<void> {
   const db = await initIndexedDB();
 
   const transaction = db.transaction('students_cache', 'readwrite');
@@ -179,7 +180,7 @@ function StudentsPageContent() {
 
     // Chargement immédiat du cache des prochaines classes depuis IndexedDB
     const cacheKey = `next_classes_${nextAcademicYear.id}`;
-    const cachedData = await getLocalCache(cacheKey);
+    const cachedData = await getLocalCache<ClassRecord[]>(cacheKey);
     if (cachedData) {
       setNextYearClasses(cachedData);
     }
@@ -220,7 +221,7 @@ function StudentsPageContent() {
     
     try {
       // ÉTAPE 1 : Extraire instantanément les données enregistrées localement
-      const cached = await getLocalCache(cacheKey);
+      const cached = await getLocalCache<{ students: StudentRecord[]; classes: ClassRecord[]; currentClassInfo: ClassRecord | null }>(cacheKey);
       if (cached) {
         setStudents(cached.students || []);
         setClasses(cached.classes || []);
@@ -263,6 +264,14 @@ function StudentsPageContent() {
       setLoading(false);
     }
   }, [classFilter, selectedYearId]);
+
+  const cacheKey = `students_data_${selectedYearId}_${classFilter || 'all'}`;
+  useCacheRefresh({
+    cacheKeys: [cacheKey],
+    cachePattern: /^students_data_/,
+    onInvalidate: fetchData,
+    debounceMs: 150,
+  });
 
   useEffect(() => { 
     if (!yearLoading && selectedYearId) {
@@ -322,38 +331,71 @@ function StudentsPageContent() {
 
   const addStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.classId || isReadOnly) return;
+    if (!formData.classId || isReadOnly || !selectedYearId) return;
     setIsSubmitting(true);
     const feeValue = parseFloat(formData.annualFee || '0');
 
-    const { error } = await supabase.from('students').insert([{
-      first_name: formData.firstName,
-      last_name: formData.lastName,
-      class_id: formData.classId,
-      annual_fee: feeValue,
-      scolarite_totale: feeValue,
-      scolarite_payee: 0,
-      parent_phone: formData.parentPhone || null,
-      address: formData.address || null,
-      birth_date: formData.birthDate || null,
-      last_exam_avg: parseFloat(formData.lastExamAvg || '0'),
-      academic_year_id: selectedYearId
-    }]);
+    const { error } = await offlineWrite({
+      table: 'students',
+      action: 'INSERT',
+      payload: [{
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        class_id: formData.classId,
+        annual_fee: feeValue,
+        scolarite_totale: feeValue,
+        scolarite_payee: 0,
+        parent_phone: formData.parentPhone || null,
+        address: formData.address || null,
+        birth_date: formData.birthDate || null,
+        last_exam_avg: parseFloat(formData.lastExamAvg || '0'),
+        academic_year_id: selectedYearId,
+      }],
+      cacheKey,
+      optimisticUpdate: () => {
+        setStudents((prev) => [
+          {
+            id: `offline-${Date.now()}`,
+            first_name: formData.firstName,
+            last_name: formData.lastName,
+            class_id: formData.classId,
+            annual_fee: feeValue,
+            scolarite_totale: feeValue,
+            scolarite_payee: 0,
+            parent_phone: formData.parentPhone || null,
+            address: formData.address || null,
+            birth_date: formData.birthDate || null,
+            last_exam_avg: parseFloat(formData.lastExamAvg || '0'),
+            academic_year_id: selectedYearId,
+          },
+          ...prev,
+        ]);
+      },
+    });
 
     if (!error) {
       setFormData({ firstName: '', lastName: '', classId: classFilter || '', annualFee: '', parentPhone: '', address: '', birthDate: '', lastExamAvg: '0' });
       setShowMobileForm(false);
-      fetchData();
     }
     setIsSubmitting(false);
   };
 
   const handleDeleteStudent = async (id: string) => {
     if (isReadOnly) return;
-    const { error } = await supabase.from('students').delete().eq('id', id);
-    if (!error) { 
-      setConfirmDeleteId(null); 
-      fetchData();
+
+    const { error } = await offlineWrite({
+      table: 'students',
+      action: 'DELETE',
+      payload: {},
+      options: { keyColumn: 'id', keyValue: id },
+      cacheKey,
+      optimisticUpdate: () => {
+        setStudents((prev) => prev.filter((student) => String(student.id) !== id));
+      },
+    });
+
+    if (!error) {
+      setConfirmDeleteId(null);
     }
   };
 
@@ -418,7 +460,19 @@ function StudentsPageContent() {
       academic_year_id: nextAcademicYear.id,
     }));
 
-    const { error } = await supabase.from('students').insert(inserts);
+    const { error } = await offlineWrite({
+      table: 'students',
+      action: 'INSERT',
+      payload: inserts,
+      cacheKey,
+      optimisticUpdate: () => {
+        setStudents((prev) => [
+          ...inserts.map((item) => ({ id: `offline-${Date.now()}-${Math.random()}`, ...item })),
+          ...prev,
+        ]);
+      },
+    });
+
     if (error) {
       console.error('Erreur de réinscription :', error.message);
       alert('Erreur lors de la réinscription. Vérifiez la console pour plus de détails.');
@@ -566,7 +620,7 @@ function StudentsPageContent() {
               1: { fontStyle: 'bold' },
               4: { halign: 'center', fontStyle: 'bold' },
             },
-        didParseCell: (data: any) => {
+        didParseCell: (data) => {
           // Colore la moyenne selon le résultat (réussite / échec)
           const avgColIndex = includeFinancial ? 7 : 4;
           if (data.section === 'body' && data.column.index === avgColIndex) {
@@ -577,7 +631,7 @@ function StudentsPageContent() {
             }
           }
         },
-        didDrawPage: (data: any) => {
+        didDrawPage: (data: { pageNumber: number }) => {
           // Pied de page : numéro de page + signature
           const pageCount = doc.getNumberOfPages();
           doc.setFont('helvetica', 'normal');

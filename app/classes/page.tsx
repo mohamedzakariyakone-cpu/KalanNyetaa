@@ -1,11 +1,19 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
 import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
 import { useYear } from '@/context/YearContext';
-import { Trash2, PlusCircle, School, Search, Loader2, ArrowUpRight, Users, Lock, AlertCircle } from 'lucide-react';
+import { useCacheRefresh } from '@/hooks/useCacheRefresh';
+import { Trash2, PlusCircle, School, Search, Loader2, ArrowUpRight, Users, Lock, AlertCircle, Layers, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
+
+const LEVELS = [
+  { id: "Maternelle", label: "🧸 Maternelle", color: "bg-pink-50/60 text-pink-700 border-pink-100", dot: "bg-pink-500" },
+  { id: "Premier Cycle", label: "📖 Premier Cycle (Primaire)", color: "bg-blue-50/60 text-blue-700 border-blue-100", dot: "bg-blue-500" },
+  { id: "Second Cycle", label: "🏫 Second Cycle (Collège)", color: "bg-purple-50/60 text-purple-700 border-purple-100", dot: "bg-purple-500" },
+  { id: "Lycée", label: "🔬 Lycée", color: "bg-indigo-50/60 text-indigo-700 border-indigo-100", dot: "bg-indigo-500" }
+];
 
 export default function ClassesPage() {
   const [classes, setClasses] = useState<any[]>([]);
@@ -14,38 +22,58 @@ export default function ClassesPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Hook pour l'année scolaire
   const { selectedYearId, selectedYear, isReadOnly, isLoading: yearLoading } = useYear();
 
-  const fetchClasses = useCallback(async () => {
+  // Déclaration de fetchClasses acceptant un rafraîchissement forcé
+  const fetchClasses = useCallback(async (forceRefresh = false) => {
     if (!selectedYearId) return;
+    
+    if (forceRefresh) setIsRefreshing(true);
+    if (classes.length === 0) setLoading(true);
 
-    // Suppression du setLoading(true) bloquant s'il y a déjà des données affichées à l'écran
-    if (classes.length === 0) {
-      setLoading(true);
-    }
+    const { data, error } = await offlineFetch<any[]>(
+      `classes:${selectedYearId}`, 
+      async () => {
+        return await supabase
+          .from('classes')
+          .select('*, students(id)')
+          .eq('academic_year_id', selectedYearId)
+          .order('name');
+      },
+      forceRefresh ? { forceRefresh: true } : undefined
+    );
 
-    const { data, error } = await offlineFetch<any[]>(`classes:${selectedYearId}`, async () => {
-      return await supabase
-        .from('classes')
-        .select('*, students(id)')
-        .eq('academic_year_id', selectedYearId)
-        .order('name');
-    });
-
-    if (error) {
-      console.error('Erreur de récupération des classes hors ligne :', error);
-    }
-
+    if (error) console.error('Erreur de récupération des classes:', error);
+    
     setClasses(data || []);
     setLoading(false);
+    setIsRefreshing(false);
   }, [selectedYearId, classes.length]);
 
+  // Hook pour rafraîchir automatiquement quand le cache local est invalidé
+  useCacheRefresh({
+    cachePattern: /^classes:/,
+    onInvalidate: () => fetchClasses(true),
+    debounceMs: 150,
+    refreshOnFocus: true,
+    refreshOnVisibilityChange: true,
+    refreshIntervalMs: 120000,
+  });
+
+  // ÉCOUTEUR : Capte l'événement global de réussite envoyé par OfflineSync
+  useEffect(() => {
+    const handleGlobalRefresh = () => {
+      fetchClasses(true); 
+    };
+
+    window.addEventListener('global-sync-success', handleGlobalRefresh);
+    return () => window.removeEventListener('global-sync-success', handleGlobalRefresh);
+  }, [fetchClasses]);
+
   useEffect(() => { 
-    if (!yearLoading && selectedYearId) {
-      fetchClasses(); 
-    }
+    if (!yearLoading && selectedYearId) fetchClasses(); 
   }, [fetchClasses, yearLoading, selectedYearId]);
 
   const addClass = async (e: React.FormEvent) => {
@@ -53,18 +81,16 @@ export default function ClassesPage() {
     if (!className || !level || !selectedYearId || isReadOnly) return;
     setSubmitting(true);
 
+    const upperName = className.toUpperCase();
+
     const { error } = await offlineWrite({
       table: 'classes',
       action: 'INSERT',
-      payload: {
-        name: className.toUpperCase(),
-        level,
-        academic_year_id: selectedYearId,
-      },
+      payload: { name: upperName, level, academic_year_id: selectedYearId },
       cacheKey: `classes:${selectedYearId}`,
       optimisticUpdate: () => {
         setClasses((prev) => [
-          { id: `offline-${Date.now()}`, name: className.toUpperCase(), level, academic_year_id: selectedYearId, students: [] },
+          { id: `offline-${Date.now()}`, name: upperName, level, academic_year_id: selectedYearId, students: [] },
           ...prev,
         ]);
       },
@@ -73,16 +99,17 @@ export default function ClassesPage() {
     if (error) {
       alert("Erreur : Cette classe existe déjà !");
     } else {
-      setClassName(''); setLevel('');
-      fetchClasses();
+      setClassName(''); 
+      setLevel('');
+      // 🔄 ACTUALISATION FORCÉE IMMÉDIATE APRÈS ENREGISTREMENT TERMINÉ
+      await fetchClasses(true);
     }
     setSubmitting(false);
   };
 
   const deleteClass = async (id: string, name: string) => {
     if (isReadOnly) return;
-    const confirmed = window.confirm(`Voulez-vous vraiment supprimer la classe ${name} ?`);
-    if (confirmed) {
+    if (window.confirm(`Voulez-vous vraiment supprimer la classe ${name} ?`)) {
       const { error } = await offlineWrite({
         table: 'classes',
         action: 'DELETE',
@@ -95,84 +122,113 @@ export default function ClassesPage() {
       });
 
       if (error) {
-        alert("Impossible de supprimer : Des élèves sont peut-être liés à cette classe.");
+        alert("Impossible de supprimer cette classe.");
       } else {
-        fetchClasses();
+        await fetchClasses(true);
       }
     }
   };
 
-  const filteredClasses = classes.filter(cls =>
-    cls.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    cls.level.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const classesByLevel = useMemo(() => {
+    const filtered = classes.filter(cls =>
+      cls.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      cls.level.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
-  // État de chargement de l'année scolaire
+    const groups: Record<string, any[]> = { "Maternelle": [], "Premier Cycle": [], "Second Cycle": [], "Lycée": [] };
+    filtered.forEach(cls => {
+      if (groups[cls.level] !== undefined) groups[cls.level].push(cls);
+      else {
+        if (!groups[cls.level]) groups[cls.level] = [];
+        groups[cls.level].push(cls);
+      }
+    });
+    return groups;
+  }, [classes, searchTerm]);
+
+  const totalStudents = useMemo(() => {
+    return classes.reduce((acc, cls) => acc + (cls.students?.length || 0), 0);
+  }, [classes]);
+
   if (yearLoading) {
     return (
-      <div className="flex items-center justify-center p-12 bg-white rounded-3xl border border-slate-100 shadow-sm text-slate-500 font-bold gap-3">
-        <Loader2 className="animate-spin text-green-600" size={24} />
-        <span>Chargement des paramètres de l'année scolaire...</span>
+      <div className="flex items-center justify-center min-h-[50vh] text-slate-500 font-medium gap-2">
+        <Loader2 className="animate-spin text-green-600" size={20} />
+        <span className="text-sm">Chargement des paramètres...</span>
       </div>
     );
   }
 
-  // Affichage si aucune année n'est sélectionnée
   if (!selectedYearId) {
     return (
-      <div className="bg-amber-50 border border-amber-200 p-8 rounded-3xl text-center text-amber-800">
-        <AlertCircle size={36} className="mx-auto mb-4 text-amber-600 animate-bounce" />
-        <h2 className="text-lg font-black mb-1">Aucune année scolaire sélectionnée</h2>
-        <p className="text-sm opacity-85 max-w-md mx-auto">
-          Veuillez sélectionner ou activer une année scolaire dans le menu latéral avant de gérer les classes.
-        </p>
+      <div className="max-w-xl mx-auto my-12 bg-amber-50/60 border border-amber-100 p-6 rounded-2xl text-center text-amber-800">
+        <AlertCircle size={28} className="mx-auto mb-3 text-amber-600" />
+        <h2 className="text-base font-bold mb-1">Aucune année scolaire active</h2>
+        <p className="text-xs opacity-90">Veuillez sélectionner une année scolaire dans le menu pour gérer la structure.</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-10">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-8">
+    <div className="max-w-6xl mx-auto px-4 py-6 md:py-10 space-y-8 antialiased text-slate-800">
+      
+      {/* Header épuré avec bouton Actualiser */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
         <div>
-          <p className="text-sm font-medium text-green-600">Configuration</p>
-          <h1 className="text-4xl font-extrabold tracking-tighter text-slate-950 flex items-center gap-3">
-            <School className="text-slate-400" size={36} /> Structure de l'école
+          <h1 className="text-xl md:text-2xl font-black tracking-tight text-slate-900 flex items-center gap-2">
+            <School className="text-slate-400" size={24} /> Structure Pédagogique
           </h1>
-          <p className="text-slate-600 mt-2 max-w-lg">Gérez les classes et niveaux d'enseignement de votre établissement.</p>
-          {selectedYear && !selectedYear.is_current && (
-            <p className="text-[10px] font-bold text-amber-600 mt-2 flex items-center gap-1">
-              <AlertCircle size={12} /> Année historique - Lecture seule
-            </p>
-          )}
+          <p className="text-xs text-slate-500 mt-0.5">
+            Année Académique : <span className="text-green-600 font-semibold">{typeof selectedYear === 'object' ? selectedYear?.label : selectedYear}</span>
+          </p>
+        </div>
+
+        {/* Bloc actions & stats à droite */}
+        <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+          {/* BOUTON ACTUALISER MANUEL */}
+          <button
+            onClick={() => fetchClasses(true)}
+            disabled={isRefreshing || loading}
+            className="flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 text-[11px] font-bold uppercase tracking-wider shadow-2xs transition active:scale-95 disabled:opacity-60"
+          >
+            <RefreshCw size={12} className={`${isRefreshing ? 'animate-spin text-green-600' : 'text-slate-500'}`} />
+            <span>{isRefreshing ? 'Mise à jour...' : 'Actualiser'}</span>
+          </button>
+
+          {/* Badges de statistiques légers */}
+          <div className="flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 text-[11px] font-semibold text-slate-500">
+            <span className="flex items-center gap-1"><Layers size={12}/> <strong>{classes.length}</strong> Classes</span>
+            <span className="text-slate-200">|</span>
+            <span className="flex items-center gap-1"><Users size={12}/> <strong>{totalStudents}</strong> Élèves</span>
+          </div>
         </div>
       </div>
 
       {/* Alerte si lecture seule */}
       {isReadOnly && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-3 text-amber-700">
-          <Lock size={18} />
-          <div>
-            <p className="font-bold text-sm">Mode lecture seule</p>
-            <p className="text-xs opacity-75">Vous consultez une année scolaire archivée. Les modifications ne sont pas autorisées.</p>
-          </div>
+        <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-3 flex items-center gap-2.5 text-amber-800 text-xs">
+          <Lock size={14} className="shrink-0 text-amber-600" />
+          <p><strong>Mode lecture seule :</strong> Cette année scolaire est archivée. Modifications désactivées.</p>
         </div>
       )}
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-10 items-start">
+      {/* Layout Principal */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         
-        {/* Formulaire d'ajout (Col 1) */}
-        <div className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100 xl:col-span-1 xl:sticky top-10">
-          <h2 className="text-xl font-bold mb-1 text-slate-950">Nouvelle Classe</h2>
-          <p className="text-sm text-slate-500 mb-6">Enregistrez une section d'enseignement.</p>
+        {/* Formulaire de création */}
+        <div className="bg-white p-5 rounded-xl border border-slate-200/60 shadow-xs lg:col-span-1 lg:sticky lg:top-6 order-1 lg:order-2">
+          <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide flex items-center gap-1.5 mb-1">
+            Créer une classe
+          </h2>
+          <p className="text-[11px] text-slate-400 mb-4">Ajoutez une nouvelle section d'enseignement.</p>
           
-          <form onSubmit={addClass} className="space-y-5">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Nom de la classe</label>
+          <form onSubmit={addClass} className="space-y-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-400 block pl-0.5">Nom complet</label>
               <input
                 type="text"
-                placeholder="ex: 10ÈME LETTRES, CM2 B"
-                className="w-full p-3.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-200 focus:border-green-400 outline-none transition uppercase font-bold disabled:opacity-50"
+                placeholder="Ex: 10ÈME LETTRES, CM2 B"
+                className="w-full p-2.5 bg-slate-50/50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-500/10 focus:border-green-500 outline-none text-xs font-bold uppercase transition disabled:opacity-50"
                 value={className}
                 onChange={(e) => setClassName(e.target.value)}
                 disabled={isReadOnly}
@@ -180,95 +236,135 @@ export default function ClassesPage() {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Niveau d'enseignement</label>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-400 block pl-0.5">Niveau / Cycle</label>
               <select 
-                className="w-full p-3.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-200 focus:border-green-400 outline-none bg-white transition cursor-pointer font-medium disabled:opacity-50"
+                className="w-full p-2.5 bg-slate-50/50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-500/10 focus:border-green-500 outline-none text-xs font-medium cursor-pointer transition disabled:opacity-50"
                 value={level}
                 onChange={(e) => setLevel(e.target.value)}
                 disabled={isReadOnly}
                 required
               >
                 <option value="">Sélectionner...</option>
-                <option value="Maternelle">🧸 Maternelle</option>
-                <option value="Premier Cycle">📖 Premier Cycle (Primaire)</option>
-                <option value="Second Cycle">🏫 Second Cycle (Collège)</option>
-                <option value="Lycée">🔬 Lycée</option>
+                {LEVELS.map(l => (
+                  <option key={l.id} value={l.id}>{l.label}</option>
+                ))}
               </select>
             </div>
 
+            {/* BOUTON AVEC ÉTAT D'ENREGISTREMENT ET ACTUALISATION INTÉGRÉE */}
             <button 
               type="submit"
               disabled={submitting || isReadOnly}
-              className="w-full bg-slate-950 text-white p-4 rounded-xl hover:bg-green-600 transition-all flex items-center justify-center gap-2 font-black text-xs uppercase shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
+              className={`w-full text-white py-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 font-bold text-xs shadow-xs disabled:opacity-50 ${
+                submitting ? 'bg-green-700' : 'bg-slate-900 hover:bg-green-700'
+              }`}
             >
-              {submitting ? <Loader2 className="animate-spin" size={20}/> : <PlusCircle size={20} />}
-              {isReadOnly ? 'Lecture seule' : 'Créer la classe'}
+              {submitting ? (
+                <>
+                  <Loader2 className="animate-spin" size={14}/>
+                  <span>Enregistrement...</span>
+                </>
+              ) : (
+                <>
+                  <PlusCircle size={14} />
+                  <span>{isReadOnly ? 'Verrouillé' : 'Enregistrer la classe'}</span>
+                </>
+              )}
             </button>
           </form>
         </div>
 
-        {/* Liste des classes (Col 2-3) */}
-        <div className="xl:col-span-2 space-y-6">
+        {/* Section Affichage et Recherche */}
+        <div className="lg:col-span-2 space-y-6 order-2 lg:order-1">
+          
+          {/* Barre de recherche */}
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input 
               type="text" 
-              placeholder="Rechercher une classe..." 
-              className="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-100 rounded-2xl shadow-inner outline-none focus:ring-2 focus:ring-green-100"
+              placeholder="Filtrer par nom de classe..." 
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-green-500/10 focus:border-green-500 text-xs transition"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
 
-          {/* L'indicateur de chargement global ne bloque la vue que si l'état local contient 0 classe */}
           {loading && classes.length === 0 ? (
-            <div className="flex items-center gap-3 text-slate-500 p-6"><Loader2 className="animate-spin text-green-600"/> Chargement des classes...</div>
-          ) : filteredClasses.length === 0 ? (
-            <div className="bg-white text-center p-12 rounded-3xl border border-dashed border-slate-200 text-slate-500">Aucune classe enregistrée.</div>
+            <div className="flex items-center gap-2 text-slate-400 py-12 justify-center bg-white rounded-xl border border-slate-100 text-xs">
+              <Loader2 className="animate-spin text-green-600" size={16}/> Chargement de la structure...
+            </div>
+          ) : classes.length === 0 ? (
+            <div className="bg-white text-center p-12 rounded-xl border border-dashed border-slate-200 text-slate-400 text-xs font-medium">
+              Aucune classe configurée pour cette année scolaire.
+            </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {filteredClasses.map((cls) => (
-                <div key={cls.id} className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col group hover:border-green-500 hover:shadow-xl transition-all duration-300 relative overflow-hidden">
-                  
-                  {/* Bouton de suppression discret en haut à droite */}
-                  <button 
-                    onClick={(e) => { e.preventDefault(); deleteClass(cls.id, cls.name); }}
-                    disabled={isReadOnly}
-                    className={`absolute top-4 right-4 transition-colors z-20 ${isReadOnly ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 hover:text-red-500'}`}
-                  >
-                    {isReadOnly ? <Lock size={16} /> : <Trash2 size={16} />}
-                  </button>
+            <div className="space-y-8">
+              {LEVELS.map(lvl => {
+                const levelClasses = classesByLevel[lvl.id] || [];
+                if (levelClasses.length === 0 && searchTerm) return null;
 
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="h-12 w-12 bg-slate-100 rounded-xl flex items-center justify-center border border-slate-200 group-hover:bg-green-600 group-hover:text-white transition-all">
-                      <School size={20} />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-black text-slate-950 tracking-tight">{cls.name}</h3>
-                      <span className="text-[10px] text-green-600 font-black uppercase tracking-widest">{cls.level}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between mt-auto pt-4 border-t border-slate-50">
-                    <div className="flex items-center gap-2 text-slate-400">
-                      <Users size={14} />
-                      <span className="text-xs font-bold">{cls.students?.length || 0} élèves</span>
-                    </div>
+                return (
+                  <div key={lvl.id} className="space-y-3">
                     
-                    {/* LIEN VERS LES ÉLÈVES DE CETTE CLASSE */}
-                    <Link 
-                      href={`/students?class=${cls.id}`}
-                      className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-green-600 hover:text-green-800 transition-colors"
-                    >
-                      Voir la liste <ArrowUpRight size={14} />
-                    </Link>
+                    {/* En-tête de catégorie */}
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2 pl-1">
+                      <div className="flex items-center gap-2.5">
+                        <span className={`w-3 h-3 rounded-full ${lvl.dot} shrink-0`} />
+                        <h2 className="text-sm md:text-base font-black text-slate-900 tracking-tight uppercase">
+                          {lvl.label}
+                        </h2>
+                      </div>
+                      <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
+                        {levelClasses.length} {levelClasses.length > 1 ? 'classes' : 'classe'}
+                      </span>
+                    </div>
+
+                    {levelClasses.length === 0 ? (
+                      <p className="text-[11px] text-slate-400 italic pl-5">Aucune classe indexée dans cette catégorie.</p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {levelClasses.map((cls) => (
+                          <div key={cls.id} className="bg-white p-4 rounded-xl border border-slate-200/70 shadow-2xs hover:border-slate-300 transition-all flex flex-col group relative">
+                            
+                            {/* Actions de suppression */}
+                            <button 
+                              onClick={(e) => { e.preventDefault(); deleteClass(cls.id, cls.name); }}
+                              disabled={isReadOnly}
+                              className={`absolute top-4 right-4 transition-colors z-20 ${isReadOnly ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 hover:text-red-600'}`}
+                            >
+                              {isReadOnly ? <Lock size={12} /> : <Trash2 size={13} />}
+                            </button>
+
+                            <div className="mb-3">
+                              <h3 className="text-sm font-bold text-slate-900 group-hover:text-green-700 transition-colors uppercase tracking-tight">{cls.name}</h3>
+                              <p className="text-[10px] text-slate-400 font-medium mt-0.5">Code unique : {cls.id.substring(0, 8).toUpperCase()}</p>
+                            </div>
+
+                            <div className="flex items-center justify-between mt-auto pt-2.5 border-t border-slate-100">
+                              <div className="flex items-center gap-1 text-slate-500">
+                                <Users size={12} className="text-slate-400" />
+                                <span className="text-xs font-semibold text-slate-600">{cls.students?.length || 0} Élèves</span>
+                              </div>
+                              
+                              <Link 
+                                href={`/students?class=${cls.id}`}
+                                className="inline-flex items-center gap-0.5 text-[10px] font-bold text-green-600 hover:text-green-700 hover:underline"
+                              >
+                                Accéder aux fiches <ArrowUpRight size={12} />
+                              </Link>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
+
       </div>
     </div>
   );

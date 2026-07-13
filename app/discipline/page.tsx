@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/utils/supabase';
 import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
+import { useCacheRefresh } from '@/hooks/useCacheRefresh';
 import { 
   ShieldAlert, User, Calendar, AlertTriangle, 
   PlusCircle, Search, Loader2, History 
@@ -12,6 +13,8 @@ export default function DisciplinePage() {
   const [incidents, setIncidents] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const disciplineCacheKeys = ['discipline_incidents', 'discipline_students'];
 
   // Formulaire
   const [studentId, setStudentId] = useState('');
@@ -48,6 +51,16 @@ export default function DisciplinePage() {
     setStudents(stData || []);
     setLoading(false);
   };
+
+  useCacheRefresh({
+    cacheKeys: disciplineCacheKeys,
+    cachePattern: /^discipline:/,
+    onInvalidate: () => fetchData(),
+    debounceMs: 150,
+    refreshOnFocus: true,
+    refreshOnVisibilityChange: true,
+    refreshIntervalMs: 120000,
+  });
 
   const addIncident = async (e: React.FormEvent) => {
     e.preventDefault();

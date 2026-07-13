@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/utils/supabase';
 import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
+import { useCacheRefresh } from '@/hooks/useCacheRefresh';
 import { 
   Plus, School, UserPlus, Trash2, ShieldAlert, Edit3, 
   CheckCircle, XCircle, Search, Settings, Loader2, 

@@ -125,10 +125,10 @@ export default function RoleSelectionPage() {
 
   const getRoleIcon = (role: RoleType) => {
     switch (role) {
-      case ROLES.PROMOTEUR: return <ShieldCheck className="w-7 h-7 text-indigo-600" />;
-      case ROLES.COMPTABLE: return <Landmark className="w-7 h-7 text-emerald-600" />;
-      case ROLES.DIRECTEUR: return <GraduationCap className="w-7 h-7 text-blue-600" />;
-      case ROLES.CAISSIER: return <FolderLock className="w-7 h-7 text-orange-600" />;
+      case ROLES.PROMOTEUR: return <ShieldCheck className="w-8 h-8 text-indigo-600 animate-fade-in" />;
+      case ROLES.COMPTABLE: return <Landmark className="w-8 h-8 text-emerald-600 animate-fade-in" />;
+      case ROLES.DIRECTEUR: return <GraduationCap className="w-8 h-8 text-blue-600 animate-fade-in" />;
+      case ROLES.CAISSIER: return <FolderLock className="w-8 h-8 text-orange-600 animate-fade-in" />;
     }
   };
 
@@ -174,7 +174,7 @@ export default function RoleSelectionPage() {
     }
   };
 
-  // Gestion de la saisie depuis le clavier virtuel personnalisé
+  // Saisie depuis le clavier virtuel personnalisé
   const handleKeyPress = (num: string) => {
     if (isVerifying) return;
     setError('');
@@ -188,7 +188,7 @@ export default function RoleSelectionPage() {
     setPin((prev) => prev.slice(0, -1));
   };
 
-  // Permet quand même aux utilisateurs sur PC de taper sur leur vrai clavier physique
+  // Écouteur pour claviers physiques
   useEffect(() => {
     const handlePhysicalKeyDown = (e: KeyboardEvent) => {
       if (!selectedRole || isVerifying) return;
@@ -207,75 +207,79 @@ export default function RoleSelectionPage() {
   }, [pin, selectedRole, isVerifying]);
 
   return (
-    <div id="role-selection-page" className="w-full min-h-screen bg-slate-50 flex flex-col justify-between px-4 py-12 md:py-16 font-sans">
+    <div id="role-selection-page" className="w-full min-h-screen bg-slate-50 flex flex-col justify-between px-4 py-8 md:py-12 font-sans">
       
       {/* Header */}
-      <div className="text-center">
+      <div className="text-center pt-4">
         {fetchingSchool && !schoolName ? (
           <div className="flex items-center justify-center h-10">
             <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
           </div>
         ) : (
           <>
-            <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-slate-900 tracking-tight uppercase transition-all">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-900 tracking-tight uppercase transition-all">
               {schoolName || 'KalanNyetaa'}
             </h1>
-            <p className="mt-3 text-sm sm:text-base font-semibold text-slate-600 leading-6">
-              Bienvenue dans votre espace de gestion. Veuillez choisir votre rôle pour commencer.
+            <p className="mt-2 text-xs sm:text-sm font-semibold text-slate-500 max-w-md mx-auto leading-relaxed">
+              Sélectionnez votre espace de travail pour vous connecter.
             </p>
           </>
         )}
-        <p className="text-xs sm:text-sm font-bold text-slate-500 uppercase tracking-widest mt-2">Espace de Gestion Scolaire</p>
       </div>
 
-      {/* Zone centrale adaptative */}
-      <div className="w-full max-w-2xl mx-auto space-y-6 flex-1 flex flex-col justify-center py-8">
-        <p className="text-center text-sm font-semibold text-slate-400">
-          Sélectionnez votre espace de travail :
-        </p>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+      {/* Zone centrale : Grille carrée 2x2 */}
+      <div className="w-full max-w-lg mx-auto flex-1 flex flex-col justify-center py-6">
+        <div className="grid grid-cols-2 gap-4 w-full">
           {(Object.keys(ROLES_CONFIG) as RoleType[]).map((roleKey) => {
             const roleInfo = ROLES_CONFIG[roleKey];
             return (
               <button
                 key={roleKey}
                 onClick={() => handleRoleSelect(roleKey)}
-                className="w-full bg-white border border-slate-100 p-5 rounded-2xl shadow-sm hover:shadow-md text-left flex items-center justify-between active:scale-[0.98] md:hover:scale-[1.01] transition-all duration-200 group"
+                className="w-full aspect-square bg-white border border-slate-100 p-4 sm:p-5 rounded-2xl shadow-sm hover:shadow-md active:scale-[0.97] transition-all duration-250 flex flex-col items-center justify-between text-center relative group"
               >
-                <div className="flex items-center gap-4 min-w-0">
-                  <div className="p-3 bg-slate-50 rounded-xl shrink-0 group-hover:bg-slate-100 transition-colors">
-                    {getRoleIcon(roleKey)}
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-black text-slate-900 text-base">{roleInfo.label}</h3>
-                    <p className="text-xs text-slate-400 truncate">{roleInfo.description}</p>
-                  </div>
-                </div>
+                {/* Indicateur de verrouillage discret (haut droit) */}
                 {roleInfo.pin && (
-                  <Lock className="w-4 h-4 text-slate-300 shrink-0 ml-2 group-hover:text-slate-400 transition-colors" />
+                  <div className="absolute top-3 right-3 text-slate-300 group-hover:text-slate-400 transition-colors">
+                    <Lock className="w-3.5 h-3.5" />
+                  </div>
                 )}
+
+                {/* Conteneur Icône */}
+                <div className="p-3.5 bg-slate-50 rounded-2xl group-hover:bg-indigo-50/50 group-hover:scale-105 transition-all duration-300 mt-auto">
+                  {getRoleIcon(roleKey)}
+                </div>
+
+                {/* Textes explicatifs */}
+                <div className="w-full mb-auto mt-3">
+                  <h3 className="font-bold text-slate-900 text-xs sm:text-sm tracking-tight group-hover:text-indigo-600 transition-colors">
+                    {roleInfo.label}
+                  </h3>
+                  <p className="text-[10px] text-slate-400 line-clamp-2 mt-1 px-1 leading-snug">
+                    {roleInfo.description}
+                  </p>
+                </div>
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Footer info */}
-      <div className="text-center text-xs font-medium text-slate-400 mt-4">
-        {fetchingSchool ? 'Chargement...' : schoolName} - Tous droits réservés © {new Date().getFullYear()}
+      {/* Footer */}
+      <div className="text-center text-[10px] sm:text-xs font-semibold text-slate-400 pb-2">
+        {fetchingSchool ? 'Chargement...' : schoolName} — Tous droits réservés © {new Date().getFullYear()}
       </div>
 
-      {/* MODALE DE SAISIE DE CODE PIN (Style Banque / Wave) */}
+      {/* MODALE DE SAISIE DE CODE PIN */}
       {selectedRole && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/40 backdrop-blur-sm p-0 sm:p-4 animate-fade-in">
-          <div className="bg-white w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] p-6 shadow-xl space-y-5 transform animate-slide-up transition-all">
+          <div className="bg-white w-full max-w-sm rounded-t-[2rem] sm:rounded-[2rem] p-6 shadow-xl space-y-5 transform animate-slide-up transition-all">
             
             {/* Header Modale */}
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
-                <Lock className="w-5 h-5 text-indigo-600" />
-                <h2 className="font-black text-slate-900 text-base">
+                <Lock className="w-4 h-4 text-indigo-600" />
+                <h2 className="font-black text-slate-900 text-sm">
                   Code requis : {ROLES_CONFIG[selectedRole].label}
                 </h2>
               </div>
@@ -284,68 +288,64 @@ export default function RoleSelectionPage() {
                 disabled={isVerifying}
                 className="p-1.5 bg-slate-100 rounded-full text-slate-500 active:scale-90 hover:bg-slate-200 transition-colors disabled:opacity-30"
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             </div>
 
             {/* Formulaire principal */}
             <form onSubmit={handleVerifyPin} className="space-y-4">
               
-              {/* Champ PIN (Protégé contre le clavier physique natif via readOnly) */}
               <div className="space-y-2">
                 <input
                   type="text"
-                  readOnly // 🪄 Magie : Bloque l'ouverture automatique du clavier du smartphone !
+                  readOnly
                   value={pin}
                   placeholder="••••"
                   id="school-pin-input"
                   style={{ WebkitTextSecurity: 'disc' } as React.CSSProperties}
-                  className="w-full text-center tracking-[1em] text-2xl font-black bg-slate-50 border border-slate-200 rounded-2xl py-3.5 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
+                  className="w-full text-center tracking-[1em] text-2xl font-black bg-slate-50 border border-slate-200 rounded-2xl py-3 focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors"
                 />
                 {error && (
-                  <p className="text-center text-xs font-bold text-rose-500 animate-pulse">{error}</p>
+                  <p className="text-center text-[11px] font-bold text-rose-500 animate-pulse">{error}</p>
                 )}
               </div>
 
-              {/* 🔢 LE CLAVIER NUMÉRIQUE VIRTUEL ANIMÉ */}
-              <div className="grid grid-cols-3 gap-3 pt-2 max-w-[320px] mx-auto w-full">
+              {/* Clavier Virtuel */}
+              <div className="grid grid-cols-3 gap-2.5 pt-1 max-w-[280px] mx-auto w-full">
                 {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((num) => (
                   <button
                     key={num}
                     type="button"
                     onClick={() => handleKeyPress(num)}
-                    className="h-14 bg-slate-50 text-slate-800 text-xl font-black rounded-xl active:bg-indigo-600 active:text-white transition-all duration-100 flex items-center justify-center shadow-sm hover:bg-slate-100"
+                    className="h-12 bg-slate-50 text-slate-800 text-lg font-black rounded-xl active:bg-indigo-600 active:text-white transition-all duration-100 flex items-center justify-center shadow-xs hover:bg-slate-100"
                   >
                     {num}
                   </button>
                 ))}
-                {/* Touche Vide / Décorative pour l'équilibre */}
-                <div className="h-14"></div>
+                <div className="h-12"></div>
                 
-                {/* Touche 0 */}
                 <button
                   type="button"
                   onClick={() => handleKeyPress('0')}
-                  className="h-14 bg-slate-50 text-slate-800 text-xl font-black rounded-xl active:bg-indigo-600 active:text-white transition-all duration-100 flex items-center justify-center shadow-sm hover:bg-slate-100"
+                  className="h-12 bg-slate-50 text-slate-800 text-lg font-black rounded-xl active:bg-indigo-600 active:text-white transition-all duration-100 flex items-center justify-center shadow-xs hover:bg-slate-100"
                 >
                   0
                 </button>
 
-                {/* Touche Retour/Effacer */}
                 <button
                   type="button"
                   onClick={handleDelete}
-                  className="h-14 bg-slate-50 text-slate-500 rounded-xl active:bg-rose-500 active:text-white transition-all duration-100 flex items-center justify-center shadow-sm hover:bg-slate-100"
+                  className="h-12 bg-slate-50 text-slate-500 rounded-xl active:bg-rose-500 active:text-white transition-all duration-100 flex items-center justify-center shadow-xs hover:bg-slate-100"
                 >
-                  <Delete size={20} />
+                  <Delete size={18} />
                 </button>
               </div>
 
-              {/* Bouton de soumission */}
+              {/* Bouton de validation */}
               <button
                 type="submit"
                 disabled={!pin || isVerifying}
-                className={`w-full text-white font-bold py-4 rounded-2xl text-sm uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-2.5 mt-2
+                className={`w-full text-white font-bold py-3.5 rounded-2xl text-xs uppercase tracking-wider transition-all duration-300 flex items-center justify-center gap-2 mt-2
                   ${isVerifying 
                     ? 'bg-slate-700 cursor-not-allowed shadow-inner animate-pulse' 
                     : 'bg-slate-900 hover:bg-slate-800 active:scale-[0.99] disabled:opacity-30 shadow-md'
@@ -353,7 +353,7 @@ export default function RoleSelectionPage() {
               >
                 {isVerifying ? (
                   <>
-                    <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+                    <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />
                     <span className="normal-case tracking-normal font-medium text-slate-200">Vérification...</span>
                   </>
                 ) : (

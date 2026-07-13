@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/utils/supabase';
 import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
 import { useYear } from '@/context/YearContext';
+import { useCacheRefresh } from '@/hooks/useCacheRefresh';
 import { 
   UserCheck, Plus, Search, Mail, Phone, 
   Briefcase, Loader2, ExternalLink, GraduationCap, X, UserPlus, Trash2
@@ -29,6 +30,13 @@ export default function TeachersPage() {
 
   // Hook pour l'année scolaire
   const { selectedYearId, isReadOnly, isLoading: yearLoading } = useYear();
+
+  // Hook pour rafraîchir automatiquement quand le cache est invalidé
+  useCacheRefresh({
+    cachePattern: /^teachers:/,
+    onInvalidate: () => fetchTeachers(),
+    debounceMs: 150,
+  });
 
   // Utilisation de useCallback pour stabiliser la fonction
   const fetchTeachers = useCallback(async () => {
@@ -85,7 +93,7 @@ export default function TeachersPage() {
 
     if (!error) {
       setFormData({ firstName: '', lastName: '', email: '', phone: '', specialty: '', status: 'Actif' });
-      await fetchTeachers();
+      // Le cache sera invalidé automatiquement par le système de notification
     } else {
       alert("Erreur lors de l'enregistrement.");
     }
@@ -108,7 +116,7 @@ export default function TeachersPage() {
     });
     if (!error) {
       setConfirmDeleteId(null);
-      await fetchTeachers();
+      // Le cache sera invalidé automatiquement par le système de notification
     } else {
       console.error(error);
       alert("Erreur lors de la suppression. Vérifiez les contraintes de la base.");

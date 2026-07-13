@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabase';
 import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
+import { useCacheRefresh } from '@/hooks/useCacheRefresh';
 import { 
   ArrowLeft, Phone, Mail, Calendar, Briefcase, 
   Loader2, Trash2, Edit3, Banknote, BookOpen, 
@@ -22,6 +23,15 @@ export default function TeacherProfilePage() {
   
   const [inputValue, setInputValue] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+
+  const teacherCacheKeys = [`teacher:${teacherId}`];
+
+  useCacheRefresh({
+    cacheKeys: teacherCacheKeys,
+    cachePattern: /^teacher:/,
+    onInvalidate: () => fetchTeacher(),
+    debounceMs: 150,
+  });
 
   useEffect(() => { fetchTeacher(); }, [id]);
 
