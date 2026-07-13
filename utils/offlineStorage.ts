@@ -29,6 +29,8 @@ export type CacheMetadata = {
   source: 'online' | 'offline'
 }
 
+const DEFAULT_CACHE_TTL_SECONDS = 120
+
 let dbPromise: Promise<any | null> | null = null
 
 function getDbPromise() {
@@ -72,9 +74,7 @@ export async function setLocalCache(
   const db = await getDbPromise()
   if (!db) return
 
-  const expiresAt = options?.expiresIn
-    ? Date.now() + options.expiresIn * 1000
-    : undefined
+  const expiresAt = Date.now() + ((options?.expiresIn ?? DEFAULT_CACHE_TTL_SECONDS) * 1000)
 
   await db.put(CACHE_STORE, {
     key,

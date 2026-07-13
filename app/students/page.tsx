@@ -4,6 +4,7 @@ import { Suspense, useState, useEffect, useCallback, useMemo, type ChangeEvent }
 import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabase';
 import { offlineWrite } from '@/utils/offlineApi';
+import { getLocalCache, setLocalCache } from '@/utils/offlineStorage';
 import { useYear } from '@/context/YearContext';
 import { useCacheRefresh } from '@/hooks/useCacheRefresh';
 import {
@@ -12,67 +13,12 @@ import {
 } from 'lucide-react';
 import NumericInput from '@/components/NumericInput';
 
-// --- UTILITAIRES DE GESTION INDEXEDDB ---
-const DB_NAME = 'KalanNyetaaCacheDB';
-const DB_VERSION = 1;
-
-// On garde une seule connexion ouverte pour éviter de ré-ouvrir la DB à chaque appel
-// (chaque ouverture coûte un aller-retour asynchrone qui retarde l'affichage instantané)
-let dbPromise: Promise<IDBDatabase> | null = null;
-
-function initIndexedDB(): Promise<IDBDatabase> {
-  if (typeof window === 'undefined') return Promise.reject('Environnement serveur');
-  if (dbPromise) return dbPromise;
-
-  dbPromise = new Promise((resolve, reject) => {
-    const request = window.indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains('students_cache')) {
-        db.createObjectStore('students_cache', { keyPath: 'cacheKey' });
-      }
-    };
-    request.onsuccess = (event: Event) => resolve((event.target as IDBOpenDBRequest).result);
-    request.onerror = (event: Event) => {
-      dbPromise = null; // permet de retenter une ouverture plus tard si celle-ci échoue
-      reject((event.target as IDBOpenDBRequest).error);
-    };
-  });
-
-  return dbPromise;
-}
-
-function getLocalCache<T>(cacheKey: string): Promise<T | null> {
-  return initIndexedDB().then(db => {
-    return new Promise<T | null>((resolve) => {
-      const transaction = db.transaction('students_cache', 'readonly');
-      const store = transaction.objectStore('students_cache');
-      const request = store.get(cacheKey);
-      request.onsuccess = () => resolve(request.result ? (request.result.data as T) : null);
-      request.onerror = () => resolve(null);
-    });
-  }).catch(() => null);
-}
-async function setLocalCache(cacheKey: string, data: unknown): Promise<void> {
-  const db = await initIndexedDB();
-
-  const transaction = db.transaction('students_cache', 'readwrite');
-  const store = transaction.objectStore('students_cache');
-
-  store.put({ cacheKey, data, updatedAt: Date.now() });
-
-  await new Promise<void>((resolve) => {
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => resolve();
-  });
-}
-// ----------------------------------------
 
 export default function StudentsPage() {
   return (
     <Suspense fallback={
       <div className="flex flex-col items-center justify-center min-h-[50vh] text-slate-500 gap-4">
-        <Loader2 className="animate-spin text-slate-900" size={32} />
+        <Loader2 className="animate-spin text-indigo-600" size={32} />
         <p className="font-bold animate-pulse text-xs uppercase tracking-widest">Chargement du module élèves...</p>
       </div>
     }>
@@ -127,12 +73,34 @@ function StudentsPageContent() {
   const [showReenrollmentSection, setShowReenrollmentSection] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [scrollPosition, setScrollPosition] = useState(0);
   const [formData, setFormData] = useState({
     firstName: '', lastName: '', classId: classFilter || '', annualFee: '',
     parentPhone: '', address: '', birthDate: '', lastExamAvg: '0'
   });
 
   const { selectedYearId, selectedYear, years, isReadOnly, isLoading: yearLoading } = useYear();
+
+  // Mémorisation du scroll position
+  useEffect(() => {
+    const scrollKey = `scroll_position_${classFilter || 'all'}`;
+    const savedPosition = sessionStorage.getItem(scrollKey);
+    if (savedPosition && !loading) {
+      setTimeout(() => {
+        window.scrollTo(0, parseInt(savedPosition));
+      }, 100);
+    }
+  }, [loading, classFilter]);
+
+  const saveScrollPosition = useCallback(() => {
+    const scrollKey = `scroll_position_${classFilter || 'all'}`;
+    sessionStorage.setItem(scrollKey, String(window.scrollY));
+  }, [classFilter]);
+
+  useEffect(() => {
+    window.addEventListener('scroll', saveScrollPosition);
+    return () => window.removeEventListener('scroll', saveScrollPosition);
+  }, [saveScrollPosition]);
 
   useEffect(() => {
     if (classFilter) {
@@ -172,13 +140,14 @@ function StudentsPageContent() {
     setIsSelectionMode(false);
   }, [classFilter, selectedYearId, students.length]);
 
+  const CACHE_TTL_SECONDS = 60
+
   const fetchNextYearClasses = useCallback(async () => {
     if (!nextAcademicYear) {
       setNextYearClasses([]);
       return;
     }
 
-    // Chargement immédiat du cache des prochaines classes depuis IndexedDB
     const cacheKey = `next_classes_${nextAcademicYear.id}`;
     const cachedData = await getLocalCache<ClassRecord[]>(cacheKey);
     if (cachedData) {
@@ -216,25 +185,22 @@ function StudentsPageContent() {
   const fetchData = useCallback(async () => {
     if (!selectedYearId) return;
     
-    // Clé unique pour isoler le cache par année et par classe filtrée
     const cacheKey = `students_data_${selectedYearId}_${classFilter || 'all'}`;
     
     try {
-      // ÉTAPE 1 : Extraire instantanément les données enregistrées localement
       const cached = await getLocalCache<{ students: StudentRecord[]; classes: ClassRecord[]; currentClassInfo: ClassRecord | null }>(cacheKey);
       if (cached) {
         setStudents(cached.students || []);
         setClasses(cached.classes || []);
         setCurrentClassInfo(cached.currentClassInfo || null);
-        setLoading(false); // Le chargement devient instantané pour l'utilisateur
+        setLoading(false);
       } else {
         setLoading(true);
       }
 
-      // ÉTAPE 2 : Récupérer silencieusement les nouvelles données depuis Supabase
       let query = supabase.from('students').select('*, classes(name)').eq('academic_year_id', selectedYearId);
       if (classFilter) query = query.eq('class_id', classFilter);
-      const { data: stData } = await query.order('last_name', { ascending: true });
+      const { data: stData } = await query.order('first_name', { ascending: true });
 
       const { data: clData } = await supabase.from('classes').select('*').eq('academic_year_id', selectedYearId).order('name');
       
@@ -247,7 +213,6 @@ function StudentsPageContent() {
       const freshStudents = stData || [];
       const freshClasses = clData || [];
 
-      // ÉTAPE 3 : Mettre à jour l'état et sauvegarder dans IndexedDB pour la prochaine visite
       setStudents(freshStudents);
       setClasses(freshClasses);
       setCurrentClassInfo(computedClassInfo);
@@ -256,7 +221,7 @@ function StudentsPageContent() {
         students: freshStudents,
         classes: freshClasses,
         currentClassInfo: computedClassInfo
-      });
+      }, { expiresIn: CACHE_TTL_SECONDS });
 
     } catch (error: unknown) {
       console.error('Erreur de synchronisation :', error);
@@ -271,7 +236,19 @@ function StudentsPageContent() {
     cachePattern: /^students_data_/,
     onInvalidate: fetchData,
     debounceMs: 150,
+    refreshOnFocus: true,
+    refreshOnVisibilityChange: true,
+    refreshIntervalMs: 120000,
   });
+
+  useEffect(() => {
+    const handleGlobalSyncSuccess = () => {
+      fetchData()
+    }
+
+    window.addEventListener('global-sync-success', handleGlobalSyncSuccess)
+    return () => window.removeEventListener('global-sync-success', handleGlobalSyncSuccess)
+  }, [fetchData])
 
   useEffect(() => { 
     if (!yearLoading && selectedYearId) {
@@ -376,6 +353,7 @@ function StudentsPageContent() {
     if (!error) {
       setFormData({ firstName: '', lastName: '', classId: classFilter || '', annualFee: '', parentPhone: '', address: '', birthDate: '', lastExamAvg: '0' });
       setShowMobileForm(false);
+      await fetchData();
     }
     setIsSubmitting(false);
   };
@@ -396,6 +374,7 @@ function StudentsPageContent() {
 
     if (!error) {
       setConfirmDeleteId(null);
+      await fetchData();
     }
   };
 
@@ -434,111 +413,90 @@ function StudentsPageContent() {
     if (isReadOnly) return;
 
     if (!targetNextClassId) {
-      alert('Sélectionnez d’abord une classe cible pour l’année suivante.');
+      alert("Sélectionnez d'abord une classe cible pour l'année suivante.");
       return;
     }
 
     const nextClass = nextYearClasses.find((c) => String(c.id) === targetNextClassId);
     if (!nextClass) {
-      alert('Classe cible introuvable pour l’année suivante. Veuillez sélectionner une autre classe.');
+      alert("Classe cible introuvable pour l'année suivante. Veuillez sélectionner une autre classe.");
       return;
     }
 
     setIsReenrolling(true);
     const selectedStudents = students.filter((student) => selectedStudentIds.includes(String(student.id)));
-    const inserts = selectedStudents.map((student) => ({
-      first_name: student.first_name,
-      last_name: student.last_name,
-      class_id: nextClass.id,
-      annual_fee: Number(student.annual_fee || student.scolarite_totale || 0),
-      scolarite_totale: Number(student.scolarite_totale || student.annual_fee || 0),
+    const newStudents = selectedStudents.map((s) => ({
+      first_name: s.first_name,
+      last_name: s.last_name,
+      class_id: targetNextClassId,
+      annual_fee: s.scolarite_totale || s.annual_fee || 0,
+      scolarite_totale: s.scolarite_totale || s.annual_fee || 0,
       scolarite_payee: 0,
-      parent_phone: student.parent_phone || null,
-      address: student.address || null,
-      birth_date: student.birth_date || null,
-      last_exam_avg: student.last_exam_avg ?? null,
+      parent_phone: s.parent_phone || null,
+      address: s.address || null,
+      birth_date: s.birth_date || null,
+      last_exam_avg: s.last_exam_avg || 0,
       academic_year_id: nextAcademicYear.id,
     }));
 
     const { error } = await offlineWrite({
       table: 'students',
       action: 'INSERT',
-      payload: inserts,
-      cacheKey,
-      optimisticUpdate: () => {
-        setStudents((prev) => [
-          ...inserts.map((item) => ({ id: `offline-${Date.now()}-${Math.random()}`, ...item })),
-          ...prev,
-        ]);
-      },
+      payload: newStudents,
+      cacheKey: `students_data_${nextAcademicYear.id}_${targetNextClassId}`,
+      optimisticUpdate: () => {},
     });
 
-    if (error) {
-      console.error('Erreur de réinscription :', error.message);
-      alert('Erreur lors de la réinscription. Vérifiez la console pour plus de détails.');
-    } else {
-      alert(`Réinscription de ${selectedStudents.length} élève(s) vers ${nextAcademicYear.label} réussie !`);
+    if (!error) {
+      alert(`${selectedStudentIds.length} élève(s) réinscrit(s) avec succès pour l'année ${nextAcademicYear.label}.`);
+      setIsSelectionMode(false);
       setSelectedStudentIds([]);
       setSelectAll(false);
-      fetchData();
+      await fetchData();
+    } else {
+      alert('Erreur lors de la réinscription. Veuillez réessayer.');
     }
     setIsReenrolling(false);
   };
 
-  // Génère un PDF professionnel du registre, avec ou sans les données financières
   const generatePdf = async (includeFinancial: boolean) => {
-    setIsExporting(true);
     try {
+      setIsExporting(true);
       const { jsPDF } = await import('jspdf');
-      const autoTableModule = await import('jspdf-autotable');
-      const autoTable = autoTableModule.default;
+      const autoTable = (await import('jspdf-autotable')).default;
 
-      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 12;
-
-      const today = new Date().toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' });
-      const titleClasse = classFilter && currentClassInfo ? `Classe : ${currentClassInfo.name}` : 'Registre Général des Élèves';
-      const sousTitre = selectedYear?.label ? `Année scolaire ${selectedYear.label}` : '';
-
-      // --- EN-TÊTE DU DOCUMENT ---
-      doc.setFillColor(15, 23, 42); // slate-900
-      doc.rect(0, 0, pageWidth, 22, 'F');
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(15);
-      doc.text('KALAN NYETAA', margin, 10);
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(203, 213, 225); // slate-300
-      doc.text('Système de gestion scolaire', margin, 15.5);
+      let cursorY = margin;
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(255, 255, 255);
-      doc.text(titleClasse.toUpperCase(), pageWidth - margin, 10, { align: 'right' });
+      doc.setFontSize(14);
+      doc.setTextColor(15, 23, 42);
+      doc.text('REGISTRE DES ÉLÈVES', margin, cursorY);
+      cursorY += 8;
+
+      if (classFilter && currentClassInfo?.name) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`Classe : ${currentClassInfo.name}`, margin, cursorY);
+        cursorY += 6;
+      }
 
       doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(203, 213, 225);
-      doc.text(`${sousTitre}${sousTitre ? ' — ' : ''}Généré le ${today}`, pageWidth - margin, 15.5, { align: 'right' });
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Généré le : ${new Date().toLocaleDateString('fr-FR')}`, margin, cursorY);
+      cursorY += 10;
 
-      // --- BLOCS STATISTIQUES ---
-      let cursorY = 30;
-      const statBoxes = includeFinancial
-        ? [
-            { label: 'EFFECTIF', value: `${stats.total} élève(s)`, color: [15, 23, 42] },
-            { label: 'TOTAL RECOUVRÉ', value: `${stats.totalPaid.toLocaleString('fr-FR')} FCFA`, color: [5, 150, 105] },
-            { label: 'RESTANT DÛ', value: `${stats.totalDue.toLocaleString('fr-FR')} FCFA`, color: [225, 29, 72] },
-            { label: 'MOYENNE GÉNÉRALE', value: `${stats.generalAvg.toFixed(2)} / 20`, color: [79, 70, 229] },
-          ]
-        : [
-            { label: 'EFFECTIF', value: `${stats.total} élève(s)`, color: [15, 23, 42] },
-            { label: 'MOYENNE GÉNÉRALE', value: `${stats.generalAvg.toFixed(2)} / 20`, color: [79, 70, 229] },
-          ];
+      const statBoxes = [
+        { label: 'EFFECTIF', value: `${stats.total} élèves`, color: [15, 23, 42] },
+        { label: 'RECOUVRÉ', value: `${stats.totalPaid.toLocaleString()} FCFA`, color: [5, 150, 105] },
+        { label: 'RESTANT DÛ', value: `${stats.totalDue.toLocaleString()} FCFA`, color: [225, 29, 72] },
+        { label: 'MOYENNE GÉNÉRALE', value: `${stats.generalAvg.toFixed(2)} / 20`, color: [79, 70, 229] },
+      ];
 
       const boxGap = 4;
       const boxWidth = (pageWidth - margin * 2 - boxGap * (statBoxes.length - 1)) / statBoxes.length;
@@ -546,13 +504,13 @@ function StudentsPageContent() {
 
       statBoxes.forEach((box, i) => {
         const x = margin + i * (boxWidth + boxGap);
-        doc.setFillColor(248, 250, 252); // slate-50
-        doc.setDrawColor(226, 232, 240); // slate-200
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
         doc.roundedRect(x, cursorY, boxWidth, boxHeight, 1.5, 1.5, 'FD');
 
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(6.5);
-        doc.setTextColor(148, 163, 184); // slate-400
+        doc.setTextColor(148, 163, 184);
         doc.text(box.label, x + 4, cursorY + 5.5);
 
         doc.setFont('helvetica', 'bold');
@@ -563,17 +521,16 @@ function StudentsPageContent() {
 
       cursorY += boxHeight + 8;
 
-      // --- TABLEAU DES ÉLÈVES ---
       const head = includeFinancial
-        ? [['#', 'Nom & Prénom', 'Classe', 'Contact Parent', 'Frais (FCFA)', 'Payé (FCFA)', 'Restant (FCFA)', 'Moyenne']]
-        : [['#', 'Nom & Prénom', 'Classe', 'Contact Parent', 'Moyenne']];
+        ? [['#', 'Prénom & Nom', 'Classe', 'Contact Parent', 'Frais (FCFA)', 'Payé (FCFA)', 'Restant (FCFA)', 'Moyenne']]
+        : [['#', 'Prénom & Nom', 'Classe', 'Contact Parent', 'Moyenne']];
 
       const body = filteredStudents.map((s: StudentRecord, idx: number) => {
         const totalFee = Number(s.scolarite_totale || s.annual_fee || 0);
         const paidFee = Number(s.scolarite_payee || 0);
         const due = totalFee - paidFee;
         const examAvg = Number(s.last_exam_avg ?? 0);
-        const fullName = `${(s.last_name || '').toUpperCase()} ${s.first_name || ''}`.trim();
+        const fullName = `${s.first_name || ''} ${(s.last_name || '').toUpperCase()}`.trim();
         const className = s.classes?.name || 'Inconnu';
         const phone = s.parent_phone || '-';
         const avgStr = `${examAvg.toFixed(2)}/20`;
@@ -592,19 +549,19 @@ function StudentsPageContent() {
         styles: {
           fontSize: 8.5,
           cellPadding: 2.2,
-          textColor: [30, 41, 59], // slate-800
-          lineColor: [226, 232, 240], // slate-200
+          textColor: [30, 41, 59],
+          lineColor: [226, 232, 240],
           lineWidth: 0.1,
         },
         headStyles: {
-          fillColor: [15, 23, 42], // slate-900
+          fillColor: [15, 23, 42],
           textColor: [255, 255, 255],
           fontStyle: 'bold',
           fontSize: 8,
           halign: 'left',
         },
         alternateRowStyles: {
-          fillColor: [248, 250, 252], // slate-50
+          fillColor: [248, 250, 252],
         },
         columnStyles: includeFinancial
           ? {
@@ -621,7 +578,6 @@ function StudentsPageContent() {
               4: { halign: 'center', fontStyle: 'bold' },
             },
         didParseCell: (data) => {
-          // Colore la moyenne selon le résultat (réussite / échec)
           const avgColIndex = includeFinancial ? 7 : 4;
           if (data.section === 'body' && data.column.index === avgColIndex) {
             const raw = String(data.cell.raw || '');
@@ -632,7 +588,6 @@ function StudentsPageContent() {
           }
         },
         didDrawPage: (data: { pageNumber: number }) => {
-          // Pied de page : numéro de page + signature
           const pageCount = doc.getNumberOfPages();
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(7.5);
@@ -663,15 +618,15 @@ function StudentsPageContent() {
     }
   };
 
-  // Navigation vers la fiche détaillée d'un élève (clic sur la ligne/carte)
   const goToStudentDetail = (studentId: string | number) => {
+    saveScrollPosition();
     router.push(`/students/${studentId}`);
   };
 
   if (yearLoading) {
     return (
-      <div className="flex items-center justify-center p-12 bg-white rounded-2xl text-slate-500 font-bold gap-3">
-        <Loader2 className="animate-spin text-slate-900" size={24} />
+      <div className="flex items-center justify-center p-12 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-3xl text-slate-600 font-bold gap-3 border-2 border-indigo-200">
+        <Loader2 className="animate-spin text-indigo-600" size={24} />
         <span className="text-sm">Chargement de la configuration d&apos;année...</span>
       </div>
     );
@@ -679,35 +634,35 @@ function StudentsPageContent() {
 
   if (!selectedYearId) {
     return (
-      <div className="bg-amber-50 border border-amber-200 p-8 rounded-3xl text-center text-amber-800 max-w-sm mx-auto mt-10">
-        <AlertCircle size={36} className="mx-auto mb-4 text-amber-600" />
-        <h2 className="text-base font-black mb-1 uppercase tracking-tight">Session scolaire manquante</h2>
-        <p className="text-xs opacity-85">Activez une année scolaire pour manipuler les dossiers.</p>
+      <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 p-8 rounded-3xl text-center text-amber-800 max-w-sm mx-auto mt-10 shadow-md">
+        <AlertCircle size={40} className="mx-auto mb-4 text-amber-600 font-bold" />
+        <h2 className="text-base font-black mb-2 uppercase tracking-tight">Session scolaire manquante</h2>
+        <p className="text-xs font-bold opacity-85">Activez une année scolaire pour manipuler les dossiers.</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 pb-10 max-w-7xl mx-auto px-0 sm:px-6 w-full overflow-x-hidden print:p-0 print:bg-white">
+    <div className="space-y-5 sm:space-y-6 pb-10 max-w-7xl mx-auto px-0 sm:px-6 w-full overflow-x-hidden print:p-0 print:bg-white bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
       
-      {/* HEADER : Adapté à la taille des écrans */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 px-3 sm:px-0 print:mb-6">
+      {/* HEADER */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 px-3 sm:px-0 print:mb-6">
         <div>
           {classFilter && (
             <button 
               onClick={() => { router.push('/students'); setCurrentClassInfo(null); }}
-              className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-900 mb-1 transition-colors print:hidden"
+              className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-800 mb-2 transition-all active:scale-95 print:hidden"
             >
-              <ArrowLeft size={14} /> Voir toutes les classes
+              <ArrowLeft size={15} className="font-bold" /> Voir toutes les classes
             </button>
           )}
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${classFilter ? 'bg-indigo-600' : 'bg-emerald-600'}`} />
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`h-2 w-2 rounded-full shrink-0 font-bold ${classFilter ? 'bg-indigo-600' : 'bg-emerald-600'}`} />
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
               {classFilter ? `Profil Classe Active` : `Registre Général`}
             </p>
           </div>
-          <h1 className="text-xl sm:text-2xl md:text-3xl font-black text-slate-950 tracking-tight uppercase wrap-break-word">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-900 tracking-tight uppercase wrap-break-word">
             {classFilter && currentClassInfo ? `Classe : ${currentClassInfo.name}` : 'Registre des Élèves'}
           </h1>
         </div>
@@ -716,83 +671,75 @@ function StudentsPageContent() {
         <div className="flex items-center justify-between sm:justify-end gap-2 print:hidden">
           <button
             onClick={() => setShowExportModal(true)}
-            className="flex items-center justify-center gap-2 bg-white border border-slate-200 text-slate-800 px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl font-bold text-xs shadow-sm hover:bg-slate-50 transition-all flex-1 sm:flex-none"
+            className="flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl font-black text-xs shadow-lg hover:shadow-xl active:scale-95 transition-all flex-1 sm:flex-none"
           >
-            <FileDown size={15} className="text-slate-500" />
+            <FileDown size={16} className="font-bold" />
             <span>Exporter PDF</span>
           </button>
 
           <button 
             onClick={() => setShowMobileForm(!showMobileForm)}
-            className="md:hidden h-9 w-9 bg-slate-900 text-white rounded-xl flex items-center justify-center shadow-md shrink-0"
+            className="md:hidden h-10 w-10 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg hover:shadow-xl active:scale-95 transition-all font-bold"
           >
-            {showMobileForm ? <X size={18} /> : <Plus size={18} />}
+            {showMobileForm ? <X size={20} /> : <Plus size={20} />}
           </button>
         </div>
       </div>
 
       {isReadOnly && (
-        <div className="mx-3 sm:mx-0 bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-center gap-2.5 text-amber-700 print:hidden">
-          <Lock size={15} className="shrink-0" />
-          <p className="text-[11px] sm:text-xs font-semibold">Mode consultation active. Les modifications sont bloquées.</p>
+        <div className="mx-3 sm:mx-0 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-4 flex items-center gap-3 text-amber-800 print:hidden shadow-md">
+          <Lock size={16} className="shrink-0 font-bold" />
+          <p className="text-xs sm:text-sm font-bold">Mode consultation active. Les modifications sont bloquées.</p>
         </div>
       )}
 
-      {/* BLOCS STATISTIQUES : Grid 2 colonnes sur Mobile, 4 sur PC */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4 px-3 sm:px-0">
-        <div className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-100 shadow-sm flex items-center gap-2 sm:gap-3">
-          <div className="p-2 bg-slate-100 rounded-lg text-slate-900 shrink-0">
-            <GraduationCap size={18} />
+      {/* BLOCS STATISTIQUES */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 px-3 sm:px-0">
+        <div className="bg-gradient-to-br from-white to-slate-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-slate-200 shadow-md hover:shadow-lg transition-all">
+          <div className="p-2.5 bg-gradient-to-br from-slate-100 to-slate-200 rounded-xl text-slate-900 shrink-0 w-fit mb-3 font-bold">
+            <GraduationCap size={20} />
           </div>
-          <div className="min-w-0">
-            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase truncate">Effectif</p>
-            <p className="text-sm sm:text-lg font-black text-slate-900 leading-tight truncate">{stats.total} <span className="text-[10px] font-normal text-slate-400">élèves</span></p>
-          </div>
+          <p className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1">Effectif</p>
+          <p className="text-lg sm:text-2xl font-black text-slate-900 leading-tight">{stats.total} <span className="text-xs font-bold text-slate-400">élèves</span></p>
         </div>
 
-        <div className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-100 shadow-sm flex items-center gap-2 sm:gap-3">
-          <div className="p-2 bg-emerald-50 rounded-lg text-emerald-600 shrink-0">
-            <DollarSign size={18} />
+        <div className="bg-gradient-to-br from-emerald-50 to-green-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-emerald-200 shadow-md hover:shadow-lg transition-all">
+          <div className="p-2.5 bg-gradient-to-br from-emerald-200 to-green-300 rounded-xl text-emerald-700 shrink-0 w-fit mb-3 font-bold">
+            <DollarSign size={20} />
           </div>
-          <div className="min-w-0">
-            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase truncate">Recouvré</p>
-            <p className="text-sm sm:text-lg font-black text-emerald-600 leading-tight truncate">{stats.totalPaid.toLocaleString()} <span className="text-[8px] font-bold text-emerald-400">FCFA</span></p>
-          </div>
+          <p className="text-[9px] sm:text-[10px] font-black text-emerald-600 uppercase tracking-wide mb-1">Recouvré</p>
+          <p className="text-lg sm:text-2xl font-black text-emerald-700 leading-tight">{stats.totalPaid.toLocaleString()} <span className="text-xs font-bold text-emerald-500">FCFA</span></p>
         </div>
 
-        <div className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-100 shadow-sm flex items-center gap-2 sm:gap-3">
-          <div className="p-2 bg-rose-50 rounded-lg text-rose-600 shrink-0">
-            <AlertCircle size={18} />
+        <div className="bg-gradient-to-br from-rose-50 to-red-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-rose-200 shadow-md hover:shadow-lg transition-all">
+          <div className="p-2.5 bg-gradient-to-br from-rose-200 to-red-300 rounded-xl text-rose-700 shrink-0 w-fit mb-3 font-bold">
+            <AlertCircle size={20} />
           </div>
-          <div className="min-w-0">
-            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase truncate">Restant dû</p>
-            <p className="text-sm sm:text-lg font-black text-rose-600 leading-tight truncate">{stats.totalDue.toLocaleString()} <span className="text-[8px] font-bold text-rose-400">FCFA</span></p>
-          </div>
+          <p className="text-[9px] sm:text-[10px] font-black text-rose-600 uppercase tracking-wide mb-1">Restant dû</p>
+          <p className="text-lg sm:text-2xl font-black text-rose-700 leading-tight">{stats.totalDue.toLocaleString()} <span className="text-xs font-bold text-rose-500">FCFA</span></p>
         </div>
 
-        <div className="bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-100 shadow-sm flex items-center gap-2 sm:gap-3">
-          <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600 shrink-0">
-            <Award size={18} />
+        <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-indigo-200 shadow-md hover:shadow-lg transition-all">
+          <div className="p-2.5 bg-gradient-to-br from-indigo-300 to-blue-400 rounded-xl text-indigo-700 shrink-0 w-fit mb-3 font-bold">
+            <Award size={20} />
           </div>
-          <div className="min-w-0">
-            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase truncate">Moyenne</p>
-            <p className="text-sm sm:text-lg font-black text-indigo-600 leading-tight truncate">
-              {stats.generalAvg.toFixed(2)}/20
-            </p>
-          </div>
+          <p className="text-[9px] sm:text-[10px] font-black text-indigo-600 uppercase tracking-wide mb-1">Moyenne</p>
+          <p className="text-lg sm:text-2xl font-black text-indigo-700 leading-tight">
+            {stats.generalAvg.toFixed(2)}<span className="text-xs font-bold text-indigo-500">/20</span>
+          </p>
         </div>
       </div>
 
-      {/* FILTRES AVANCÉS : Empilés proprement sur mobile */}
-      <div className="mx-3 sm:mx-0 bg-white p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-100 shadow-sm space-y-2.5 print:hidden">
-        <div className="flex flex-col lg:flex-row gap-2.5">
+      {/* FILTRES AVANCÉS */}
+      <div className="mx-3 sm:mx-0 bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-slate-200 shadow-md space-y-3 print:hidden">
+        <div className="flex flex-col lg:flex-row gap-3">
           {/* Barre de Recherche */}
           <div className="relative flex-1">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold" />
             <input
               type="text"
               placeholder="Chercher par nom..."
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 rounded-xl outline-none font-bold text-xs text-slate-800"
+              className="w-full pl-10 pr-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-sm text-slate-800 border-2 border-slate-200 focus:border-indigo-400 focus:bg-white transition-all"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -801,7 +748,7 @@ function StudentsPageContent() {
           {/* Menus Déroulants Filtres */}
           <div className="grid grid-cols-2 sm:flex items-center gap-2">
             <select 
-              className="p-2 bg-slate-50 border-0 rounded-xl font-bold text-xs text-slate-700 outline-none cursor-pointer w-full"
+              className="p-3 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-xs text-slate-700 outline-none cursor-pointer w-full focus:border-indigo-400 transition-all"
               value={financialFilter}
               onChange={(e: ChangeEvent<HTMLSelectElement>) => setFinancialFilter(e.target.value as 'all' | 'paid' | 'debtor')}
             >
@@ -811,7 +758,7 @@ function StudentsPageContent() {
             </select>
 
             <select 
-              className="p-2 bg-slate-50 border-0 rounded-xl font-bold text-xs text-slate-700 outline-none cursor-pointer w-full"
+              className="p-3 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-xs text-slate-700 outline-none cursor-pointer w-full focus:border-indigo-400 transition-all"
               value={academicFilter}
               onChange={(e: ChangeEvent<HTMLSelectElement>) => setAcademicFilter(e.target.value as 'all' | 'passed' | 'failed')}
             >
@@ -822,7 +769,7 @@ function StudentsPageContent() {
 
             {!classFilter && (
               <select 
-                className="p-2 bg-indigo-50 border-0 rounded-xl font-black text-xs text-indigo-700 outline-none cursor-pointer col-span-2 sm:col-span-1 w-full"
+                className="p-3 bg-gradient-to-r from-indigo-100 to-blue-100 border-2 border-indigo-300 rounded-xl font-black text-xs text-indigo-700 outline-none cursor-pointer col-span-2 sm:col-span-1 w-full focus:border-indigo-500 transition-all"
                 onChange={(e) => e.target.value ? router.push(`/students?class=${e.target.value}`) : null}
                 defaultValue=""
               >
@@ -840,16 +787,16 @@ function StudentsPageContent() {
             <button
               onClick={() => setShowReenrollmentSection(true)}
               type="button"
-              className="w-full py-3 px-4 rounded-xl border border-slate-200 bg-white text-slate-800 text-xs font-black uppercase hover:bg-slate-50 transition print:hidden shadow-sm"
+              className="w-full py-3 px-4 rounded-2xl border-2 border-slate-300 bg-white text-slate-800 text-xs font-black uppercase hover:bg-slate-50 hover:border-indigo-400 transition-all print:hidden shadow-md active:scale-95"
             >
               Ouverture des réinscriptions
             </button>
           ) : (
-            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-100 shadow-sm space-y-3 print:hidden">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="bg-white p-5 sm:p-6 rounded-3xl border-2 border-slate-200 shadow-md space-y-4 print:hidden">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                   <div className="flex items-center justify-between">
-                    <p className="text-[10px] uppercase tracking-[0.24em] text-slate-400 font-black">Réinscription de classe</p>
+                    <h3 className="text-sm font-black text-slate-900 uppercase">Réinscription</h3>
                     <button 
                       onClick={() => { 
                         setShowReenrollmentSection(false);
@@ -857,15 +804,15 @@ function StudentsPageContent() {
                         setSelectedStudentIds([]); 
                         setSelectAll(false); 
                       }}
-                      className="text-slate-400 hover:text-slate-600 sm:hidden"
+                      className="text-slate-400 hover:text-slate-600 sm:hidden font-bold"
                     >
-                      <X size={16} />
+                      <X size={18} />
                     </button>
                   </div>
-                  <p className="text-sm font-bold text-slate-700 mt-1">
+                  <p className="text-xs font-bold text-slate-600 mt-2">
                     {isSelectionMode
                       ? 'Sélectionnez les élèves, choisissez la classe cible et lancez la réinscription.'
-                      : 'Activez la réinscription pour sélectionner des élèves et choisir leur classe de l’année suivante.'
+                      : "Activez la réinscription pour sélectionner des élèves et choisir leur classe de l'année suivante."
                     }
                   </p>
                 </div>
@@ -874,7 +821,7 @@ function StudentsPageContent() {
                   <button
                     onClick={toggleSelectionMode}
                     type="button"
-                    className="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-black uppercase hover:bg-slate-50 transition"
+                    className="px-4 py-2.5 rounded-xl border-2 border-slate-300 text-slate-700 text-xs font-black uppercase hover:bg-slate-50 transition-all active:scale-95"
                   >
                     {isSelectionMode ? 'Annuler réinscription' : 'Activer réinscription'}
                   </button>
@@ -883,7 +830,7 @@ function StudentsPageContent() {
                       onClick={reEnrollSelectedStudents}
                       type="button"
                       disabled={isReenrolling || selectedStudentIds.length === 0 || !nextAcademicYear || isReadOnly || !targetNextClassId}
-                      className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white text-xs font-black uppercase disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg active:scale-95 transition-all shadow-md"
                     >
                       {isReenrolling ? 'En cours...' : `Réinscrire ${selectedStudentIds.length} élève(s)`}
                     </button>
@@ -892,22 +839,22 @@ function StudentsPageContent() {
               </div>
 
               {!nextAcademicYear ? (
-                <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3 text-amber-800 text-xs font-semibold">
+                <div className="rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-200 p-3.5 text-amber-800 text-xs font-bold">
                   Aucune année scolaire suivante configurée pour la réinscription. Ajoutez une année dans les paramètres.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="block text-[9px] font-black uppercase text-slate-400">Année suivante</label>
-                    <p className="text-sm font-bold text-slate-700">{nextAcademicYear.label}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="block text-[9px] font-black uppercase text-slate-500">Année suivante</label>
+                    <p className="text-sm font-black text-slate-800 bg-slate-50 p-3 rounded-xl border-2 border-slate-200">{nextAcademicYear.label}</p>
                   </div>
-                  <div className="space-y-1">
-                    <label className="block text-[9px] font-black uppercase text-slate-400">Classe cible</label>
+                  <div className="space-y-2">
+                    <label className="block text-[9px] font-black uppercase text-slate-500">Classe cible</label>
                     <select
                       value={targetNextClassId}
                       onChange={(e) => setTargetNextClassId(e.target.value)}
                       disabled={!isSelectionMode}
-                      className="w-full p-3 bg-slate-50 rounded-2xl border border-slate-200 text-xs font-bold outline-none focus:ring-2 focus:ring-green-200"
+                      className="w-full p-3 bg-slate-50 rounded-xl border-2 border-slate-200 text-xs font-bold outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 transition-all"
                     >
                       <option value="">Sélectionner la classe cible...</option>
                       {nextYearClasses.map((c: ClassRecord) => (
@@ -919,8 +866,8 @@ function StudentsPageContent() {
               )}
 
               {isSelectionMode && nextAcademicYear && nextYearClasses.length === 0 && (
-                <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3 text-amber-800 text-xs font-semibold">
-                  Aucune classe configurée pour l’année {nextAcademicYear.label}. Créez d’abord les classes pour réinscrire les élèves.
+                <div className="rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-200 p-3.5 text-amber-800 text-xs font-bold">
+                  Aucune classe configurée pour l'année {nextAcademicYear.label}. Créez d'abord les classes pour réinscrire les élèves.
                 </div>
               )}
             </div>
@@ -928,49 +875,49 @@ function StudentsPageContent() {
         </div>
       )}
 
-      {/* FORMULAIRE : Responsive (Block sur PC, affichage Toggleable sur Mobile) */}
-      <div className={`${showMobileForm ? 'block mx-3' : 'hidden md:block'} bg-white p-4 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-100 shadow-sm print:hidden`}>
-        <h2 className="text-xs font-black uppercase tracking-wider text-slate-400 mb-4">Nouvelle Inscription</h2>
-        <form onSubmit={addStudent} className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            <div className="space-y-1">
-              <label className="text-[9px] font-black uppercase text-slate-400">Prénom</label>
+      {/* FORMULAIRE */}
+      <div className={`${showMobileForm ? 'block mx-3' : 'hidden md:block'} bg-white p-5 sm:p-6 rounded-3xl border-2 border-slate-200 shadow-md print:hidden`}>
+        <h2 className="text-xs font-black uppercase tracking-wider text-slate-500 mb-5">Nouvelle Inscription</h2>
+        <form onSubmit={addStudent} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="space-y-2">
+              <label className="text-[9px] font-black uppercase text-slate-500">Prénom</label>
               <input 
                 type="text" 
                 placeholder="Moussa" 
-                className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-800"
+                className="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-800 focus:border-indigo-400 focus:bg-white transition-all"
                 value={formData.firstName}
                 onChange={(e) => setFormData({...formData, firstName: e.target.value})}
                 disabled={isReadOnly}
                 required 
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-[9px] font-black uppercase text-slate-400">Nom</label>
+            <div className="space-y-2">
+              <label className="text-[9px] font-black uppercase text-slate-500">Nom</label>
               <input 
                 type="text" 
                 placeholder="Diarra" 
-                className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-800"
+                className="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-800 focus:border-indigo-400 focus:bg-white transition-all"
                 value={formData.lastName}
                 onChange={(e) => setFormData({...formData, lastName: e.target.value})}
                 disabled={isReadOnly}
                 required 
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-[9px] font-black uppercase text-slate-400">Naissance</label>
+            <div className="space-y-2">
+              <label className="text-[9px] font-black uppercase text-slate-500">Naissance</label>
               <input 
                 type="date" 
-                className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-600"
+                className="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-600 focus:border-indigo-400 focus:bg-white transition-all"
                 value={formData.birthDate}
                 onChange={(e) => setFormData({...formData, birthDate: e.target.value})}
                 disabled={isReadOnly}
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-[9px] font-black uppercase text-slate-400">Classe</label>
+            <div className="space-y-2">
+              <label className="text-[9px] font-black uppercase text-slate-500">Classe</label>
               <select 
-                className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-800"
+                className="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-800 focus:border-indigo-400 focus:bg-white transition-all"
                 value={formData.classId}
                 onChange={(e) => setFormData({...formData, classId: e.target.value})}
                 disabled={isReadOnly || !!classFilter}
@@ -982,34 +929,34 @@ function StudentsPageContent() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <div className="space-y-1">
-              <label className="text-[9px] font-black uppercase text-slate-400">Téléphone Parent</label>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="space-y-2">
+              <label className="text-[9px] font-black uppercase text-slate-500">Téléphone Parent</label>
               <input 
                 type="text" 
                 placeholder="70000000" 
-                className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-800"
+                className="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-800 focus:border-indigo-400 focus:bg-white transition-all"
                 value={formData.parentPhone}
                 onChange={(e) => setFormData({...formData, parentPhone: e.target.value})}
                 disabled={isReadOnly}
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-[9px] font-black uppercase text-slate-400">Adresse</label>
+            <div className="space-y-2">
+              <label className="text-[9px] font-black uppercase text-slate-500">Adresse</label>
               <input 
                 type="text" 
                 placeholder="Quartier..." 
-                className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-xs text-slate-800"
+                className="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-800 focus:border-indigo-400 focus:bg-white transition-all"
                 value={formData.address}
                 onChange={(e) => setFormData({...formData, address: e.target.value})}
                 disabled={isReadOnly}
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-[9px] font-black uppercase text-slate-400">Frais Annuels (FCFA)</label>
+            <div className="space-y-2">
+              <label className="text-[9px] font-black uppercase text-slate-500">Frais Annuels (FCFA)</label>
               <NumericInput 
                 placeholder="Montant total..." 
-                className="w-full p-2.5 bg-slate-50 rounded-lg outline-none font-bold text-slate-900 text-xs"
+                className="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none font-bold text-slate-900 text-xs focus:border-indigo-400 focus:bg-white transition-all"
                 value={formData.annualFee === '' ? undefined : Number(formData.annualFee)}
                 onChange={(v) => setFormData({...formData, annualFee: v === undefined ? '' : String(v)})}
                 disabled={isReadOnly}
@@ -1020,18 +967,18 @@ function StudentsPageContent() {
           <button 
             type="submit" 
             disabled={isSubmitting || isReadOnly}
-            className="w-full md:w-auto bg-slate-900 text-white px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-wide shadow-sm disabled:opacity-50"
+            className="w-full md:w-auto bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-6 py-3 rounded-xl font-black text-xs uppercase tracking-wide shadow-lg hover:shadow-xl active:scale-95 transition-all disabled:opacity-50"
           >
-            {isSubmitting ? <Loader2 className="animate-spin mx-auto" size={14} /> : 'Valider l\'inscription'}
+            {isSubmitting ? <Loader2 className="animate-spin mx-auto" size={16} /> : 'Valider l\'inscription'}
           </button>
         </form>
       </div>
 
-      {/* 🖥️ AFFICHAGE ÉCRANS LARGES (PC / TABLETTES) : Tableau de bord natif */}
-      <div className="hidden md:block bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden print:border-0 print:shadow-none">
+      {/* AFFICHAGE ÉCRANS LARGES */}
+      <div className="hidden md:block bg-white rounded-3xl border-2 border-slate-200 shadow-md overflow-hidden print:border-0 print:shadow-none">
         <div className="w-full overflow-x-auto no-scrollbar">
           <table className="w-full text-left min-w-187.5 print:min-w-full">
-            <thead className="bg-slate-50 text-[10px] uppercase font-black tracking-widest text-slate-400 border-b border-slate-100 print:bg-slate-100">
+            <thead className="bg-gradient-to-r from-slate-50 to-slate-100 text-[10px] uppercase font-black tracking-widest text-slate-600 border-b-2 border-slate-200 print:bg-slate-100">
               <tr>
                 {classFilter && isSelectionMode && (
                   <th className="px-4 py-4 text-center">
@@ -1039,11 +986,12 @@ function StudentsPageContent() {
                       type="checkbox" 
                       checked={selectAll} 
                       onChange={toggleSelectAll} 
-                      className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500" 
+                      className="h-4 w-4 rounded border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" 
                     />
                   </th>
                 )}
-                <th className="px-6 py-4">Nom complet & Classe</th>
+                <th className="px-6 py-4">Prénom & Nom</th>
+                <th className="px-4 py-4">Classe</th>
                 <th className="px-4 py-4 text-center">Contact Parent</th>
                 <th className="px-4 py-4 text-right">Frais d&apos;Études</th>
                 <th className="px-4 py-4 text-right">Payé (FCFA)</th>
@@ -1051,11 +999,11 @@ function StudentsPageContent() {
                 <th className="px-6 py-4 text-right print:hidden">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y-2 divide-slate-100">
               {loading ? (
-                <tr><td colSpan={7} className="p-10 text-center"><Loader2 className="animate-spin mx-auto text-slate-900" size={20} /></td></tr>
+                <tr><td colSpan={8} className="p-10 text-center"><Loader2 className="animate-spin mx-auto text-indigo-600" size={22} /></td></tr>
               ) : filteredStudents.length === 0 ? (
-                <tr><td colSpan={7} className="p-8 text-center text-xs font-semibold text-slate-400">Aucun élève trouvé.</td></tr>
+                <tr><td colSpan={8} className="p-8 text-center text-xs font-bold text-slate-500">Aucun élève trouvé.</td></tr>
               ) : filteredStudents.map((s: StudentRecord) => {
                 const totalFee = Number(s.scolarite_totale || s.annual_fee || 0);
                 const paidFee = Number(s.scolarite_payee || 0);
@@ -1066,60 +1014,63 @@ function StudentsPageContent() {
                   <tr 
                     key={s.id} 
                     onClick={() => goToStudentDetail(s.id)}
-                    className="hover:bg-slate-50/50 transition-colors print:break-inside-avoid cursor-pointer"
+                    className="hover:bg-indigo-50/50 transition-colors print:break-inside-avoid cursor-pointer active:bg-slate-100"
                   >
                     {classFilter && isSelectionMode && (
                       <td 
-                        className="px-4 py-3.5 text-center"
+                        className="px-4 py-4 text-center"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input 
                           type="checkbox" 
                           checked={selectedStudentIds.includes(String(s.id))} 
                           onChange={() => toggleStudentSelection(String(s.id))} 
-                          className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500" 
+                          className="h-4 w-4 rounded border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" 
                         />
                       </td>
                     )}
-                    <td className="px-6 py-3.5">
+                    <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <div className="h-9 w-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-xs uppercase shrink-0 print:border">
+                        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white flex items-center justify-center font-black text-xs uppercase shrink-0 shadow-md print:border-2 print:border-slate-300">
                           {s.first_name?.[0]}{s.last_name?.[0]}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-bold text-slate-900 text-sm truncate uppercase">{s.last_name} <span className="capitalize font-semibold text-slate-700">{s.first_name}</span></p>
-                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight">{s.classes?.name || 'Inconnu'}</span>
+                          <p className="font-black text-slate-900 text-sm truncate uppercase">{s.first_name} <span className="font-bold text-slate-700">{s.last_name}</span></p>
+                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">{s.classes?.name || 'Inconnu'}</span>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3.5 text-center font-medium text-slate-600 text-xs whitespace-nowrap">
+                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
+                      {s.classes?.name || 'Inconnu'}
+                    </td>
+                    <td className="px-4 py-4 text-center font-bold text-slate-600 text-xs whitespace-nowrap">
                       {s.parent_phone || <span className="text-slate-300">-</span>}
                     </td>
-                    <td className="px-4 py-3.5 text-right font-black text-slate-900 text-xs">
+                    <td className="px-4 py-4 text-right font-black text-slate-900 text-sm">
                       {totalFee.toLocaleString()}
                     </td>
-                    <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                      <span className={`inline-block px-2 py-1 rounded-md font-bold text-[10px] ${isSettled ? 'bg-emerald-50 text-emerald-700' : paidFee > 0 ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                    <td className="px-4 py-4 text-right whitespace-nowrap">
+                      <span className={`inline-block px-3 py-1.5 rounded-lg font-bold text-xs ${isSettled ? 'bg-emerald-100 text-emerald-800' : paidFee > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
                         {paidFee.toLocaleString()} FCFA
                       </span>
                     </td>
-                    <td className="px-4 py-3.5 text-center">
-                      <span className={`font-black text-xs ${examAvg >= 10 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                    <td className="px-4 py-4 text-center">
+                      <span className={`font-black text-sm ${examAvg >= 10 ? 'text-indigo-700' : 'text-rose-700'}`}>
                         {examAvg.toFixed(2)}
                       </span>
                     </td>
                     <td 
-                      className="px-6 py-3.5 text-right print:hidden"
+                      className="px-6 py-4 text-right print:hidden"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-center justify-end gap-2">
                         {!isReadOnly && (
                           <button
                             onClick={() => setConfirmDeleteId(String(s.id))}
-                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                            className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all font-bold active:scale-90"
                             title="Radier l'élève"
                           >
-                            <Trash2 size={14} />
+                            <Trash2 size={16} />
                           </button>
                         )}
                       </div>
@@ -1132,12 +1083,12 @@ function StudentsPageContent() {
         </div>
       </div>
 
-      {/* 📱 AFFICHAGE ÉCRANS SMARTPHONES (MOBILE) : Cartes empilées compactes */}
-      <div className="grid grid-cols-1 gap-2.5 px-3 sm:px-0 md:hidden print:hidden">
+      {/* AFFICHAGE MOBILE */}
+      <div className="md:hidden space-y-3 px-3 sm:px-0">
         {loading ? (
-          <div className="p-10 text-center bg-white rounded-xl"><Loader2 className="animate-spin mx-auto text-slate-900" size={20} /></div>
+          <div className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-indigo-600" size={24} /></div>
         ) : filteredStudents.length === 0 ? (
-          <div className="p-8 text-center text-xs font-semibold text-slate-400 bg-white rounded-xl">Aucun élève trouvé.</div>
+          <div className="p-8 text-center text-xs font-bold text-slate-500 bg-white rounded-2xl border-2 border-slate-200">Aucun élève trouvé.</div>
         ) : filteredStudents.map((s: StudentRecord) => {
           const totalFee = Number(s.scolarite_totale || s.annual_fee || 0);
           const paidFee = Number(s.scolarite_payee || 0);
@@ -1148,60 +1099,62 @@ function StudentsPageContent() {
             <div 
               key={s.id} 
               onClick={() => goToStudentDetail(s.id)}
-              className="bg-white p-3.5 rounded-xl border border-slate-100 shadow-sm space-y-3 cursor-pointer active:bg-slate-50 hover:bg-slate-50/70 transition-colors"
+              className="bg-white p-4 rounded-2xl border-2 border-slate-200 shadow-md space-y-3 cursor-pointer active:bg-slate-50 hover:shadow-lg transition-all"
             >
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
                   {classFilter && isSelectionMode && (
                     <input 
                       type="checkbox" 
                       checked={selectedStudentIds.includes(String(s.id))} 
                       onChange={() => toggleStudentSelection(String(s.id))} 
                       onClick={(e) => e.stopPropagation()}
-                      className="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500 mr-1 shrink-0" 
+                      className="h-5 w-5 rounded border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0" 
                     />
                   )}
-                  <div className="h-8 w-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-black text-xs uppercase shrink-0">
+                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white flex items-center justify-center font-black text-xs uppercase shrink-0 shadow-md">
                     {s.first_name?.[0]}{s.last_name?.[0]}
                   </div>
                   <div className="min-w-0">
-                    <p className="font-bold text-slate-900 text-xs uppercase truncate">{s.last_name} <span className="capitalize font-medium text-slate-700">{s.first_name}</span></p>
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-tight mt-0.5">{s.classes?.name || 'Inconnu'}</p>
+                    <p className="font-black text-slate-900 text-sm uppercase truncate">{s.first_name} <span className="font-bold text-slate-700">{s.last_name}</span></p>
+                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-tight mt-0.5">{s.classes?.name || 'Inconnu'}</p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                   {s.parent_phone && (
                     <a 
                       href={`tel:${s.parent_phone}`} 
-                      className="h-7 w-7 bg-emerald-50 text-emerald-700 rounded-lg flex items-center justify-center border border-emerald-100"
+                      className="h-10 w-10 bg-gradient-to-br from-emerald-400 to-green-500 text-white rounded-xl flex items-center justify-center border-2 border-emerald-300 shadow-md hover:shadow-lg active:scale-90 transition-all font-bold"
+                      title="Appeler"
                     >
-                      <Phone size={12} />
+                      <Phone size={18} />
                     </a>
                   )}
                   {!isReadOnly && (
                     <button 
                       onClick={() => setConfirmDeleteId(String(s.id))} 
-                      className="h-7 w-7 bg-rose-50 text-rose-600 rounded-lg flex items-center justify-center border border-rose-100"
+                      className="h-10 w-10 bg-gradient-to-br from-rose-400 to-red-500 text-white rounded-xl flex items-center justify-center border-2 border-rose-300 shadow-md hover:shadow-lg active:scale-90 transition-all font-bold"
+                      title="Supprimer"
                     >
-                      <Trash2 size={12} />
+                      <Trash2 size={18} />
                     </button>
                   )}
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 pt-2.5 border-t border-slate-50 text-center">
-                <div className="bg-slate-50/60 p-1.5 rounded-lg">
-                  <p className="text-[8px] font-bold text-slate-400 uppercase">Scolarité</p>
-                  <p className="text-[10px] font-black text-slate-800 mt-0.5">{totalFee.toLocaleString()}</p>
+              <div className="grid grid-cols-3 gap-2 pt-3 border-t-2 border-slate-100 text-center">
+                <div className="bg-gradient-to-br from-slate-50 to-slate-100 p-2.5 rounded-lg border border-slate-200">
+                  <p className="text-[8px] font-black text-slate-600 uppercase">Scolarité</p>
+                  <p className="text-xs font-black text-slate-900 mt-1">{totalFee.toLocaleString()}</p>
                 </div>
-                <div className="bg-slate-50/60 p-1.5 rounded-lg">
-                  <p className="text-[8px] font-bold text-slate-400 uppercase">Payé</p>
-                  <p className={`text-[10px] font-black mt-0.5 ${isSettled ? 'text-emerald-600' : 'text-amber-600'}`}>{paidFee.toLocaleString()}</p>
+                <div className={`bg-gradient-to-br p-2.5 rounded-lg border-2 ${isSettled ? 'from-emerald-100 to-green-100 border-emerald-300' : paidFee > 0 ? 'from-amber-100 to-orange-100 border-amber-300' : 'from-slate-100 to-slate-200 border-slate-300'}`}>
+                  <p className="text-[8px] font-black text-slate-600 uppercase">Payé</p>
+                  <p className={`text-xs font-black mt-1 ${isSettled ? 'text-emerald-800' : paidFee > 0 ? 'text-amber-800' : 'text-slate-700'}`}>{paidFee.toLocaleString()}</p>
                 </div>
-                <div className="bg-slate-50/60 p-1.5 rounded-lg">
-                  <p className="text-[8px] font-bold text-slate-400 uppercase">Moyenne</p>
-                  <p className={`text-[10px] font-black mt-0.5 ${examAvg >= 10 ? 'text-indigo-600' : 'text-rose-600'}`}>{examAvg.toFixed(2)}/20</p>
+                <div className={`bg-gradient-to-br p-2.5 rounded-lg border-2 ${examAvg >= 10 ? 'from-indigo-100 to-blue-100 border-indigo-300' : 'from-rose-100 to-red-100 border-rose-300'}`}>
+                  <p className="text-[8px] font-black text-slate-600 uppercase">Moyenne</p>
+                  <p className={`text-xs font-black mt-1 ${examAvg >= 10 ? 'text-indigo-800' : 'text-rose-800'}`}>{examAvg.toFixed(2)}/20</p>
                 </div>
               </div>
             </div>
@@ -1222,41 +1175,41 @@ function StudentsPageContent() {
 
       {/* Modal de confirmation de radiation */}
       {confirmDeleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/20 backdrop-blur-sm print:hidden">
-          <div className="bg-white p-5 rounded-xl shadow-xl w-full max-w-xs text-center border border-slate-100">
-            <p className="font-black text-slate-900 text-xs uppercase mb-4">Confirmer la suppression ?</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => handleDeleteStudent(confirmDeleteId)} className="bg-rose-600 text-white py-2 rounded-lg font-bold text-xs uppercase">Supprimer</button>
-              <button onClick={() => setConfirmDeleteId(null)} className="bg-slate-100 text-slate-700 py-2 rounded-lg font-bold text-xs uppercase">Annuler</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/30 backdrop-blur-md print:hidden">
+          <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-xs text-center border-2 border-slate-200">
+            <p className="font-black text-slate-900 text-sm uppercase mb-5">Confirmer la suppression ?</p>
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => handleDeleteStudent(confirmDeleteId)} className="bg-gradient-to-r from-rose-500 to-red-600 text-white py-2.5 rounded-lg font-black text-xs uppercase hover:shadow-lg active:scale-95 transition-all shadow-md">Supprimer</button>
+              <button onClick={() => setConfirmDeleteId(null)} className="bg-slate-100 text-slate-700 py-2.5 rounded-lg font-black text-xs uppercase hover:bg-slate-200 active:scale-95 transition-all">Annuler</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal d'export PDF : choix d'inclure ou non les données financières */}
+      {/* Modal d'export PDF */}
       {showExportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/30 backdrop-blur-sm print:hidden">
-          <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm border border-slate-100">
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2.5">
-                <div className="h-9 w-9 rounded-xl bg-slate-900 text-white flex items-center justify-center shrink-0">
-                  <FileDown size={16} />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/30 backdrop-blur-md print:hidden">
+          <div className="bg-white p-6 rounded-3xl shadow-xl w-full max-w-sm border-2 border-slate-200">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white flex items-center justify-center shrink-0 font-bold">
+                  <FileDown size={18} />
                 </div>
                 <div>
                   <p className="font-black text-slate-900 text-sm uppercase tracking-tight">Export PDF</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">Registre des élèves</p>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase">Registre des élèves</p>
                 </div>
               </div>
               <button
                 onClick={() => setShowExportModal(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-400 hover:text-slate-600 font-bold"
                 disabled={isExporting}
               >
-                <X size={18} />
+                <X size={20} />
               </button>
             </div>
 
-            <p className="text-xs font-semibold text-slate-600 mt-4 mb-4">
+            <p className="text-xs font-bold text-slate-600 mt-4 mb-4">
               Souhaitez-vous inclure les données financières (frais, montants payés et restant dû) dans le document exporté ?
             </p>
 
@@ -1264,25 +1217,25 @@ function StudentsPageContent() {
               <button
                 onClick={() => generatePdf(true)}
                 disabled={isExporting}
-                className="w-full flex items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-200 hover:border-slate-900 hover:bg-slate-50 transition-all text-left disabled:opacity-50"
+                className="w-full flex items-center justify-between gap-3 p-3.5 rounded-xl border-2 border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 transition-all text-left disabled:opacity-50 font-bold active:scale-95"
               >
                 <div>
                   <p className="font-black text-xs text-slate-900 uppercase">Avec données financières</p>
-                  <p className="text-[10px] font-semibold text-slate-400 mt-0.5">Frais, paiements et soldes restants inclus</p>
+                  <p className="text-[10px] font-bold text-slate-500 mt-0.5">Frais, paiements et soldes restants inclus</p>
                 </div>
-                {isExporting ? <Loader2 className="animate-spin text-slate-900" size={16} /> : <DollarSign size={16} className="text-emerald-600 shrink-0" />}
+                {isExporting ? <Loader2 className="animate-spin text-indigo-600" size={18} /> : <DollarSign size={18} className="text-emerald-600 shrink-0" />}
               </button>
 
               <button
                 onClick={() => generatePdf(false)}
                 disabled={isExporting}
-                className="w-full flex items-center justify-between gap-3 p-3.5 rounded-xl border border-slate-200 hover:border-slate-900 hover:bg-slate-50 transition-all text-left disabled:opacity-50"
+                className="w-full flex items-center justify-between gap-3 p-3.5 rounded-xl border-2 border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition-all text-left disabled:opacity-50 font-bold active:scale-95"
               >
                 <div>
                   <p className="font-black text-xs text-slate-900 uppercase">Sans données financières</p>
-                  <p className="text-[10px] font-semibold text-slate-400 mt-0.5">Identité, classe et résultats académiques uniquement</p>
+                  <p className="text-[10px] font-bold text-slate-500 mt-0.5">Identité, classe et résultats académiques uniquement</p>
                 </div>
-                {isExporting ? <Loader2 className="animate-spin text-slate-900" size={16} /> : <Lock size={16} className="text-slate-400 shrink-0" />}
+                {isExporting ? <Loader2 className="animate-spin text-slate-600" size={18} /> : <Lock size={18} className="text-slate-400 shrink-0" />}
               </button>
             </div>
           </div>

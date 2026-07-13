@@ -1,6 +1,6 @@
 import { defaultCache } from "@serwist/next/worker";
 import type { PrecacheEntry } from "serwist";
-import { Serwist, CacheFirst, NetworkOnly, StaleWhileRevalidate } from "serwist";
+import { Serwist, CacheFirst, NetworkFirst, NetworkOnly, StaleWhileRevalidate } from "serwist";
 
 // 1. Déclarations des types globaux
 declare global {
@@ -23,13 +23,14 @@ const serwist = new Serwist({
   navigationPreload: false, 
 
   runtimeCaching: [
-    // API Supabase - Stale-While-Revalidate pour les GET (Détection dynamique du domaine)
+    // API Supabase - Network-first pour les GET, avec fallback cache hors-ligne
     {
       matcher: ({ url, request }) => {
         return url.origin.includes(".supabase.co") && request.method === "GET";
       },
-      handler: new StaleWhileRevalidate({
+      handler: new NetworkFirst({
         cacheName: "supabase-api-cache",
+        networkTimeoutSeconds: 10,
         plugins: [
           {
             cacheWillUpdate: async ({ response }) => response,

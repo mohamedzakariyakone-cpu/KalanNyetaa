@@ -323,22 +323,24 @@ export default function ClassesPage() {
                     {levelClasses.length === 0 ? (
                       <p className="text-[11px] text-slate-400 italic pl-5">Aucune classe indexée dans cette catégorie.</p>
                     ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         {levelClasses.map((cls) => (
-                          <div key={cls.id} className="bg-white p-4 rounded-xl border border-slate-200/70 shadow-2xs hover:border-slate-300 transition-all flex flex-col group relative">
+                          <div key={cls.id} className="bg-white p-6 rounded-3xl border border-slate-200/70 shadow-xl hover:shadow-2xl transition-all flex h-full min-h-[220px] flex-col group relative">
                             
                             {/* Actions de suppression */}
                             <button 
                               onClick={(e) => { e.preventDefault(); deleteClass(cls.id, cls.name); }}
                               disabled={isReadOnly}
-                              className={`absolute top-4 right-4 transition-colors z-20 ${isReadOnly ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 hover:text-red-600'}`}
+                              className={`absolute top-5 right-5 transition-colors z-20 ${isReadOnly ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 hover:text-red-600'}`}
                             >
                               {isReadOnly ? <Lock size={12} /> : <Trash2 size={13} />}
                             </button>
 
-                            <div className="mb-3">
-                              <h3 className="text-sm font-bold text-slate-900 group-hover:text-green-700 transition-colors uppercase tracking-tight">{cls.name}</h3>
-                              <p className="text-[10px] text-slate-400 font-medium mt-0.5">Code unique : {cls.id.substring(0, 8).toUpperCase()}</p>
+                            <div className="mb-5 text-center">
+                              <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 group-hover:text-green-700 transition-colors uppercase tracking-tight leading-tight">
+                                {cls.name}
+                              </h3>
+                              <p className="text-[10px] text-slate-400 font-medium mt-1">Code unique : {cls.id.substring(0, 8).toUpperCase()}</p>
                             </div>
 
                             <div className="flex items-center justify-between mt-auto pt-2.5 border-t border-slate-100">
