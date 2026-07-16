@@ -693,91 +693,40 @@ function StudentsPageContent() {
         </div>
       )}
 
-      {/* BLOCS STATISTIQUES */}
+      {/* BLOCS STATISTIQUES (couleurs douces sur mobile, vives dès md/desktop) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 px-3 sm:px-0">
-        <div className="bg-gradient-to-br from-white to-slate-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-slate-200 shadow-md hover:shadow-lg transition-all">
-          <div className="p-2.5 bg-gradient-to-br from-slate-100 to-slate-200 rounded-xl text-slate-900 shrink-0 w-fit mb-3 font-bold">
+        <div className="bg-slate-50 md:bg-gradient-to-br md:from-white md:to-slate-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 md:border-2 shadow-sm md:shadow-md hover:shadow-lg transition-all">
+          <div className="p-2.5 bg-slate-100 md:bg-gradient-to-br md:from-slate-100 md:to-slate-200 rounded-xl text-slate-700 md:text-slate-900 shrink-0 w-fit mb-3 font-bold">
             <GraduationCap size={20} />
           </div>
           <p className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1">Effectif</p>
-          <p className="text-lg sm:text-2xl font-black text-slate-900 leading-tight">{stats.total} <span className="text-xs font-bold text-slate-400">élèves</span></p>
+          <p className="text-lg sm:text-2xl font-black text-slate-800 md:text-slate-900 leading-tight">{stats.total} <span className="text-xs font-bold text-slate-400">élèves</span></p>
         </div>
 
-        <div className="bg-gradient-to-br from-emerald-50 to-green-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-emerald-200 shadow-md hover:shadow-lg transition-all">
-          <div className="p-2.5 bg-gradient-to-br from-emerald-200 to-green-300 rounded-xl text-emerald-700 shrink-0 w-fit mb-3 font-bold">
+        <div className="bg-slate-50 md:bg-gradient-to-br md:from-emerald-50 md:to-green-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 md:border-2 md:border-emerald-200 shadow-sm md:shadow-md hover:shadow-lg transition-all">
+          <div className="p-2.5 bg-emerald-100 md:bg-gradient-to-br md:from-emerald-200 md:to-green-300 rounded-xl text-emerald-600 md:text-emerald-700 shrink-0 w-fit mb-3 font-bold">
             <DollarSign size={20} />
           </div>
-          <p className="text-[9px] sm:text-[10px] font-black text-emerald-600 uppercase tracking-wide mb-1">Recouvré</p>
-          <p className="text-lg sm:text-2xl font-black text-emerald-700 leading-tight">{stats.totalPaid.toLocaleString()} <span className="text-xs font-bold text-emerald-500">FCFA</span></p>
+          <p className="text-[9px] sm:text-[10px] font-black text-emerald-500 md:text-emerald-600 uppercase tracking-wide mb-1">Recouvré</p>
+          <p className="text-lg sm:text-2xl font-black text-emerald-600 md:text-emerald-700 leading-tight">{stats.totalPaid.toLocaleString()} <span className="text-xs font-bold text-emerald-400 md:text-emerald-500">FCFA</span></p>
         </div>
 
-        <div className="bg-gradient-to-br from-rose-50 to-red-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-rose-200 shadow-md hover:shadow-lg transition-all">
-          <div className="p-2.5 bg-gradient-to-br from-rose-200 to-red-300 rounded-xl text-rose-700 shrink-0 w-fit mb-3 font-bold">
+        <div className="bg-slate-50 md:bg-gradient-to-br md:from-rose-50 md:to-red-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 md:border-2 md:border-rose-200 shadow-sm md:shadow-md hover:shadow-lg transition-all">
+          <div className="p-2.5 bg-rose-100 md:bg-gradient-to-br md:from-rose-200 md:to-red-300 rounded-xl text-rose-600 md:text-rose-700 shrink-0 w-fit mb-3 font-bold">
             <AlertCircle size={20} />
           </div>
-          <p className="text-[9px] sm:text-[10px] font-black text-rose-600 uppercase tracking-wide mb-1">Restant dû</p>
-          <p className="text-lg sm:text-2xl font-black text-rose-700 leading-tight">{stats.totalDue.toLocaleString()} <span className="text-xs font-bold text-rose-500">FCFA</span></p>
+          <p className="text-[9px] sm:text-[10px] font-black text-rose-500 md:text-rose-600 uppercase tracking-wide mb-1">Restant dû</p>
+          <p className="text-lg sm:text-2xl font-black text-rose-600 md:text-rose-700 leading-tight">{stats.totalDue.toLocaleString()} <span className="text-xs font-bold text-rose-400 md:text-rose-500">FCFA</span></p>
         </div>
 
-        <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-indigo-200 shadow-md hover:shadow-lg transition-all">
-          <div className="p-2.5 bg-gradient-to-br from-indigo-300 to-blue-400 rounded-xl text-indigo-700 shrink-0 w-fit mb-3 font-bold">
+        <div className="bg-slate-50 md:bg-gradient-to-br md:from-indigo-50 md:to-blue-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 md:border-2 md:border-indigo-200 shadow-sm md:shadow-md hover:shadow-lg transition-all">
+          <div className="p-2.5 bg-indigo-100 md:bg-gradient-to-br md:from-indigo-300 md:to-blue-400 rounded-xl text-indigo-600 md:text-indigo-700 shrink-0 w-fit mb-3 font-bold">
             <Award size={20} />
           </div>
-          <p className="text-[9px] sm:text-[10px] font-black text-indigo-600 uppercase tracking-wide mb-1">Moyenne</p>
-          <p className="text-lg sm:text-2xl font-black text-indigo-700 leading-tight">
-            {stats.generalAvg.toFixed(2)}<span className="text-xs font-bold text-indigo-500">/20</span>
+          <p className="text-[9px] sm:text-[10px] font-black text-indigo-500 md:text-indigo-600 uppercase tracking-wide mb-1">Moyenne</p>
+          <p className="text-lg sm:text-2xl font-black text-indigo-600 md:text-indigo-700 leading-tight">
+            {stats.generalAvg.toFixed(2)}<span className="text-xs font-bold text-indigo-400 md:text-indigo-500">/20</span>
           </p>
-        </div>
-      </div>
-
-      {/* FILTRES AVANCÉS */}
-      <div className="mx-3 sm:mx-0 bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-slate-200 shadow-md space-y-3 print:hidden">
-        <div className="flex flex-col lg:flex-row gap-3">
-          {/* Barre de Recherche */}
-          <div className="relative flex-1">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold" />
-            <input
-              type="text"
-              placeholder="Chercher par nom..."
-              className="w-full pl-10 pr-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-sm text-slate-800 border-2 border-slate-200 focus:border-indigo-400 focus:bg-white transition-all"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-
-          {/* Menus Déroulants Filtres */}
-          <div className="grid grid-cols-2 sm:flex items-center gap-2">
-            <select 
-              className="p-3 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-xs text-slate-700 outline-none cursor-pointer w-full focus:border-indigo-400 transition-all"
-              value={financialFilter}
-              onChange={(e: ChangeEvent<HTMLSelectElement>) => setFinancialFilter(e.target.value as 'all' | 'paid' | 'debtor')}
-            >
-              <option value="all">Scolarité (Tous)</option>
-              <option value="paid">En règle</option>
-              <option value="debtor">En dette</option>
-            </select>
-
-            <select 
-              className="p-3 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-xs text-slate-700 outline-none cursor-pointer w-full focus:border-indigo-400 transition-all"
-              value={academicFilter}
-              onChange={(e: ChangeEvent<HTMLSelectElement>) => setAcademicFilter(e.target.value as 'all' | 'passed' | 'failed')}
-            >
-              <option value="all">Résultats (Tous)</option>
-              <option value="passed">Moyenne ≥ 10</option>
-              <option value="failed">Moyenne &lt; 10</option>
-            </select>
-
-            {!classFilter && (
-              <select 
-                className="p-3 bg-gradient-to-r from-indigo-100 to-blue-100 border-2 border-indigo-300 rounded-xl font-black text-xs text-indigo-700 outline-none cursor-pointer col-span-2 sm:col-span-1 w-full focus:border-indigo-500 transition-all"
-                onChange={(e) => e.target.value ? router.push(`/students?class=${e.target.value}`) : null}
-                defaultValue=""
-              >
-                <option value="">Isoler une classe...</option>
-                {classes.map((c: ClassRecord) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            )}
-          </div>
         </div>
       </div>
 
@@ -974,6 +923,57 @@ function StudentsPageContent() {
         </form>
       </div>
 
+      {/* FILTRES AVANCÉS (déplacés juste avant la liste, après la partie inscription) */}
+      <div className="mx-3 sm:mx-0 bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-slate-200 shadow-md space-y-3 print:hidden">
+        <div className="flex flex-col lg:flex-row gap-3">
+          {/* Barre de Recherche */}
+          <div className="relative flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold" />
+            <input
+              type="text"
+              placeholder="Chercher par nom..."
+              className="w-full pl-10 pr-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-sm text-slate-800 border-2 border-slate-200 focus:border-indigo-400 focus:bg-white transition-all"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+
+          {/* Menus Déroulants Filtres */}
+          <div className="grid grid-cols-2 sm:flex items-center gap-2">
+            <select 
+              className="p-3 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-xs text-slate-700 outline-none cursor-pointer w-full focus:border-indigo-400 transition-all"
+              value={financialFilter}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) => setFinancialFilter(e.target.value as 'all' | 'paid' | 'debtor')}
+            >
+              <option value="all">Scolarité (Tous)</option>
+              <option value="paid">En règle</option>
+              <option value="debtor">En dette</option>
+            </select>
+
+            <select 
+              className="p-3 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-xs text-slate-700 outline-none cursor-pointer w-full focus:border-indigo-400 transition-all"
+              value={academicFilter}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) => setAcademicFilter(e.target.value as 'all' | 'passed' | 'failed')}
+            >
+              <option value="all">Résultats (Tous)</option>
+              <option value="passed">Moyenne ≥ 10</option>
+              <option value="failed">Moyenne &lt; 10</option>
+            </select>
+
+            {!classFilter && (
+              <select 
+                className="p-3 bg-gradient-to-r from-indigo-100 to-blue-100 border-2 border-indigo-300 rounded-xl font-black text-xs text-indigo-700 outline-none cursor-pointer col-span-2 sm:col-span-1 w-full focus:border-indigo-500 transition-all"
+                onChange={(e) => e.target.value ? router.push(`/students?class=${e.target.value}`) : null}
+                defaultValue=""
+              >
+                <option value="">Isoler une classe...</option>
+                {classes.map((c: ClassRecord) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* AFFICHAGE ÉCRANS LARGES */}
       <div className="hidden md:block bg-white rounded-3xl border-2 border-slate-200 shadow-md overflow-hidden print:border-0 print:shadow-none">
         <div className="w-full overflow-x-auto no-scrollbar">
@@ -1083,12 +1083,12 @@ function StudentsPageContent() {
         </div>
       </div>
 
-      {/* AFFICHAGE MOBILE */}
+      {/* AFFICHAGE MOBILE (couleurs & contours adoucis) */}
       <div className="md:hidden space-y-3 px-3 sm:px-0">
         {loading ? (
           <div className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-indigo-600" size={24} /></div>
         ) : filteredStudents.length === 0 ? (
-          <div className="p-8 text-center text-xs font-bold text-slate-500 bg-white rounded-2xl border-2 border-slate-200">Aucun élève trouvé.</div>
+          <div className="p-8 text-center text-xs font-bold text-slate-500 bg-white rounded-2xl border border-slate-200">Aucun élève trouvé.</div>
         ) : filteredStudents.map((s: StudentRecord) => {
           const totalFee = Number(s.scolarite_totale || s.annual_fee || 0);
           const paidFee = Number(s.scolarite_payee || 0);
@@ -1099,7 +1099,7 @@ function StudentsPageContent() {
             <div 
               key={s.id} 
               onClick={() => goToStudentDetail(s.id)}
-              className="bg-white p-4 rounded-2xl border-2 border-slate-200 shadow-md space-y-3 cursor-pointer active:bg-slate-50 hover:shadow-lg transition-all"
+              className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3 cursor-pointer active:bg-slate-50 hover:shadow-md transition-all"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -1112,7 +1112,7 @@ function StudentsPageContent() {
                       className="h-5 w-5 rounded border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0" 
                     />
                   )}
-                  <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white flex items-center justify-center font-black text-xs uppercase shrink-0 shadow-md">
+                  <div className="h-10 w-10 rounded-xl bg-indigo-500 text-white flex items-center justify-center font-black text-xs uppercase shrink-0 shadow-sm">
                     {s.first_name?.[0]}{s.last_name?.[0]}
                   </div>
                   <div className="min-w-0">
@@ -1125,7 +1125,7 @@ function StudentsPageContent() {
                   {s.parent_phone && (
                     <a 
                       href={`tel:${s.parent_phone}`} 
-                      className="h-10 w-10 bg-gradient-to-br from-emerald-400 to-green-500 text-white rounded-xl flex items-center justify-center border-2 border-emerald-300 shadow-md hover:shadow-lg active:scale-90 transition-all font-bold"
+                      className="h-10 w-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center border border-emerald-200 shadow-sm active:scale-90 transition-all font-bold"
                       title="Appeler"
                     >
                       <Phone size={18} />
@@ -1134,7 +1134,7 @@ function StudentsPageContent() {
                   {!isReadOnly && (
                     <button 
                       onClick={() => setConfirmDeleteId(String(s.id))} 
-                      className="h-10 w-10 bg-gradient-to-br from-rose-400 to-red-500 text-white rounded-xl flex items-center justify-center border-2 border-rose-300 shadow-md hover:shadow-lg active:scale-90 transition-all font-bold"
+                      className="h-10 w-10 bg-rose-50 text-rose-500 rounded-xl flex items-center justify-center border border-rose-200 shadow-sm active:scale-90 transition-all font-bold"
                       title="Supprimer"
                     >
                       <Trash2 size={18} />
@@ -1143,18 +1143,18 @@ function StudentsPageContent() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 pt-3 border-t-2 border-slate-100 text-center">
-                <div className="bg-gradient-to-br from-slate-50 to-slate-100 p-2.5 rounded-lg border border-slate-200">
-                  <p className="text-[8px] font-black text-slate-600 uppercase">Scolarité</p>
-                  <p className="text-xs font-black text-slate-900 mt-1">{totalFee.toLocaleString()}</p>
+              <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100 text-center">
+                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                  <p className="text-[8px] font-black text-slate-500 uppercase">Scolarité</p>
+                  <p className="text-xs font-black text-slate-800 mt-1">{totalFee.toLocaleString()}</p>
                 </div>
-                <div className={`bg-gradient-to-br p-2.5 rounded-lg border-2 ${isSettled ? 'from-emerald-100 to-green-100 border-emerald-300' : paidFee > 0 ? 'from-amber-100 to-orange-100 border-amber-300' : 'from-slate-100 to-slate-200 border-slate-300'}`}>
-                  <p className="text-[8px] font-black text-slate-600 uppercase">Payé</p>
-                  <p className={`text-xs font-black mt-1 ${isSettled ? 'text-emerald-800' : paidFee > 0 ? 'text-amber-800' : 'text-slate-700'}`}>{paidFee.toLocaleString()}</p>
+                <div className={`p-2.5 rounded-lg border ${isSettled ? 'bg-emerald-50 border-emerald-200' : paidFee > 0 ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+                  <p className="text-[8px] font-black text-slate-500 uppercase">Payé</p>
+                  <p className={`text-xs font-black mt-1 ${isSettled ? 'text-emerald-700' : paidFee > 0 ? 'text-amber-700' : 'text-slate-600'}`}>{paidFee.toLocaleString()}</p>
                 </div>
-                <div className={`bg-gradient-to-br p-2.5 rounded-lg border-2 ${examAvg >= 10 ? 'from-indigo-100 to-blue-100 border-indigo-300' : 'from-rose-100 to-red-100 border-rose-300'}`}>
-                  <p className="text-[8px] font-black text-slate-600 uppercase">Moyenne</p>
-                  <p className={`text-xs font-black mt-1 ${examAvg >= 10 ? 'text-indigo-800' : 'text-rose-800'}`}>{examAvg.toFixed(2)}/20</p>
+                <div className={`p-2.5 rounded-lg border ${examAvg >= 10 ? 'bg-indigo-50 border-indigo-200' : 'bg-rose-50 border-rose-200'}`}>
+                  <p className="text-[8px] font-black text-slate-500 uppercase">Moyenne</p>
+                  <p className={`text-xs font-black mt-1 ${examAvg >= 10 ? 'text-indigo-700' : 'text-rose-700'}`}>{examAvg.toFixed(2)}/20</p>
                 </div>
               </div>
             </div>
