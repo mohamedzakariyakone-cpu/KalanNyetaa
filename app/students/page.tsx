@@ -13,13 +13,12 @@ import {
 } from 'lucide-react';
 import NumericInput from '@/components/NumericInput';
 
-
 export default function StudentsPage() {
   return (
     <Suspense fallback={
-      <div className="flex flex-col items-center justify-center min-h-[50vh] text-slate-500 gap-4">
-        <Loader2 className="animate-spin text-indigo-600" size={32} />
-        <p className="font-bold animate-pulse text-xs uppercase tracking-widest">Chargement du module élèves...</p>
+      <div className="flex flex-col items-center justify-center min-h-[50vh] text-slate-500 gap-3">
+        <Loader2 className="animate-spin text-blue-600" size={28} />
+        <p className="font-bold text-xs uppercase tracking-widest text-slate-500">Chargement du registre élèves...</p>
       </div>
     }>
       <StudentsPageContent />
@@ -73,7 +72,6 @@ function StudentsPageContent() {
   const [showReenrollmentSection, setShowReenrollmentSection] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [scrollPosition, setScrollPosition] = useState(0);
   const [formData, setFormData] = useState({
     firstName: '', lastName: '', classId: classFilter || '', annualFee: '',
     parentPhone: '', address: '', birthDate: '', lastExamAvg: '0'
@@ -81,7 +79,6 @@ function StudentsPageContent() {
 
   const { selectedYearId, selectedYear, years, isReadOnly, isLoading: yearLoading } = useYear();
 
-  // Mémorisation du scroll position
   useEffect(() => {
     const scrollKey = `scroll_position_${classFilter || 'all'}`;
     const savedPosition = sessionStorage.getItem(scrollKey);
@@ -140,7 +137,7 @@ function StudentsPageContent() {
     setIsSelectionMode(false);
   }, [classFilter, selectedYearId, students.length]);
 
-  const CACHE_TTL_SECONDS = 60
+  const CACHE_TTL_SECONDS = 60;
 
   const fetchNextYearClasses = useCallback(async () => {
     if (!nextAcademicYear) {
@@ -243,12 +240,12 @@ function StudentsPageContent() {
 
   useEffect(() => {
     const handleGlobalSyncSuccess = () => {
-      fetchData()
-    }
+      fetchData();
+    };
 
-    window.addEventListener('global-sync-success', handleGlobalSyncSuccess)
-    return () => window.removeEventListener('global-sync-success', handleGlobalSyncSuccess)
-  }, [fetchData])
+    window.addEventListener('global-sync-success', handleGlobalSyncSuccess);
+    return () => window.removeEventListener('global-sync-success', handleGlobalSyncSuccess);
+  }, [fetchData]);
 
   useEffect(() => { 
     if (!yearLoading && selectedYearId) {
@@ -467,7 +464,6 @@ function StudentsPageContent() {
 
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 12;
       let cursorY = margin;
 
@@ -495,7 +491,7 @@ function StudentsPageContent() {
         { label: 'EFFECTIF', value: `${stats.total} élèves`, color: [15, 23, 42] },
         { label: 'RECOUVRÉ', value: `${stats.totalPaid.toLocaleString()} FCFA`, color: [5, 150, 105] },
         { label: 'RESTANT DÛ', value: `${stats.totalDue.toLocaleString()} FCFA`, color: [225, 29, 72] },
-        { label: 'MOYENNE GÉNÉRALE', value: `${stats.generalAvg.toFixed(2)} / 20`, color: [79, 70, 229] },
+        { label: 'MOYENNE GÉNÉRALE', value: `${stats.generalAvg.toFixed(2)} / 20`, color: [37, 99, 235] },
       ];
 
       const boxGap = 4;
@@ -583,26 +579,9 @@ function StudentsPageContent() {
             const raw = String(data.cell.raw || '');
             const value = parseFloat(raw.replace('/20', ''));
             if (!isNaN(value)) {
-              data.cell.styles.textColor = value >= 10 ? [79, 70, 229] : [225, 29, 72];
+              data.cell.styles.textColor = value >= 10 ? [37, 99, 235] : [225, 29, 72];
             }
           }
-        },
-        didDrawPage: (data: { pageNumber: number }) => {
-          const pageCount = doc.getNumberOfPages();
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(7.5);
-          doc.setTextColor(148, 163, 184);
-          doc.text(
-            `Page ${data.pageNumber} / ${pageCount}`,
-            pageWidth - margin,
-            pageHeight - 7,
-            { align: 'right' }
-          );
-          doc.text(
-            'Document généré automatiquement — Kalan Nyetaa',
-            margin,
-            pageHeight - 7
-          );
         },
       });
 
@@ -625,127 +604,121 @@ function StudentsPageContent() {
 
   if (yearLoading) {
     return (
-      <div className="flex items-center justify-center p-12 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-3xl text-slate-600 font-bold gap-3 border-2 border-indigo-200">
-        <Loader2 className="animate-spin text-indigo-600" size={24} />
-        <span className="text-sm">Chargement de la configuration d&apos;année...</span>
+      <div className="flex items-center justify-center p-12 bg-white/70 backdrop-blur-xs border border-slate-200 rounded-2xl text-slate-700 font-bold gap-3">
+        <Loader2 className="animate-spin text-blue-600" size={24} />
+        <span className="text-sm">Chargement de la session scolaire...</span>
       </div>
     );
   }
 
   if (!selectedYearId) {
     return (
-      <div className="bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 p-8 rounded-3xl text-center text-amber-800 max-w-sm mx-auto mt-10 shadow-md">
-        <AlertCircle size={40} className="mx-auto mb-4 text-amber-600 font-bold" />
-        <h2 className="text-base font-black mb-2 uppercase tracking-tight">Session scolaire manquante</h2>
-        <p className="text-xs font-bold opacity-85">Activez une année scolaire pour manipuler les dossiers.</p>
+      <div className="bg-white border border-amber-200 p-8 rounded-2xl text-center text-amber-900 max-w-sm mx-auto mt-10 shadow-xs">
+        <AlertCircle size={36} className="mx-auto mb-3 text-amber-600 font-bold" />
+        <h2 className="text-base font-black mb-1 uppercase tracking-tight">Session scolaire requise</h2>
+        <p className="text-xs font-bold text-slate-600">Activez une année scolaire pour accéder au registre.</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-5 sm:space-y-6 pb-10 max-w-7xl mx-auto px-0 sm:px-6 w-full overflow-x-hidden print:p-0 print:bg-white bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
+    <div className="space-y-6 pb-12 max-w-6xl mx-auto px-4 sm:px-6 w-full overflow-x-hidden text-slate-900 font-sans antialiased">
       
-      {/* HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-4 px-3 sm:px-0 print:mb-6">
+      {/* HEADER DE PAGE PLAT SANS FOND BLANC FORCÉ */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-b border-slate-200/80 pb-6 print:mb-6">
         <div>
           {classFilter && (
             <button 
               onClick={() => { router.push('/students'); setCurrentClassInfo(null); }}
-              className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 hover:text-indigo-800 mb-2 transition-all active:scale-95 print:hidden"
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 mb-2 transition"
             >
-              <ArrowLeft size={15} className="font-bold" /> Voir toutes les classes
+              <ArrowLeft size={14} /> Toutes les classes
             </button>
           )}
           <div className="flex items-center gap-2 mb-1">
-            <span className={`h-2 w-2 rounded-full shrink-0 font-bold ${classFilter ? 'bg-indigo-600' : 'bg-emerald-600'}`} />
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-              {classFilter ? `Profil Classe Active` : `Registre Général`}
-            </p>
+            <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              {classFilter ? 'Classe isolée' : 'Registre général'}
+            </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-900 tracking-tight uppercase wrap-break-word">
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 capitalize">
             {classFilter && currentClassInfo ? `Classe : ${currentClassInfo.name}` : 'Registre des Élèves'}
           </h1>
         </div>
         
-        {/* Actions d'entête responsives */}
-        <div className="flex items-center justify-between sm:justify-end gap-2 print:hidden">
+        {/* Actions d'entête */}
+        <div className="flex items-center gap-2.5 print:hidden">
           <button
             onClick={() => setShowExportModal(true)}
-            className="flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-4 py-2.5 sm:px-5 sm:py-3 rounded-2xl font-black text-xs shadow-lg hover:shadow-xl active:scale-95 transition-all flex-1 sm:flex-none"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold transition shadow-xs"
           >
-            <FileDown size={16} className="font-bold" />
+            <FileDown size={15} className="text-blue-600" />
             <span>Exporter PDF</span>
           </button>
 
           <button 
             onClick={() => setShowMobileForm(!showMobileForm)}
-            className="md:hidden h-10 w-10 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-2xl flex items-center justify-center shadow-lg hover:shadow-xl active:scale-95 transition-all font-bold"
+            className="md:hidden h-9 w-9 bg-blue-600 text-white rounded-xl flex items-center justify-center transition shadow-xs"
           >
-            {showMobileForm ? <X size={20} /> : <Plus size={20} />}
+            {showMobileForm ? <X size={18} /> : <Plus size={18} />}
           </button>
         </div>
       </div>
 
       {isReadOnly && (
-        <div className="mx-3 sm:mx-0 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-200 rounded-2xl p-4 flex items-center gap-3 text-amber-800 print:hidden shadow-md">
-          <Lock size={16} className="shrink-0 font-bold" />
-          <p className="text-xs sm:text-sm font-bold">Mode consultation active. Les modifications sont bloquées.</p>
+        <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3.5 flex items-center gap-2.5 text-amber-900 print:hidden text-xs font-bold">
+          <Lock size={15} className="shrink-0 text-amber-700" />
+          <span>Mode consultation active. Les modifications sont restreintes.</span>
         </div>
       )}
 
-      {/* BLOCS STATISTIQUES (couleurs douces sur mobile, vives dès md/desktop) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 px-3 sm:px-0">
-        <div className="bg-slate-50 md:bg-gradient-to-br md:from-white md:to-slate-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 md:border-2 shadow-sm md:shadow-md hover:shadow-lg transition-all">
-          <div className="p-2.5 bg-slate-100 md:bg-gradient-to-br md:from-slate-100 md:to-slate-200 rounded-xl text-slate-700 md:text-slate-900 shrink-0 w-fit mb-3 font-bold">
-            <GraduationCap size={20} />
-          </div>
-          <p className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-wide mb-1">Effectif</p>
-          <p className="text-lg sm:text-2xl font-black text-slate-800 md:text-slate-900 leading-tight">{stats.total} <span className="text-xs font-bold text-slate-400">élèves</span></p>
+      {/* STATISTIQUES PLATES EN BLOC BLANC / BORDURE NETTE */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+        <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Effectif total</span>
+          <p className="text-2xl sm:text-3xl font-black text-slate-900 leading-tight">
+            {stats.total} <span className="text-xs font-bold text-slate-400">élèves</span>
+          </p>
         </div>
 
-        <div className="bg-slate-50 md:bg-gradient-to-br md:from-emerald-50 md:to-green-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 md:border-2 md:border-emerald-200 shadow-sm md:shadow-md hover:shadow-lg transition-all">
-          <div className="p-2.5 bg-emerald-100 md:bg-gradient-to-br md:from-emerald-200 md:to-green-300 rounded-xl text-emerald-600 md:text-emerald-700 shrink-0 w-fit mb-3 font-bold">
-            <DollarSign size={20} />
-          </div>
-          <p className="text-[9px] sm:text-[10px] font-black text-emerald-500 md:text-emerald-600 uppercase tracking-wide mb-1">Recouvré</p>
-          <p className="text-lg sm:text-2xl font-black text-emerald-600 md:text-emerald-700 leading-tight">{stats.totalPaid.toLocaleString()} <span className="text-xs font-bold text-emerald-400 md:text-emerald-500">FCFA</span></p>
+        <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Total recouvré</span>
+          <p className="text-2xl sm:text-3xl font-black text-slate-900 leading-tight">
+            {stats.totalPaid.toLocaleString()} <span className="text-xs font-bold text-slate-400">F</span>
+          </p>
         </div>
 
-        <div className="bg-slate-50 md:bg-gradient-to-br md:from-rose-50 md:to-red-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 md:border-2 md:border-rose-200 shadow-sm md:shadow-md hover:shadow-lg transition-all">
-          <div className="p-2.5 bg-rose-100 md:bg-gradient-to-br md:from-rose-200 md:to-red-300 rounded-xl text-rose-600 md:text-rose-700 shrink-0 w-fit mb-3 font-bold">
-            <AlertCircle size={20} />
-          </div>
-          <p className="text-[9px] sm:text-[10px] font-black text-rose-500 md:text-rose-600 uppercase tracking-wide mb-1">Restant dû</p>
-          <p className="text-lg sm:text-2xl font-black text-rose-600 md:text-rose-700 leading-tight">{stats.totalDue.toLocaleString()} <span className="text-xs font-bold text-rose-400 md:text-rose-500">FCFA</span></p>
+        <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Reste à percevoir</span>
+          <p className="text-2xl sm:text-3xl font-black text-blue-600 leading-tight">
+            {stats.totalDue.toLocaleString()} <span className="text-xs font-bold text-blue-400">F</span>
+          </p>
         </div>
 
-        <div className="bg-slate-50 md:bg-gradient-to-br md:from-indigo-50 md:to-blue-50 p-4 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 md:border-2 md:border-indigo-200 shadow-sm md:shadow-md hover:shadow-lg transition-all">
-          <div className="p-2.5 bg-indigo-100 md:bg-gradient-to-br md:from-indigo-300 md:to-blue-400 rounded-xl text-indigo-600 md:text-indigo-700 shrink-0 w-fit mb-3 font-bold">
-            <Award size={20} />
-          </div>
-          <p className="text-[9px] sm:text-[10px] font-black text-indigo-500 md:text-indigo-600 uppercase tracking-wide mb-1">Moyenne</p>
-          <p className="text-lg sm:text-2xl font-black text-indigo-600 md:text-indigo-700 leading-tight">
-            {stats.generalAvg.toFixed(2)}<span className="text-xs font-bold text-indigo-400 md:text-indigo-500">/20</span>
+        <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Moyenne générale</span>
+          <p className="text-2xl sm:text-3xl font-black text-slate-900 leading-tight">
+            {stats.generalAvg.toFixed(2)} <span className="text-xs font-bold text-slate-400">/20</span>
           </p>
         </div>
       </div>
 
       {classFilter && (
-        <div className="mx-3 sm:mx-0">
+        <div>
           {!showReenrollmentSection ? (
             <button
               onClick={() => setShowReenrollmentSection(true)}
               type="button"
-              className="w-full py-3 px-4 rounded-2xl border-2 border-slate-300 bg-white text-slate-800 text-xs font-black uppercase hover:bg-slate-50 hover:border-indigo-400 transition-all print:hidden shadow-md active:scale-95"
+              className="w-full py-3 px-4 rounded-xl border border-slate-200 bg-white text-slate-800 text-xs font-bold hover:bg-slate-50 hover:border-blue-300 transition print:hidden"
             >
-              Ouverture des réinscriptions
+              Ouverture des réinscriptions pour cette classe
             </button>
           ) : (
-            <div className="bg-white p-5 sm:p-6 rounded-3xl border-2 border-slate-200 shadow-md space-y-4 print:hidden">
+            <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 space-y-4 print:hidden">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                   <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-black text-slate-900 uppercase">Réinscription</h3>
+                    <h3 className="text-sm font-bold text-slate-900 uppercase">Réinscription groupée</h3>
                     <button 
                       onClick={() => { 
                         setShowReenrollmentSection(false);
@@ -753,12 +726,12 @@ function StudentsPageContent() {
                         setSelectedStudentIds([]); 
                         setSelectAll(false); 
                       }}
-                      className="text-slate-400 hover:text-slate-600 sm:hidden font-bold"
+                      className="text-slate-400 hover:text-slate-600 sm:hidden"
                     >
                       <X size={18} />
                     </button>
                   </div>
-                  <p className="text-xs font-bold text-slate-600 mt-2">
+                  <p className="text-xs font-bold text-slate-600 mt-1">
                     {isSelectionMode
                       ? 'Sélectionnez les élèves, choisissez la classe cible et lancez la réinscription.'
                       : "Activez la réinscription pour sélectionner des élèves et choisir leur classe de l'année suivante."
@@ -770,16 +743,16 @@ function StudentsPageContent() {
                   <button
                     onClick={toggleSelectionMode}
                     type="button"
-                    className="px-4 py-2.5 rounded-xl border-2 border-slate-300 text-slate-700 text-xs font-black uppercase hover:bg-slate-50 transition-all active:scale-95"
+                    className="px-3.5 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-50 transition"
                   >
-                    {isSelectionMode ? 'Annuler réinscription' : 'Activer réinscription'}
+                    {isSelectionMode ? 'Annuler la sélection' : 'Activer la sélection'}
                   </button>
                   {isSelectionMode && (
                     <button
                       onClick={reEnrollSelectedStudents}
                       type="button"
                       disabled={isReenrolling || selectedStudentIds.length === 0 || !nextAcademicYear || isReadOnly || !targetNextClassId}
-                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 text-white text-xs font-black uppercase disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-lg active:scale-95 transition-all shadow-md"
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold disabled:opacity-40 transition"
                     >
                       {isReenrolling ? 'En cours...' : `Réinscrire ${selectedStudentIds.length} élève(s)`}
                     </button>
@@ -788,22 +761,22 @@ function StudentsPageContent() {
               </div>
 
               {!nextAcademicYear ? (
-                <div className="rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-200 p-3.5 text-amber-800 text-xs font-bold">
-                  Aucune année scolaire suivante configurée pour la réinscription. Ajoutez une année dans les paramètres.
+                <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-amber-800 text-xs font-bold">
+                  Aucune année scolaire suivante configurée. Ajoutez une session suivante dans les paramètres.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="block text-[9px] font-black uppercase text-slate-500">Année suivante</label>
-                    <p className="text-sm font-black text-slate-800 bg-slate-50 p-3 rounded-xl border-2 border-slate-200">{nextAcademicYear.label}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-2">
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase">Session suivante</label>
+                    <p className="text-xs font-bold text-slate-900 bg-slate-50 p-2.5 rounded-xl border border-slate-200">{nextAcademicYear.label}</p>
                   </div>
-                  <div className="space-y-2">
-                    <label className="block text-[9px] font-black uppercase text-slate-500">Classe cible</label>
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase">Classe de destination</label>
                     <select
                       value={targetNextClassId}
                       onChange={(e) => setTargetNextClassId(e.target.value)}
                       disabled={!isSelectionMode}
-                      className="w-full p-3 bg-slate-50 rounded-xl border-2 border-slate-200 text-xs font-bold outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 transition-all"
+                      className="w-full p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:bg-white focus:border-blue-600 transition"
                     >
                       <option value="">Sélectionner la classe cible...</option>
                       {nextYearClasses.map((c: ClassRecord) => (
@@ -813,60 +786,58 @@ function StudentsPageContent() {
                   </div>
                 </div>
               )}
-
-              {isSelectionMode && nextAcademicYear && nextYearClasses.length === 0 && (
-                <div className="rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-200 p-3.5 text-amber-800 text-xs font-bold">
-                  Aucune classe configurée pour l'année {nextAcademicYear.label}. Créez d'abord les classes pour réinscrire les élèves.
-                </div>
-              )}
             </div>
           )}
         </div>
       )}
 
-      {/* FORMULAIRE */}
-      <div className={`${showMobileForm ? 'block mx-3' : 'hidden md:block'} bg-white p-5 sm:p-6 rounded-3xl border-2 border-slate-200 shadow-md print:hidden`}>
-        <h2 className="text-xs font-black uppercase tracking-wider text-slate-500 mb-5">Nouvelle Inscription</h2>
+      {/* FORMULAIRE NOUVELLE INSCRIPTION PLAT */}
+      <div className={`${showMobileForm ? 'block' : 'hidden md:block'} bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 space-y-4 print:hidden`}>
+        <div className="border-b border-slate-100 pb-3">
+          <h2 className="text-sm font-bold text-slate-900">Nouvelle inscription</h2>
+          <p className="text-xs text-slate-500 font-medium">Ajouter un élève pour cette session scolaire</p>
+        </div>
+
         <form onSubmit={addStudent} className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className="space-y-2">
-              <label className="text-[9px] font-black uppercase text-slate-500">Prénom</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">Prénom</label>
               <input 
                 type="text" 
-                placeholder="Moussa" 
-                className="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-800 focus:border-indigo-400 focus:bg-white transition-all"
+                placeholder="Ex: Moussa" 
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-900 focus:border-blue-600 focus:bg-white transition"
                 value={formData.firstName}
                 onChange={(e) => setFormData({...formData, firstName: e.target.value})}
                 disabled={isReadOnly}
                 required 
               />
             </div>
-            <div className="space-y-2">
-              <label className="text-[9px] font-black uppercase text-slate-500">Nom</label>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">Nom</label>
               <input 
                 type="text" 
-                placeholder="Diarra" 
-                className="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-800 focus:border-indigo-400 focus:bg-white transition-all"
+                placeholder="Ex: Diarra" 
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-900 focus:border-blue-600 focus:bg-white transition"
                 value={formData.lastName}
                 onChange={(e) => setFormData({...formData, lastName: e.target.value})}
                 disabled={isReadOnly}
                 required 
               />
             </div>
-            <div className="space-y-2">
-              <label className="text-[9px] font-black uppercase text-slate-500">Naissance</label>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">Date de naissance</label>
               <input 
                 type="date" 
-                className="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-600 focus:border-indigo-400 focus:bg-white transition-all"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-700 focus:border-blue-600 focus:bg-white transition"
                 value={formData.birthDate}
                 onChange={(e) => setFormData({...formData, birthDate: e.target.value})}
                 disabled={isReadOnly}
               />
             </div>
-            <div className="space-y-2">
-              <label className="text-[9px] font-black uppercase text-slate-500">Classe</label>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">Classe</label>
               <select 
-                className="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-800 focus:border-indigo-400 focus:bg-white transition-all"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-800 focus:border-blue-600 focus:bg-white transition"
                 value={formData.classId}
                 onChange={(e) => setFormData({...formData, classId: e.target.value})}
                 disabled={isReadOnly || !!classFilter}
@@ -878,34 +849,34 @@ function StudentsPageContent() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="space-y-2">
-              <label className="text-[9px] font-black uppercase text-slate-500">Téléphone Parent</label>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">Téléphone Parent</label>
               <input 
                 type="text" 
                 placeholder="70000000" 
-                className="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-800 focus:border-indigo-400 focus:bg-white transition-all"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-900 focus:border-blue-600 focus:bg-white transition"
                 value={formData.parentPhone}
                 onChange={(e) => setFormData({...formData, parentPhone: e.target.value})}
                 disabled={isReadOnly}
               />
             </div>
-            <div className="space-y-2">
-              <label className="text-[9px] font-black uppercase text-slate-500">Adresse</label>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">Adresse</label>
               <input 
                 type="text" 
                 placeholder="Quartier..." 
-                className="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-800 focus:border-indigo-400 focus:bg-white transition-all"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-900 focus:border-blue-600 focus:bg-white transition"
                 value={formData.address}
                 onChange={(e) => setFormData({...formData, address: e.target.value})}
                 disabled={isReadOnly}
               />
             </div>
-            <div className="space-y-2">
-              <label className="text-[9px] font-black uppercase text-slate-500">Frais Annuels (FCFA)</label>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">Frais Annuels (FCFA)</label>
               <NumericInput 
                 placeholder="Montant total..." 
-                className="w-full p-3 bg-slate-50 border-2 border-slate-200 rounded-xl outline-none font-bold text-slate-900 text-xs focus:border-indigo-400 focus:bg-white transition-all"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-slate-900 text-xs focus:border-blue-600 focus:bg-white transition"
                 value={formData.annualFee === '' ? undefined : Number(formData.annualFee)}
                 onChange={(v) => setFormData({...formData, annualFee: v === undefined ? '' : String(v)})}
                 disabled={isReadOnly}
@@ -916,32 +887,30 @@ function StudentsPageContent() {
           <button 
             type="submit" 
             disabled={isSubmitting || isReadOnly}
-            className="w-full md:w-auto bg-gradient-to-r from-indigo-600 to-blue-600 text-white px-6 py-3 rounded-xl font-black text-xs uppercase tracking-wide shadow-lg hover:shadow-xl active:scale-95 transition-all disabled:opacity-50"
+            className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl font-bold text-xs transition disabled:opacity-40 shadow-xs"
           >
-            {isSubmitting ? <Loader2 className="animate-spin mx-auto" size={16} /> : 'Valider l\'inscription'}
+            {isSubmitting ? <Loader2 className="animate-spin mx-auto" size={16} /> : "Valider l'inscription"}
           </button>
         </form>
       </div>
 
-      {/* FILTRES AVANCÉS (déplacés juste avant la liste, après la partie inscription) */}
-      <div className="mx-3 sm:mx-0 bg-white p-4 sm:p-5 rounded-2xl sm:rounded-3xl border-2 border-slate-200 shadow-md space-y-3 print:hidden">
+      {/* BARRE DE RECHERCHE ET FILTRES PLATS */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 space-y-3 print:hidden">
         <div className="flex flex-col lg:flex-row gap-3">
-          {/* Barre de Recherche */}
           <div className="relative flex-1">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold" />
+            <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold" />
             <input
               type="text"
-              placeholder="Chercher par nom..."
-              className="w-full pl-10 pr-4 py-3 bg-slate-50 rounded-xl outline-none font-bold text-sm text-slate-800 border-2 border-slate-200 focus:border-indigo-400 focus:bg-white transition-all"
+              placeholder="Rechercher par prénom ou nom..."
+              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 rounded-xl outline-none font-bold text-xs text-slate-900 border border-slate-200 focus:border-blue-600 focus:bg-white transition"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
 
-          {/* Menus Déroulants Filtres */}
           <div className="grid grid-cols-2 sm:flex items-center gap-2">
             <select 
-              className="p-3 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-xs text-slate-700 outline-none cursor-pointer w-full focus:border-indigo-400 transition-all"
+              className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-700 outline-none cursor-pointer w-full focus:border-blue-600 transition"
               value={financialFilter}
               onChange={(e: ChangeEvent<HTMLSelectElement>) => setFinancialFilter(e.target.value as 'all' | 'paid' | 'debtor')}
             >
@@ -951,7 +920,7 @@ function StudentsPageContent() {
             </select>
 
             <select 
-              className="p-3 bg-slate-50 border-2 border-slate-200 rounded-xl font-bold text-xs text-slate-700 outline-none cursor-pointer w-full focus:border-indigo-400 transition-all"
+              className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-700 outline-none cursor-pointer w-full focus:border-blue-600 transition"
               value={academicFilter}
               onChange={(e: ChangeEvent<HTMLSelectElement>) => setAcademicFilter(e.target.value as 'all' | 'passed' | 'failed')}
             >
@@ -962,11 +931,11 @@ function StudentsPageContent() {
 
             {!classFilter && (
               <select 
-                className="p-3 bg-gradient-to-r from-indigo-100 to-blue-100 border-2 border-indigo-300 rounded-xl font-black text-xs text-indigo-700 outline-none cursor-pointer col-span-2 sm:col-span-1 w-full focus:border-indigo-500 transition-all"
+                className="p-2.5 bg-blue-50/50 border border-blue-200 rounded-xl font-bold text-xs text-blue-800 outline-none cursor-pointer col-span-2 sm:col-span-1 w-full focus:border-blue-600 transition"
                 onChange={(e) => e.target.value ? router.push(`/students?class=${e.target.value}`) : null}
                 defaultValue=""
               >
-                <option value="">Isoler une classe...</option>
+                <option value="">Filtrer par classe...</option>
                 {classes.map((c: ClassRecord) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             )}
@@ -974,36 +943,36 @@ function StudentsPageContent() {
         </div>
       </div>
 
-      {/* AFFICHAGE ÉCRANS LARGES */}
-      <div className="hidden md:block bg-white rounded-3xl border-2 border-slate-200 shadow-md overflow-hidden print:border-0 print:shadow-none">
-        <div className="w-full overflow-x-auto no-scrollbar">
-          <table className="w-full text-left min-w-187.5 print:min-w-full">
-            <thead className="bg-gradient-to-r from-slate-50 to-slate-100 text-[10px] uppercase font-black tracking-widest text-slate-600 border-b-2 border-slate-200 print:bg-slate-100">
-              <tr>
+      {/* TABLEAU DES ÉLÈVES (DESKTOP) */}
+      <div className="hidden md:block bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs print:border-0 print:shadow-none">
+        <div className="w-full overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
                 {classFilter && isSelectionMode && (
-                  <th className="px-4 py-4 text-center">
+                  <th className="px-4 py-3.5 text-center">
                     <input 
                       type="checkbox" 
                       checked={selectAll} 
                       onChange={toggleSelectAll} 
-                      className="h-4 w-4 rounded border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" 
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" 
                     />
                   </th>
                 )}
-                <th className="px-6 py-4">Prénom & Nom</th>
-                <th className="px-4 py-4">Classe</th>
-                <th className="px-4 py-4 text-center">Contact Parent</th>
-                <th className="px-4 py-4 text-right">Frais d&apos;Études</th>
-                <th className="px-4 py-4 text-right">Payé (FCFA)</th>
-                <th className="px-4 py-4 text-center">Moyenne</th>
-                <th className="px-6 py-4 text-right print:hidden">Actions</th>
+                <th className="px-5 py-3.5">Élève</th>
+                <th className="px-4 py-3.5">Classe</th>
+                <th className="px-4 py-3.5 text-center">Contact Parent</th>
+                <th className="px-4 py-3.5 text-right">Frais d'Études</th>
+                <th className="px-4 py-3.5 text-right">Payé</th>
+                <th className="px-4 py-3.5 text-center">Moyenne</th>
+                <th className="px-5 py-3.5 text-right print:hidden">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y-2 divide-slate-100">
+            <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan={8} className="p-10 text-center"><Loader2 className="animate-spin mx-auto text-indigo-600" size={22} /></td></tr>
+                <tr><td colSpan={8} className="p-10 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" size={22} /></td></tr>
               ) : filteredStudents.length === 0 ? (
-                <tr><td colSpan={8} className="p-8 text-center text-xs font-bold text-slate-500">Aucun élève trouvé.</td></tr>
+                <tr><td colSpan={8} className="p-8 text-center text-xs font-bold text-slate-400">Aucun élève trouvé.</td></tr>
               ) : filteredStudents.map((s: StudentRecord) => {
                 const totalFee = Number(s.scolarite_totale || s.annual_fee || 0);
                 const paidFee = Number(s.scolarite_payee || 0);
@@ -1014,66 +983,64 @@ function StudentsPageContent() {
                   <tr 
                     key={s.id} 
                     onClick={() => goToStudentDetail(s.id)}
-                    className="hover:bg-indigo-50/50 transition-colors print:break-inside-avoid cursor-pointer active:bg-slate-100"
+                    className="hover:bg-slate-50/70 transition-colors cursor-pointer"
                   >
                     {classFilter && isSelectionMode && (
                       <td 
-                        className="px-4 py-4 text-center"
+                        className="px-4 py-3.5 text-center"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <input 
                           type="checkbox" 
                           checked={selectedStudentIds.includes(String(s.id))} 
                           onChange={() => toggleStudentSelection(String(s.id))} 
-                          className="h-4 w-4 rounded border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer" 
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer" 
                         />
                       </td>
                     )}
-                    <td className="px-6 py-4">
+                    <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white flex items-center justify-center font-black text-xs uppercase shrink-0 shadow-md print:border-2 print:border-slate-300">
+                        <div className="h-9 w-9 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0">
                           {s.first_name?.[0]}{s.last_name?.[0]}
                         </div>
                         <div className="min-w-0">
-                          <p className="font-black text-slate-900 text-sm truncate uppercase">{s.first_name} <span className="font-bold text-slate-700">{s.last_name}</span></p>
-                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">{s.classes?.name || 'Inconnu'}</span>
+                          <p className="font-bold text-slate-900 text-sm truncate capitalize">{s.first_name} {s.last_name}</p>
+                          <span className="text-[10px] font-medium text-slate-400 block">{s.classes?.name || 'Inconnu'}</span>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-4 text-sm font-bold text-slate-700">
+                    <td className="px-4 py-3.5 font-bold text-slate-700">
                       {s.classes?.name || 'Inconnu'}
                     </td>
-                    <td className="px-4 py-4 text-center font-bold text-slate-600 text-xs whitespace-nowrap">
+                    <td className="px-4 py-3.5 text-center font-bold text-slate-600 whitespace-nowrap">
                       {s.parent_phone || <span className="text-slate-300">-</span>}
                     </td>
-                    <td className="px-4 py-4 text-right font-black text-slate-900 text-sm">
-                      {totalFee.toLocaleString()}
+                    <td className="px-4 py-3.5 text-right font-black text-slate-900 text-sm">
+                      {totalFee.toLocaleString()} F
                     </td>
-                    <td className="px-4 py-4 text-right whitespace-nowrap">
-                      <span className={`inline-block px-3 py-1.5 rounded-lg font-bold text-xs ${isSettled ? 'bg-emerald-100 text-emerald-800' : paidFee > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'}`}>
-                        {paidFee.toLocaleString()} FCFA
+                    <td className="px-4 py-3.5 text-right whitespace-nowrap">
+                      <span className={`inline-block px-2.5 py-1 rounded-md font-bold text-xs ${isSettled ? 'bg-emerald-50 text-emerald-700' : paidFee > 0 ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>
+                        {paidFee.toLocaleString()} F
                       </span>
                     </td>
-                    <td className="px-4 py-4 text-center">
-                      <span className={`font-black text-sm ${examAvg >= 10 ? 'text-indigo-700' : 'text-rose-700'}`}>
+                    <td className="px-4 py-3.5 text-center">
+                      <span className={`font-black text-sm ${examAvg >= 10 ? 'text-blue-600' : 'text-rose-600'}`}>
                         {examAvg.toFixed(2)}
                       </span>
                     </td>
                     <td 
-                      className="px-6 py-4 text-right print:hidden"
+                      className="px-5 py-3.5 text-right print:hidden"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div className="flex items-center justify-end gap-2">
-                        {!isReadOnly && (
-                          <button
-                            onClick={() => setConfirmDeleteId(String(s.id))}
-                            className="p-2.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all font-bold active:scale-90"
-                            title="Radier l'élève"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
-                      </div>
+                      {!isReadOnly && (
+                        <button
+                          onClick={() => setConfirmDeleteId(String(s.id))}
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                          title="Supprimer l'élève"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -1083,12 +1050,12 @@ function StudentsPageContent() {
         </div>
       </div>
 
-      {/* AFFICHAGE MOBILE (couleurs & contours adoucis) */}
-      <div className="md:hidden space-y-3 px-3 sm:px-0">
+      {/* AFFICHAGE CARTES MOBILES PLATES */}
+      <div className="md:hidden space-y-3">
         {loading ? (
-          <div className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-indigo-600" size={24} /></div>
+          <div className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" size={24} /></div>
         ) : filteredStudents.length === 0 ? (
-          <div className="p-8 text-center text-xs font-bold text-slate-500 bg-white rounded-2xl border border-slate-200">Aucun élève trouvé.</div>
+          <div className="p-8 text-center text-xs font-bold text-slate-400 bg-white rounded-2xl border border-slate-200">Aucun élève trouvé.</div>
         ) : filteredStudents.map((s: StudentRecord) => {
           const totalFee = Number(s.scolarite_totale || s.annual_fee || 0);
           const paidFee = Number(s.scolarite_payee || 0);
@@ -1099,7 +1066,7 @@ function StudentsPageContent() {
             <div 
               key={s.id} 
               onClick={() => goToStudentDetail(s.id)}
-              className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3 cursor-pointer active:bg-slate-50 hover:shadow-md transition-all"
+              className="bg-white p-4 rounded-2xl border border-slate-200/80 space-y-3.5 cursor-pointer active:bg-slate-50 transition"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -1109,15 +1076,15 @@ function StudentsPageContent() {
                       checked={selectedStudentIds.includes(String(s.id))} 
                       onChange={() => toggleStudentSelection(String(s.id))} 
                       onClick={(e) => e.stopPropagation()}
-                      className="h-5 w-5 rounded border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0" 
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer shrink-0" 
                     />
                   )}
-                  <div className="h-10 w-10 rounded-xl bg-indigo-500 text-white flex items-center justify-center font-black text-xs uppercase shrink-0 shadow-sm">
+                  <div className="h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0">
                     {s.first_name?.[0]}{s.last_name?.[0]}
                   </div>
                   <div className="min-w-0">
-                    <p className="font-black text-slate-900 text-sm uppercase truncate">{s.first_name} <span className="font-bold text-slate-700">{s.last_name}</span></p>
-                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-tight mt-0.5">{s.classes?.name || 'Inconnu'}</p>
+                    <p className="font-bold text-slate-900 text-sm truncate capitalize">{s.first_name} {s.last_name}</p>
+                    <p className="text-xs font-semibold text-slate-400 mt-0.5">{s.classes?.name || 'Inconnu'}</p>
                   </div>
                 </div>
 
@@ -1125,36 +1092,36 @@ function StudentsPageContent() {
                   {s.parent_phone && (
                     <a 
                       href={`tel:${s.parent_phone}`} 
-                      className="h-10 w-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center border border-emerald-200 shadow-sm active:scale-90 transition-all font-bold"
+                      className="h-9 w-9 bg-slate-50 text-blue-600 rounded-xl flex items-center justify-center border border-slate-200"
                       title="Appeler"
                     >
-                      <Phone size={18} />
+                      <Phone size={15} />
                     </a>
                   )}
                   {!isReadOnly && (
                     <button 
                       onClick={() => setConfirmDeleteId(String(s.id))} 
-                      className="h-10 w-10 bg-rose-50 text-rose-500 rounded-xl flex items-center justify-center border border-rose-200 shadow-sm active:scale-90 transition-all font-bold"
+                      className="h-9 w-9 bg-slate-50 text-slate-400 hover:text-rose-600 rounded-xl flex items-center justify-center border border-slate-200"
                       title="Supprimer"
                     >
-                      <Trash2 size={18} />
+                      <Trash2 size={15} />
                     </button>
                   )}
                 </div>
               </div>
 
               <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100 text-center">
-                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                  <p className="text-[8px] font-black text-slate-500 uppercase">Scolarité</p>
-                  <p className="text-xs font-black text-slate-800 mt-1">{totalFee.toLocaleString()}</p>
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Scolarité</span>
+                  <span className="text-xs font-black text-slate-900 mt-0.5 block">{totalFee.toLocaleString()} F</span>
                 </div>
-                <div className={`p-2.5 rounded-lg border ${isSettled ? 'bg-emerald-50 border-emerald-200' : paidFee > 0 ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
-                  <p className="text-[8px] font-black text-slate-500 uppercase">Payé</p>
-                  <p className={`text-xs font-black mt-1 ${isSettled ? 'text-emerald-700' : paidFee > 0 ? 'text-amber-700' : 'text-slate-600'}`}>{paidFee.toLocaleString()}</p>
+                <div className={`p-2.5 rounded-xl border ${isSettled ? 'bg-emerald-50 border-emerald-100' : paidFee > 0 ? 'bg-amber-50 border-amber-100' : 'bg-slate-50 border-slate-100'}`}>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Payé</span>
+                  <span className={`text-xs font-black mt-0.5 block ${isSettled ? 'text-emerald-700' : paidFee > 0 ? 'text-amber-700' : 'text-slate-700'}`}>{paidFee.toLocaleString()} F</span>
                 </div>
-                <div className={`p-2.5 rounded-lg border ${examAvg >= 10 ? 'bg-indigo-50 border-indigo-200' : 'bg-rose-50 border-rose-200'}`}>
-                  <p className="text-[8px] font-black text-slate-500 uppercase">Moyenne</p>
-                  <p className={`text-xs font-black mt-1 ${examAvg >= 10 ? 'text-indigo-700' : 'text-rose-700'}`}>{examAvg.toFixed(2)}/20</p>
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Moyenne</span>
+                  <span className={`text-xs font-black mt-0.5 block ${examAvg >= 10 ? 'text-blue-600' : 'text-rose-600'}`}>{examAvg.toFixed(2)}/20</span>
                 </div>
               </div>
             </div>
@@ -1162,80 +1129,70 @@ function StudentsPageContent() {
         })}
       </div>
 
-      {/* Impression CSS globale */}
+      {/* STYLE IMPRESSION */}
       <style jsx global>{`
         @media print {
           body { background: white; color: black; font-size: 11px; }
-          .print\:hidden { display: none !important; }
-          .no-scrollbar::-webkit-scrollbar { display: none; }
+          .print\\:hidden { display: none !important; }
           table { width: 100% !important; border-collapse: collapse; }
           th, td { border-bottom: 1px solid #e2e8f0 !important; padding: 6px !important; }
         }
       `}</style>
 
-      {/* Modal de confirmation de radiation */}
+      {/* MODAL SUPPRESSION */}
       {confirmDeleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/30 backdrop-blur-md print:hidden">
-          <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-xs text-center border-2 border-slate-200">
-            <p className="font-black text-slate-900 text-sm uppercase mb-5">Confirmer la suppression ?</p>
-            <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => handleDeleteStudent(confirmDeleteId)} className="bg-gradient-to-r from-rose-500 to-red-600 text-white py-2.5 rounded-lg font-black text-xs uppercase hover:shadow-lg active:scale-95 transition-all shadow-md">Supprimer</button>
-              <button onClick={() => setConfirmDeleteId(null)} className="bg-slate-100 text-slate-700 py-2.5 rounded-lg font-black text-xs uppercase hover:bg-slate-200 active:scale-95 transition-all">Annuler</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-xs print:hidden">
+          <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-xs text-center border border-slate-200 space-y-4">
+            <p className="font-bold text-slate-900 text-sm">Confirmer la suppression de cet élève ?</p>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button onClick={() => handleDeleteStudent(confirmDeleteId)} className="bg-rose-600 hover:bg-rose-700 text-white py-2 rounded-xl font-bold text-xs transition">Supprimer</button>
+              <button onClick={() => setConfirmDeleteId(null)} className="border border-slate-200 text-slate-700 py-2 rounded-xl font-bold text-xs hover:bg-slate-50 transition">Annuler</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modal d'export PDF */}
+      {/* MODAL EXPORT PDF */}
       {showExportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/30 backdrop-blur-md print:hidden">
-          <div className="bg-white p-6 rounded-3xl shadow-xl w-full max-w-sm border-2 border-slate-200">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white flex items-center justify-center shrink-0 font-bold">
-                  <FileDown size={18} />
-                </div>
-                <div>
-                  <p className="font-black text-slate-900 text-sm uppercase tracking-tight">Export PDF</p>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase">Registre des élèves</p>
-                </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-xs print:hidden">
+          <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <p className="font-bold text-slate-900 text-sm">Export du Registre</p>
+                <p className="text-xs text-slate-500 font-medium">Génération du fichier PDF</p>
               </div>
-              <button
-                onClick={() => setShowExportModal(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold"
-                disabled={isExporting}
-              >
-                <X size={20} />
+              <button onClick={() => setShowExportModal(false)} className="text-slate-400 hover:text-slate-600" disabled={isExporting}>
+                <X size={18} />
               </button>
             </div>
 
-            <p className="text-xs font-bold text-slate-600 mt-4 mb-4">
-              Souhaitez-vous inclure les données financières (frais, montants payés et restant dû) dans le document exporté ?
+            <p className="text-xs font-semibold text-slate-600">
+              Souhaitez-vous inclure le détail des frais et paiements scolaires dans l'export ?
             </p>
 
             <div className="space-y-2">
               <button
                 onClick={() => generatePdf(true)}
                 disabled={isExporting}
-                className="w-full flex items-center justify-between gap-3 p-3.5 rounded-xl border-2 border-slate-200 hover:border-indigo-400 hover:bg-indigo-50 transition-all text-left disabled:opacity-50 font-bold active:scale-95"
+                className="w-full flex items-center justify-between p-3.5 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 transition text-left disabled:opacity-40"
               >
                 <div>
-                  <p className="font-black text-xs text-slate-900 uppercase">Avec données financières</p>
-                  <p className="text-[10px] font-bold text-slate-500 mt-0.5">Frais, paiements et soldes restants inclus</p>
+                  <p className="font-bold text-xs text-slate-900">Avec données financières</p>
+                  <p className="text-[11px] text-slate-500 font-medium">Frais, paiements et soldes inclus</p>
                 </div>
-                {isExporting ? <Loader2 className="animate-spin text-indigo-600" size={18} /> : <DollarSign size={18} className="text-emerald-600 shrink-0" />}
+                {isExporting ? <Loader2 className="animate-spin text-blue-600" size={16} /> : <DollarSign size={16} className="text-blue-600 shrink-0" />}
               </button>
 
               <button
                 onClick={() => generatePdf(false)}
                 disabled={isExporting}
-                className="w-full flex items-center justify-between gap-3 p-3.5 rounded-xl border-2 border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition-all text-left disabled:opacity-50 font-bold active:scale-95"
+                className="w-full flex items-center justify-between p-3.5 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition text-left disabled:opacity-40"
               >
                 <div>
-                  <p className="font-black text-xs text-slate-900 uppercase">Sans données financières</p>
-                  <p className="text-[10px] font-bold text-slate-500 mt-0.5">Identité, classe et résultats académiques uniquement</p>
+                  <p className="font-bold text-xs text-slate-900">Sans données financières</p>
+                  <p className="text-[11px] text-slate-500 font-medium">Identité, classe et moyennes uniquement</p>
                 </div>
-                {isExporting ? <Loader2 className="animate-spin text-slate-600" size={18} /> : <Lock size={18} className="text-slate-400 shrink-0" />}
+                {isExporting ? <Loader2 className="animate-spin text-slate-600" size={16} /> : <Lock size={16} className="text-slate-400 shrink-0" />}
               </button>
             </div>
           </div>

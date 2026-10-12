@@ -6,8 +6,8 @@ import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
 import { useYear } from '@/context/YearContext';
 import { useCacheRefresh } from '@/hooks/useCacheRefresh';
 import { 
-  UserCheck, Plus, Search, Mail, Phone, 
-  Briefcase, Loader2, ExternalLink, GraduationCap, X, UserPlus, Trash2
+  Plus, Search, Phone, 
+  Briefcase, Loader2, ExternalLink, GraduationCap, X, Trash2
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -27,6 +27,7 @@ export default function TeachersPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
 
   // Hook pour l'année scolaire
   const { selectedYearId, isReadOnly, isLoading: yearLoading } = useYear();
@@ -70,7 +71,6 @@ export default function TeachersPage() {
     
     setIsSubmitting(true);
     
-    // Payload harmonisé pour la table 'teachers'
     const payload = {
       first_name: formData.firstName,
       last_name: formData.lastName,
@@ -79,7 +79,6 @@ export default function TeachersPage() {
       specialty: formData.specialty,
       status: formData.status,
       academic_year_id: selectedYearId,
-      // Valeur par défaut harmonisée avec l'ENUM Postgres 'present' (évite les erreurs d'insertion)
       attendance_status: 'present',
       last_attendance_update: new Date().toISOString().split('T')[0]
     };
@@ -102,6 +101,7 @@ export default function TeachersPage() {
 
     if (!error) {
       setFormData({ firstName: '', lastName: '', email: '', phone: '', specialty: '', status: 'Actif' });
+      setShowAddForm(false);
     } else {
       console.error(error);
       alert("Erreur lors de l'enregistrement de l'enseignant.");
@@ -135,158 +135,238 @@ export default function TeachersPage() {
 
   // Filtrage optimisé et insensible à la casse
   const filteredTeachers = teachers.filter(t => 
-    `${t.first_name} ${t.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.specialty?.toLowerCase().includes(searchTerm.toLowerCase())
+    `${t.first_name || ''} ${t.last_name || ''}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (t.specialty || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
-    <div className="space-y-8 pb-10 max-w-7xl mx-auto px-4 sm:px-6">
-      {/* --- HEADER --- */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <div className="space-y-6 pb-12 max-w-6xl mx-auto px-4 sm:px-6 w-full text-slate-900 font-sans antialiased">
+      
+      {/* --- HEADER ÉPURÉ & PLAT --- */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-b border-slate-200/80 pb-6">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="h-2 w-2 bg-emerald-600 rounded-full animate-pulse" />
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-600">Administration</p>
+            <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Personnel Enseignant</span>
           </div>
-          <h1 className="text-3xl sm:text-5xl font-black tracking-tighter text-slate-950 italic">
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 capitalize">
             Corps Enseignant
           </h1>
         </div>
-        <div className="bg-white px-6 py-3 rounded-2xl border border-slate-100 shadow-sm self-start md:self-auto">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Experts</p>
-          <p className="text-2xl font-black text-slate-950">{teachers.length}</p>
+
+        <div className="flex items-center gap-3 self-start sm:self-auto">
+          <div className="bg-white px-4 py-2 rounded-xl border border-slate-200/80 text-xs font-bold text-slate-700">
+            <span>Effectif : </span>
+            <span className="text-blue-600 text-sm font-black">{teachers.length}</span>
+            <span className="text-slate-400 font-normal"> enseignant{teachers.length > 1 ? 's' : ''}</span>
+          </div>
+
+          {!isReadOnly && (
+            <button
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs"
+            >
+              {showAddForm ? <X size={15} /> : <Plus size={15} />}
+              <span>{showAddForm ? 'Fermer' : 'Ajouter un enseignant'}</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* --- FORMULAIRE (Design Courbe Signature) --- */}
-      <div className="bg-white p-6 md:p-8 rounded-[2.5rem] sm:rounded-[3rem] border border-slate-100 shadow-2xl shadow-slate-200/50">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="p-2 bg-slate-950 rounded-xl text-white shadow-lg">
-            <UserPlus size={20} />
+      {/* --- FORMULAIRE D'AJOUT PLAT --- */}
+      {showAddForm && !isReadOnly && (
+        <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 space-y-4 animate-in fade-in duration-150">
+          <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 uppercase">Nouvel Enseignant</h2>
+              <p className="text-xs text-slate-500 font-medium">Inscription d'un membre du corps professoral</p>
+            </div>
+            <button 
+              onClick={() => setShowAddForm(false)}
+              className="p-1 text-slate-400 hover:text-slate-700"
+            >
+              <X size={16} />
+            </button>
           </div>
-          <h2 className="text-xl font-black text-slate-900 tracking-tight">Nouvel Enseignant</h2>
+
+          <form onSubmit={addTeacher} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">Prénom</label>
+                <input 
+                  type="text" 
+                  placeholder="Ex: Moussa" 
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-900 focus:border-blue-600 focus:bg-white transition" 
+                  value={formData.firstName} 
+                  onChange={(e) => setFormData({...formData, firstName: e.target.value})} 
+                  required 
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">Nom</label>
+                <input 
+                  type="text" 
+                  placeholder="Ex: Diarra" 
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-900 focus:border-blue-600 focus:bg-white transition" 
+                  value={formData.lastName} 
+                  onChange={(e) => setFormData({...formData, lastName: e.target.value})} 
+                  required 
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">Spécialité / Discipline</label>
+                <input 
+                  type="text" 
+                  placeholder="Ex: Mathématiques, Histoire..." 
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-xs text-blue-600 focus:border-blue-600 focus:bg-white transition" 
+                  value={formData.specialty} 
+                  onChange={(e) => setFormData({...formData, specialty: e.target.value})} 
+                  required 
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">Numéro de Téléphone</label>
+                <input 
+                  type="text" 
+                  placeholder="Ex: 70 00 00 00" 
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-900 focus:border-blue-600 focus:bg-white transition" 
+                  value={formData.phone} 
+                  onChange={(e) => setFormData({...formData, phone: e.target.value})} 
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-slate-700">Statut Contractuel</label>
+                <select 
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 outline-none focus:border-blue-600 focus:bg-white transition cursor-pointer" 
+                  value={formData.status} 
+                  onChange={(e) => setFormData({...formData, status: e.target.value})}
+                >
+                  <option value="Actif">Permanent (Actif)</option>
+                  <option value="Vacataire">Vacataire</option>
+                  <option value="Stagiaire">Stagiaire</option>
+                </select>
+              </div>
+              <div className="flex items-end">
+                <button 
+                  type="submit" 
+                  disabled={isSubmitting || isReadOnly} 
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-bold text-xs transition disabled:opacity-40 shadow-xs"
+                >
+                  {isSubmitting ? <Loader2 className="animate-spin mx-auto" size={16} /> : "Valider l'enregistrement"}
+                </button>
+              </div>
+            </div>
+          </form>
         </div>
+      )}
 
-        <form onSubmit={addTeacher} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Prénom</label>
-              <input type="text" placeholder="Moussa" className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold" value={formData.firstName} onChange={(e) => setFormData({...formData, firstName: e.target.value})} required />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Nom</label>
-              <input type="text" placeholder="Diarra" className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold" value={formData.lastName} onChange={(e) => setFormData({...formData, lastName: e.target.value})} required />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Spécialité / Matière</label>
-              <input type="text" placeholder="Mathématiques" className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-emerald-600" value={formData.specialty} onChange={(e) => setFormData({...formData, specialty: e.target.value})} required />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Téléphone</label>
-              <input type="text" placeholder="+223 ..." className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} />
-            </div>
-            <div className="space-y-1.5 text-sm font-black">
-              <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Statut Contractuel</label>
-              <select className="w-full p-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none font-bold cursor-pointer" value={formData.status} onChange={(e) => setFormData({...formData, status: e.target.value})}>
-                <option value="Actif">Permanent (Actif)</option>
-                <option value="Vacataire">Vacataire</option>
-                <option value="Stagiaire">Stagiaire</option>
-              </select>
-            </div>
-            <div className="flex items-end">
-              <button type="submit" disabled={isSubmitting || isReadOnly} className={`w-full text-white p-4 rounded-2xl font-black text-xs uppercase tracking-wider transition-all shadow-xl disabled:opacity-50 ${isReadOnly ? 'bg-gray-400 cursor-not-allowed' : 'bg-slate-950 hover:bg-emerald-600'}`}>
-                {isSubmitting ? <Loader2 className="animate-spin mx-auto" size={20} /> : "Enregistrer le Professeur"}
-              </button>
-            </div>
-          </div>
-        </form>
+      {/* --- BARRE DE RECHERCHE SIMPLE & PLATE --- */}
+      <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 flex items-center gap-3">
+        <div className="relative flex-1">
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold" />
+          <input 
+            type="text" 
+            placeholder="Rechercher par nom ou discipline..." 
+            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none font-bold text-xs text-slate-900 focus:border-blue-600 focus:bg-white transition"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        {searchTerm && (
+          <button 
+            onClick={() => setSearchTerm('')}
+            className="text-xs font-bold text-slate-400 hover:text-slate-600 px-2"
+          >
+            Effacer
+          </button>
+        )}
       </div>
 
-      {/* --- RECHERCHE --- */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-        <input 
-          type="text" 
-          placeholder="Filtrer par nom ou matière..." 
-          className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-3xl shadow-sm outline-none focus:ring-2 focus:ring-emerald-500 font-bold text-slate-800 placeholder-slate-400"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
-      </div>
-
-      {/* --- LISTE DES PROFS --- */}
+      {/* --- REGISTRE DES ENSEIGNANTS : CARTES PLATES SANS BADGE DE STATUT --- */}
       {loading ? (
-        <div className="flex justify-center p-20"><Loader2 className="animate-spin text-emerald-600" size={40} /></div>
+        <div className="flex justify-center p-16">
+          <Loader2 className="animate-spin text-blue-600" size={28} />
+        </div>
+      ) : filteredTeachers.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-2xl border border-slate-200/80">
+          <GraduationCap size={36} className="mx-auto text-slate-300 mb-2" />
+          <p className="text-slate-500 font-bold text-xs uppercase tracking-wider">Aucun enseignant trouvé</p>
+        </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredTeachers.map((teacher) => (
-            <div key={teacher.id} className="group bg-white p-6 md:p-8 rounded-[2.5rem] sm:rounded-[3.5rem] border border-slate-50 shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden flex flex-col justify-between">
+            <div 
+              key={teacher.id} 
+              className="bg-white p-5 rounded-2xl border border-slate-200/80 hover:border-blue-200 transition flex flex-col justify-between space-y-4"
+            >
               <div>
-                <div className="flex justify-between items-start mb-6">
-                  <div className="h-14 w-14 bg-slate-900 rounded-2xl flex items-center justify-center text-white font-black text-lg group-hover:bg-emerald-600 transition-colors uppercase">
+                <div className="flex items-center gap-3.5 mb-3">
+                  <div className="h-12 w-12 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-sm uppercase shrink-0">
                     {teacher.first_name?.[0] || ''}{teacher.last_name?.[0] || ''}
                   </div>
-                  <span className={`text-[9px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest ${
-                    teacher.status === 'Actif' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-orange-50 text-orange-600 border border-orange-100'
-                  }`}>
-                    {teacher.status}
-                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-base font-extrabold text-slate-900 capitalize truncate">
+                      {teacher.first_name} {teacher.last_name}
+                    </h3>
+                    <p className="text-xs font-bold text-blue-600 flex items-center gap-1.5 mt-0.5 truncate">
+                      <Briefcase size={13} className="shrink-0" />
+                      <span>{teacher.specialty || 'Généraliste'}</span>
+                    </p>
+                  </div>
                 </div>
 
-                <h3 className="text-2xl font-black text-slate-950 mb-1 leading-tight capitalize">
-                  {teacher.first_name} <br/> {teacher.last_name}
-                </h3>
-                <p className="text-emerald-600 font-black text-[10px] uppercase tracking-widest flex items-center gap-2 mb-6">
-                  <Briefcase size={12} fill="currentColor" /> {teacher.specialty}
-                </p>
-
-                <div className="space-y-3 border-t border-slate-50 pt-6">
-                  <div className="flex items-center gap-3 text-slate-600 text-xs font-bold">
-                    <div className="p-1.5 bg-slate-50 rounded-lg">
-                      <Phone size={12} className="text-slate-400" />
-                    </div>
-                    {teacher.phone || 'Non renseigné'}
+                <div className="space-y-1.5 pt-3 border-t border-slate-100 text-xs text-slate-600 font-medium">
+                  <div className="flex items-center gap-2">
+                    <Phone size={13} className="text-slate-400 shrink-0" />
+                    <span className="font-semibold text-slate-700">{teacher.phone || 'Non renseigné'}</span>
                   </div>
                 </div>
               </div>
 
               {/* Actions de pied de carte */}
-              <div className="mt-8 pt-4 border-t border-slate-50">
+              <div className="pt-3 border-t border-slate-100">
                 {confirmDeleteId === teacher.id ? (
-                  <div className="flex items-center justify-center gap-3 bg-rose-50/50 p-2 rounded-2xl">
-                    <span className="text-[10px] font-black uppercase text-rose-500 ml-2">Confirmer ?</span>
-                    <button
-                      onClick={() => handleDeleteTeacher(teacher.id)}
-                      disabled={deletingId === teacher.id}
-                      className="px-4 py-2 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-rose-700 transition-all disabled:opacity-50 min-w-[50px] flex justify-center"
-                    >
-                      {deletingId === teacher.id ? <Loader2 className="animate-spin" size={14} /> : 'Oui'}
-                    </button>
-                    <button
-                      onClick={() => setConfirmDeleteId(null)}
-                      disabled={deletingId === teacher.id}
-                      className="px-4 py-2 bg-slate-200 text-slate-700 rounded-xl text-[10px] font-black uppercase hover:bg-slate-300 transition-all"
-                    >
-                      Non
-                    </button>
+                  <div className="flex items-center justify-between gap-2 p-1.5 bg-rose-50 rounded-xl border border-rose-100">
+                    <span className="text-[11px] font-bold text-rose-700 pl-1">Confirmer ?</span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => handleDeleteTeacher(teacher.id)}
+                        disabled={deletingId === teacher.id}
+                        className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition disabled:opacity-50"
+                      >
+                        {deletingId === teacher.id ? <Loader2 className="animate-spin" size={13} /> : 'Oui'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        disabled={deletingId === teacher.id}
+                        className="px-3 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-bold hover:bg-slate-50 transition"
+                      >
+                        Non
+                      </button>
+                    </div>
                   </div>
                 ) : (
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <button
-                      onClick={() => setConfirmDeleteId(teacher.id)}
-                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-3 bg-rose-50 text-rose-600 rounded-xl text-[10px] font-black uppercase hover:bg-rose-100 transition-all"
-                    >
-                      <Trash2 size={13} /> Supprimer
-                    </button>
+                  <div className="flex items-center gap-2">
                     <Link 
                       href={`/teachers/${teacher.id}`} 
-                      className="flex-1 inline-flex items-center justify-center gap-2 bg-slate-50 text-slate-900 py-3 px-4 rounded-xl font-black text-[10px] uppercase tracking-wider hover:bg-slate-950 hover:text-white transition-all text-center"
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 bg-blue-50/60 hover:bg-blue-100/80 text-blue-700 border border-blue-100 py-2 px-3 rounded-xl font-bold text-xs transition text-center"
                     >
-                      Dossier Prof <ExternalLink size={13} />
+                      <span>Fiche Enseignant</span>
+                      <ExternalLink size={13} />
                     </Link>
+
+                    {!isReadOnly && (
+                      <button
+                        onClick={() => setConfirmDeleteId(teacher.id)}
+                        className="p-2 border border-slate-200 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
+                        title="Supprimer l'enseignant"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -295,13 +375,6 @@ export default function TeachersPage() {
         </div>
       )}
 
-      {/* --- EMPTY STATE --- */}
-      {!loading && filteredTeachers.length === 0 && (
-        <div className="text-center py-20 bg-slate-50 rounded-[2.5rem] sm:rounded-[3rem] border-2 border-dashed border-slate-200">
-          <GraduationCap size={48} className="mx-auto text-slate-300 mb-4" />
-          <p className="text-slate-500 font-black uppercase text-xs tracking-widest">Aucun enseignant trouvé</p>
-        </div>
-      )}
     </div>
   );
 }

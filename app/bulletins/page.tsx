@@ -1,17 +1,20 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Fragment, useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '@/utils/supabase';
 import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
 import { useCacheRefresh } from '@/hooks/useCacheRefresh';
 import { useYear } from '@/context/YearContext';
-import { Settings, PenTool, BarChart3, FileText, Plus, Save, Trash2, Download, Trophy, Target, Search, Menu, X, ChevronDown, ChevronUp, Check, ChevronLeft, ChevronRight, Lock } from 'lucide-react';
+import { 
+  Settings, PenTool, BarChart3, FileText, Plus, Trash2, 
+  Download, Trophy, Search, ChevronLeft, ChevronRight,
+  Filter, ArrowRight, Maximize2, Minimize2
+} from 'lucide-react';
 
 export default function EngineScolaire() {
-  // Hook pour l'année scolaire - DOIT être appelé avant tout usage de selectedYear
   const { selectedYearId, isReadOnly, isLoading: yearLoading, selectedYear } = useYear();
 
-  const [tab, setTab] = useState<'config' | 'saisie' | 'resultats' | 'stats'>('saisie');
+  const [tab, setTab] = useState<'saisie' | 'resultats' | 'config'>('saisie');
   const [loading, setLoading] = useState(false);
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
@@ -24,12 +27,10 @@ export default function EngineScolaire() {
   const [searchBulletins, setSearchBulletins] = useState('');
   const [newSubName, setNewSubName] = useState('');
   const [newSubCoeff, setNewSubCoeff] = useState('1');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [fullscreenMode, setFullscreenMode] = useState(false);
   const [currentStudentIndex, setCurrentStudentIndex] = useState(0);
   const [savedGrades, setSavedGrades] = useState<Set<string>>(new Set());
-  const [scrollPosition, setScrollPosition] = useState(0);
-  const gridContainerRef = useRef<HTMLDivElement>(null);
+  const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all');
+  const [isExpanded, setIsExpanded] = useState(false);
   const inputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
   const [school, setSchool] = useState<any>(null);
   const [loadingSchool, setLoadingSchool] = useState(true);
@@ -38,7 +39,7 @@ export default function EngineScolaire() {
     cachePattern: /^(class_subjects:|student_grades:)/,
     onInvalidate: () => {
       if (selectedClassId) {
-        loadClassData()
+        loadClassData();
       }
     },
     debounceMs: 150,
@@ -47,7 +48,6 @@ export default function EngineScolaire() {
     refreshIntervalMs: 120000,
   });
 
-  // Mise à jour de la logique : Second cycle = 7, 8, 9
   const isSecondCycle = useMemo(() => {
     const currentClass = classes.find(c => c.id === selectedClassId);
     if (!currentClass) return false;
@@ -61,7 +61,7 @@ export default function EngineScolaire() {
       const { data, error } = await offlineFetch<any[]>(`bulletins_classes:${selectedYearId}`, async () => {
         return await supabase.from('classes').select('*').eq('academic_year_id', selectedYearId);
       });
-      if (error) console.error('Erreur de récupération des classes hors ligne :', error);
+      if (error) console.error('Erreur récupération classes hors ligne :', error);
       setClasses(data || []);
     }
     if (!yearLoading && selectedYearId) {
@@ -69,7 +69,6 @@ export default function EngineScolaire() {
     }
   }, [selectedYearId, yearLoading]);
 
-  // Récupérer les données de l'école
   useEffect(() => {
     async function fetchSchool() {
       try {
@@ -96,7 +95,7 @@ export default function EngineScolaire() {
           }
         }
       } catch (error) {
-        console.error('Erreur lors de la récupération de l\'école:', error);
+        console.error('Erreur récupération école:', error);
       } finally {
         setLoadingSchool(false);
       }
@@ -128,16 +127,15 @@ export default function EngineScolaire() {
         .eq('academic_year', year);
     });
 
-    if (subError) console.error('Erreur de récupération des matières hors ligne :', subError);
-    if (stuError) console.error('Erreur de récupération des élèves hors ligne :', stuError);
-    if (grdError) console.error('Erreur de récupération des notes hors ligne :', grdError);
+    if (subError) console.error('Erreur récupération matières hors ligne :', subError);
+    if (stuError) console.error('Erreur récupération élèves hors ligne :', stuError);
+    if (grdError) console.error('Erreur récupération notes hors ligne :', grdError);
 
     setSubjects(sub || []);
     setStudents(stu || []);
     setRawGrades(grd || []);
     setCurrentStudentIndex(0);
     setSavedGrades(new Set());
-    setScrollPosition(0);
     setLoading(false);
   }
 
@@ -183,8 +181,13 @@ export default function EngineScolaire() {
   };
 
   const filteredStudentsSaisie = useMemo(() => {
-    return students.filter(s => ` ${s.last_name} ${s.first_name}`.toLowerCase().includes(searchSaisie.toLowerCase()));
+    return students.filter(s => `${s.last_name} ${s.first_name}`.toLowerCase().includes(searchSaisie.toLowerCase()));
   }, [students, searchSaisie]);
+
+  const displayedSubjects = useMemo(() => {
+    if (selectedSubjectFilter === 'all') return subjects;
+    return subjects.filter(s => s.id === selectedSubjectFilter);
+  }, [subjects, selectedSubjectFilter]);
 
   const bulletinData = useMemo(() => {
     const data = students
@@ -382,233 +385,231 @@ export default function EngineScolaire() {
     setLoading(false);
   };
 
-  const saveGrade = async (studentId: string, subjectName: string, field: 'grade_value' | 'compo_value', value: string) => {
+  const saveGrade = async (
+    studentId: string,
+    subjectName: string,
+    field: 'grade_value' | 'compo_value',
+    value: string
+  ) => {
+    if (value.trim() === '') return;
+
     const val = parseFloat(value);
     const maxGrade = isSecondCycle ? 20 : 10;
     if (isNaN(val) || val < 0 || val > maxGrade) return;
-    const { error } = await offlineWrite({
-      table: 'student_grades',
-      action: 'UPSERT',
-      payload: {
+
+    const existingGrade = rawGrades.find(
+      (g) =>
+        String(g.student_id) === String(studentId) &&
+        g.subject_name === subjectName &&
+        g.period === period &&
+        String(g.academic_year) === String(year)
+    );
+
+    const gradeKey = `${studentId}-${subjectName}-${field}`;
+    const cacheKey = `bulletins_grades:${selectedClassId}:${period}:${year}`;
+
+    if (existingGrade?.id && !String(existingGrade.id).startsWith('temp-')) {
+      const { error } = await offlineWrite({
+        table: 'student_grades',
+        action: 'UPDATE',
+        payload: { [field]: val },
+        options: { keyColumn: 'id', keyValue: existingGrade.id },
+        cacheKey: cacheKey,
+        optimisticUpdate: () => {
+          setRawGrades((prev) =>
+            prev.map((g) => (g.id === existingGrade.id ? { ...g, [field]: val } : g))
+          );
+        },
+      });
+
+      if (!error) {
+        setSavedGrades((prev) => new Set(prev).add(gradeKey));
+        setTimeout(() => {
+          setSavedGrades((prev) => {
+            const next = new Set(prev);
+            next.delete(gradeKey);
+            return next;
+          });
+        }, 800);
+      } else {
+        console.error('Erreur UPDATE note :', error);
+      }
+    } else {
+      const newGradePayload: any = {
         student_id: studentId,
         class_id: selectedClassId,
         subject_name: subjectName,
         period: period,
         academic_year: year,
-        [field]: val
-      },
-      cacheKey: `bulletins_grades:${selectedClassId}:${period}:${year}`
-    });
-    if (!error) {
-      const key = `${studentId}-${subjectName}-${field}`;
-      setSavedGrades(prev => new Set(prev).add(key));
-      setTimeout(() => {
-        setSavedGrades(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(key);
-          return newSet;
-        });
-      }, 1000);
-      loadClassData();
+        academic_year_id: selectedYearId,
+        [field]: val,
+      };
+
+      if (school?.id) {
+        newGradePayload.school_id = school.id;
+      }
+
+      const tempId = `temp-${Date.now()}`;
+
+      const { error } = await offlineWrite({
+        table: 'student_grades',
+        action: 'INSERT',
+        payload: [newGradePayload],
+        cacheKey: cacheKey,
+        optimisticUpdate: () => {
+          setRawGrades((prev) => [...prev, { id: tempId, ...newGradePayload }]);
+        },
+      });
+
+      if (!error) {
+        setSavedGrades((prev) => new Set(prev).add(gradeKey));
+        setTimeout(() => {
+          setSavedGrades((prev) => {
+            const next = new Set(prev);
+            next.delete(gradeKey);
+            return next;
+          });
+        }, 800);
+        loadClassData();
+      } else {
+        console.error('Erreur INSERT note :', error);
+      }
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent, studentIndex: number, subjectIndex: number, field: 'grade' | 'compo') => {
-    const student = filteredStudentsSaisie[studentIndex];
-    const subject = subjects[subjectIndex];
-    
-    if (!student || !subject) return;
+  const handleMatrixKeyDown = (
+    e: React.KeyboardEvent, 
+    studentIdx: number, 
+    subIdx: number, 
+    field: 'grade' | 'compo'
+  ) => {
+    const numStudents = filteredStudentsSaisie.length;
+    const numSubjects = displayedSubjects.length;
 
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault();
-        if (studentIndex < filteredStudentsSaisie.length - 1) {
-          setCurrentStudentIndex(studentIndex + 1);
-          setTimeout(() => {
-            const nextKey = `${filteredStudentsSaisie[studentIndex + 1].id}-${subject.subject_name}-${field === 'grade' ? 'grade' : 'compo'}`;
-            inputRefs.current[nextKey]?.focus();
-          }, 0);
-        }
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        if (studentIndex > 0) {
-          setCurrentStudentIndex(studentIndex - 1);
-          setTimeout(() => {
-            const prevKey = `${filteredStudentsSaisie[studentIndex - 1].id}-${subject.subject_name}-${field === 'grade' ? 'grade' : 'compo'}`;
-            inputRefs.current[prevKey]?.focus();
-          }, 0);
-        }
-        break;
-      case 'ArrowRight':
-        e.preventDefault();
-        if (field === 'grade' && isSecondCycle) {
-          const compoKey = `${student.id}-${subject.subject_name}-compo`;
-          inputRefs.current[compoKey]?.focus();
-        } else if (subjectIndex < subjects.length - 1) {
-          const nextSubject = subjects[subjectIndex + 1];
-          const nextKey = `${student.id}-${nextSubject.subject_name}-${isSecondCycle ? 'grade' : 'compo'}`;
-          inputRefs.current[nextKey]?.focus();
-        }
-        break;
-      case 'ArrowLeft':
-        e.preventDefault();
-        if (field === 'compo' && isSecondCycle) {
-          const gradeKey = `${student.id}-${subject.subject_name}-grade`;
-          inputRefs.current[gradeKey]?.focus();
-        } else if (subjectIndex > 0) {
-          const prevSubject = subjects[subjectIndex - 1];
-          const prevKey = `${student.id}-${prevSubject.subject_name}-${isSecondCycle ? 'compo' : 'compo'}`;
-          inputRefs.current[prevKey]?.focus();
-        }
-        break;
-      case 'Enter':
-        e.preventDefault();
-        if (studentIndex < filteredStudentsSaisie.length - 1) {
-          setCurrentStudentIndex(studentIndex + 1);
-          setTimeout(() => {
-            const nextKey = `${filteredStudentsSaisie[studentIndex + 1].id}-${subjects[0]?.subject_name}-${isSecondCycle ? 'grade' : 'compo'}`;
-            inputRefs.current[nextKey]?.focus();
-          }, 0);
-        }
-        break;
+    let targetStudentIdx = studentIdx;
+    let targetSubIdx = subIdx;
+    let targetField = field;
+
+    if (e.key === 'ArrowDown' || e.key === 'Enter') {
+      e.preventDefault();
+      if (studentIdx < numStudents - 1) {
+        targetStudentIdx = studentIdx + 1;
+      }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (studentIdx > 0) {
+        targetStudentIdx = studentIdx - 1;
+      }
+    } else if (e.key === 'ArrowRight' || (e.key === 'Tab' && !e.shiftKey)) {
+      if (e.key === 'ArrowRight') e.preventDefault();
+      if (isSecondCycle && field === 'grade') {
+        targetField = 'compo';
+      } else if (subIdx < numSubjects - 1) {
+        targetSubIdx = subIdx + 1;
+        targetField = isSecondCycle ? 'grade' : 'compo';
+      }
+    } else if (e.key === 'ArrowLeft' || (e.key === 'Tab' && e.shiftKey)) {
+      if (e.key === 'ArrowLeft') e.preventDefault();
+      if (isSecondCycle && field === 'compo') {
+        targetField = 'grade';
+      } else if (subIdx > 0) {
+        targetSubIdx = subIdx - 1;
+        targetField = isSecondCycle ? 'compo' : 'compo';
+      }
+    } else {
+      return;
+    }
+
+    const nextStudent = filteredStudentsSaisie[targetStudentIdx];
+    const nextSub = displayedSubjects[targetSubIdx];
+    if (nextStudent && nextSub) {
+      const targetKey = `${nextStudent.id}-${nextSub.subject_name}-${targetField}`;
+      inputRefs.current[targetKey]?.focus();
+      inputRefs.current[targetKey]?.select();
     }
   };
 
-  const scrollGrid = (direction: 'left' | 'right') => {
-    if (!gridContainerRef.current) return;
-    const scrollAmount = 400;
-    const newPosition = direction === 'left' 
-      ? Math.max(0, scrollPosition - scrollAmount)
-      : scrollPosition + scrollAmount;
-    gridContainerRef.current.scrollLeft = newPosition;
-    setScrollPosition(newPosition);
-  };
+  const activeMobileStudent = filteredStudentsSaisie[currentStudentIndex];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      {/* HEADER */}
-      {!fullscreenMode && (
-        <header className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 sm:gap-3">
-                {loadingSchool ? (
-                  <div className="bg-indigo-600 p-2 sm:p-2.5 rounded-lg text-white animate-pulse">
-                    <BarChart3 size={20} className="sm:w-6 sm:h-6" />
-                  </div>
-                ) : school?.logo_url ? (
-                  <img src={school.logo_url} alt="Logo" className="h-10 w-10 rounded-lg object-cover" />
-                ) : (
-                  <div className="bg-indigo-600 p-2 sm:p-2.5 rounded-lg text-white">
-                    <BarChart3 size={20} className="sm:w-6 sm:h-6" />
-                  </div>
-                )}
-                <div className="hidden sm:block">
-                  <h1 className="text-lg sm:text-xl font-black tracking-tight uppercase italic">
-                    {loadingSchool ? (
-                      <span className="text-gray-400">Chargement...</span>
-                    ) : school?.name ? (
-                      <>{school.name.toUpperCase()}</>
-                    ) : (
-                      <>KalanNyetaa <span className="text-indigo-600">ACADEMY</span></>
-                    )}
-                  </h1>
-                  <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wider">
-                    {isSecondCycle ? "Lycée" : "Fondamental"}
-                  </p>
-                </div>
-                <div className="sm:hidden">
-                  <h1 className="text-sm font-black uppercase">BULLETINS</h1>
-                </div>
+    <div className="w-full text-slate-900 font-sans antialiased pb-24">
+      
+      {/* 1. EN-TÊTE ÉPURÉ */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-3 border-b border-slate-200/80 pb-5 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          
+          <div className="flex items-center gap-3">
+            {loadingSchool ? (
+              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 animate-pulse">
+                <BarChart3 size={20} />
               </div>
-
-              {/* TABS - Desktop */}
-              <div className="hidden md:flex bg-slate-100 p-1 rounded-lg gap-1">
-                {[
-                  { id: 'config', icon: Settings, label: 'Config' },
-                  { id: 'saisie', icon: PenTool, label: 'Saisie' },
-                  { id: 'resultats', icon: Trophy, label: 'Bulletins' }
-                ].map(item => (
-                  <button
-                    key={item.id}
-                    onClick={() => setTab(item.id as any)}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-bold uppercase transition-all ${
-                      tab === item.id
-                        ? 'bg-white text-indigo-600 shadow-sm'
-                        : 'text-slate-500 hover:text-indigo-600'
-                    }`}
-                  >
-                    <item.icon size={14} />
-                    <span className="hidden sm:inline">{item.label}</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* TABS - Mobile */}
-              <div className="md:hidden">
-                <button
-                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                  className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-                >
-                  {mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
-                </button>
-              </div>
-            </div>
-
-            {/* Mobile Menu */}
-            {mobileMenuOpen && (
-              <div className="md:hidden mt-3 flex gap-2 pb-2">
-                {[
-                  { id: 'config', icon: Settings, label: 'Config' },
-                  { id: 'saisie', icon: PenTool, label: 'Saisie' },
-                  { id: 'resultats', icon: Trophy, label: 'Bulletins' }
-                ].map(item => (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setTab(item.id as any);
-                      setMobileMenuOpen(false);
-                    }}
-                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-2 rounded-md text-xs font-bold uppercase transition-all ${
-                      tab === item.id
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    <item.icon size={14} />
-                    <span>{item.label}</span>
-                  </button>
-                ))}
+            ) : school?.logo_url ? (
+              <img src={school.logo_url} alt="Logo" className="w-10 h-10 rounded-xl object-cover border border-slate-200" />
+            ) : (
+              <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold">
+                <BarChart3 size={20} />
               </div>
             )}
-          </div>
-        </header>
-      )}
 
-      {/* MAIN CONTENT */}
-      <main className={`${fullscreenMode ? '' : 'max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-6'}`}>
-        {/* FILTERS */}
-        {!fullscreenMode && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-            <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-sm">
-              <label className="text-[10px] font-bold uppercase text-slate-500 block mb-2">Classe</label>
+            <div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Bulletins de Notes</span>
+              </div>
+              <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 capitalize">
+                {school?.name || 'Gestion des Évaluations'}
+              </h1>
+            </div>
+          </div>
+
+          {/* Onglets de contrôle */}
+          <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 self-start sm:self-auto shadow-xs">
+            {[
+              { id: 'saisie', icon: PenTool, label: 'Saisie Notes' },
+              { id: 'resultats', icon: Trophy, label: 'Bulletins' },
+              { id: 'config', icon: Settings, label: 'Matières' },
+            ].map(item => (
+              <button
+                key={item.id}
+                onClick={() => setTab(item.id as any)}
+                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+                  tab === item.id
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                <item.icon size={14} />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+
+        </div>
+      </div>
+
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 space-y-6">
+
+        {/* 2. BARRE DE SÉLECTION CLASSE & PÉRIODE */}
+        <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block">Classe</label>
               <select
                 onChange={(e) => setSelectedClassId(e.target.value)}
                 value={selectedClassId}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 outline-none focus:bg-white focus:border-blue-600 transition cursor-pointer"
               >
-                <option value="">Sélectionner...</option>
+                <option value="">Sélectionner une classe...</option>
                 {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
 
-            <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-sm">
-              <label className="text-[10px] font-bold uppercase text-slate-500 block mb-2">Période</label>
+            <div className="space-y-1">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 block">Période d'évaluation</label>
               <select
                 onChange={(e) => setPeriod(e.target.value)}
                 value={period}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 outline-none focus:bg-white focus:border-blue-600 transition cursor-pointer"
               >
                 <option>1er Trimestre</option>
                 <option>2e Trimestre</option>
@@ -628,429 +629,343 @@ export default function EngineScolaire() {
               </select>
             </div>
           </div>
-        )}
+        </div>
 
-        {/* SEARCH BAR - Conditional */}
-        {!fullscreenMode && (tab === 'saisie' || tab === 'resultats') && selectedClassId && (
-          <div className="mb-6 bg-white p-3 sm:p-4 rounded-xl border border-indigo-200 shadow-sm">
-            <label className="text-[10px] font-bold uppercase text-indigo-600 block mb-2">
-              {tab === 'saisie' ? 'Rechercher un élève' : 'Rechercher un bulletin'}
-            </label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input
-                type="text"
-                value={tab === 'saisie' ? searchSaisie : searchBulletins}
-                onChange={(e) => tab === 'saisie' ? setSearchSaisie(e.target.value) : setSearchBulletins(e.target.value)}
-                placeholder="Nom ou prénom..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pl-10 pr-4 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-              />
-            </div>
+        {!selectedClassId && (
+          <div className="bg-white border border-dashed border-slate-200 rounded-2xl p-12 text-center">
+            <BarChart3 className="mx-auto text-slate-300 mb-2" size={28} />
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              Sélectionnez une classe ci-dessus pour gérer les notes et bulletins.
+            </p>
           </div>
         )}
 
-        {/* TAB: CONFIGURATION */}
-        {tab === 'config' && selectedClassId && (
-          <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-lg">
-            <h2 className="text-lg sm:text-xl font-bold uppercase mb-6 text-slate-900">Matières</h2>
-
-            {/* Add Subject Form */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6 pb-6 border-b border-slate-200">
-              <input
-                value={newSubName}
-                onChange={(e) => setNewSubName(e.target.value)}
-                type="text"
-                placeholder="Nom de la matière"
-                className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-              />
-              <input
-                value={newSubCoeff}
-                onChange={(e) => setNewSubCoeff(e.target.value)}
-                type="number"
-                step="1"
-                placeholder="Coefficient"
-                className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-bold text-sm outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-              />
-              <button
-                onClick={addSubject}
-                className="bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 py-2.5"
-              >
-                <Plus size={18} />
-                <span className="hidden sm:inline">Ajouter</span>
-              </button>
-            </div>
-
-            {/* Subjects List */}
-            <div className="space-y-2">
-              {subjects.map(s => (
-                <div key={s.id} className="flex justify-between items-center p-3 bg-slate-50 border border-slate-200 rounded-lg hover:border-indigo-300 transition-all">
-                  <div>
-                    <p className="font-bold text-slate-800 text-sm">{s.subject_name}</p>
-                    <p className="text-xs text-indigo-600 font-bold">Coeff: {s.coefficient}</p>
-                  </div>
-                  <button
-                    onClick={() => deleteSubject(s.id)}
-                    className="text-rose-500 hover:bg-rose-50 p-2 rounded-lg transition-colors"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB: SAISIE NOTES */}
+        {/* ========================================================== */}
+        {/* ONGLET 1 : SAISIE DES NOTES OPTIMISÉE (PC MATRICE + MOBILE) */}
+        {/* ========================================================== */}
         {tab === 'saisie' && selectedClassId && (
-          <div>
-            {/* Fullscreen Toggle Button - Mobile Only */}
-            <div className="md:hidden mb-4 flex gap-2">
-              <button
-                onClick={() => setFullscreenMode(!fullscreenMode)}
-                className={`flex-1 py-2.5 rounded-lg font-bold uppercase text-xs tracking-wider transition-all flex items-center justify-center gap-2 ${
-                  fullscreenMode
-                    ? 'bg-indigo-600 text-white shadow-lg'
-                    : 'bg-white text-slate-900 border border-slate-200 shadow-sm'
-                }`}
-              >
-                {fullscreenMode ? 'Mode Normal' : 'Mode Plein Écran'}
-              </button>
+          <div className={isExpanded ? 'fixed inset-0 z-[100] w-screen h-screen bg-white p-4 sm:p-6 overflow-y-auto space-y-4' : 'space-y-4'}>
+            
+            <div className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold" size={15} />
+                <input
+                  type="text"
+                  value={searchSaisie}
+                  onChange={(e) => setSearchSaisie(e.target.value)}
+                  placeholder="Filtrer un élève par nom ou prénom..."
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Filter size={14} className="text-slate-400 shrink-0 hidden sm:block" />
+                <select
+                  value={selectedSubjectFilter}
+                  onChange={(e) => setSelectedSubjectFilter(e.target.value)}
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-blue-600 transition cursor-pointer"
+                >
+                  <option value="all">Toutes les matières ({subjects.length})</option>
+                  {subjects.map(s => (
+                    <option key={s.id} value={s.id}>{s.subject_name}</option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  onClick={() => setIsExpanded(!isExpanded)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition shadow-xs shrink-0"
+                  title={isExpanded ? "Réduire l'affichage" : "Agrandir en plein écran"}
+                >
+                  {isExpanded ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                  <span className="hidden sm:inline">{isExpanded ? 'Réduire' : 'Agrandir'}</span>
+                </button>
+              </div>
             </div>
 
-            {/* MOBILE: Cartes Uniques */}
-            <div className="md:hidden space-y-4">
+            {/* VUE TABLETTE & PC : MATRICE SPREADSHEET PRO AVEC NAVIGATION FLÈCHES/ENTRÉE */}
+            <div className={`hidden md:block bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs ${isExpanded ? 'border-2 border-blue-600/40' : ''}`}>
               {filteredStudentsSaisie.length === 0 ? (
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 text-center">
-                  <p className="text-slate-500 font-bold">Aucun élève trouvé</p>
+                <div className="p-12 text-center text-xs font-bold text-slate-400">
+                  Aucun élève trouvé dans cette classe.
                 </div>
               ) : (
-                <>
-                  {/* Indicateur de progression */}
-                  <div className="bg-white p-3 rounded-lg border border-slate-200 flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-600">
-                      Élève {currentStudentIndex + 1} / {filteredStudentsSaisie.length}
-                    </span>
-                    <div className="w-32 h-2 bg-slate-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-indigo-600 transition-all duration-300"
-                        style={{ width: `${((currentStudentIndex + 1) / filteredStudentsSaisie.length) * 100}%` }}
-                      />
-                    </div>
-                  </div>
+                <div className={`overflow-x-auto relative ${isExpanded ? 'max-h-[calc(100vh-160px)]' : 'max-h-[600px]'}`}>
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="sticky top-0 z-20 bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                      <tr>
+                        <th className="py-3 px-4 sticky left-0 bg-slate-50 z-30 min-w-[200px] border-r border-slate-200">
+                          Élève
+                        </th>
+                        {displayedSubjects.map(sub => (
+                          <th key={sub.id} className="py-2.5 px-3 text-center border-r border-slate-200 min-w-[130px]" colSpan={isSecondCycle ? 2 : 1}>
+                            <div className="font-extrabold text-slate-900 truncate">{sub.subject_name}</div>
+                            <span className="text-[9px] font-semibold text-blue-600">Coeff. {sub.coefficient}</span>
+                          </th>
+                        ))}
+                      </tr>
+                      {isSecondCycle && (
+                        <tr className="bg-slate-100/60 text-[9px] text-slate-500 border-b border-slate-200">
+                          <th className="py-1 px-4 sticky left-0 bg-slate-100 z-30 border-r border-slate-200"></th>
+                          {displayedSubjects.map(sub => (
+                            <Fragment key={`sub-cols-${sub.id}`}>
+                              <th className="py-1 text-center font-bold">Classe</th>
+                              <th className="py-1 text-center font-bold border-r border-slate-200 text-blue-700">Compo</th>
+                            </Fragment>
+                          ))}
+                        </tr>
+                      )}
+                    </thead>
 
-                  {/* Carte de l'élève actuel */}
-                  {filteredStudentsSaisie.map((student, studentIdx) => (
-                    <div
-                      key={student.id}
-                      className={`transition-all duration-300 ${
-                        studentIdx === currentStudentIndex ? 'block' : 'hidden'
-                      }`}
-                    >
-                      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-lg">
-                        {/* Header */}
-                        <div className="mb-4 pb-4 border-b border-slate-200">
-                          <h3 className="text-lg font-bold uppercase text-slate-900">
-                            {student.first_name}
-                          </h3>
-                          <p className="text-sm text-slate-600">{student.last_name}</p>
-                        </div>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {filteredStudentsSaisie.map((student, studentIdx) => (
+                        <tr key={student.id} className="hover:bg-slate-50/70 transition-colors">
+                          
+                          <td className="py-2.5 px-4 font-bold text-slate-900 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-[1px_0_0_rgba(0,0,0,0.05)]">
+                            <span className="capitalize block truncate">{student.last_name} {student.first_name}</span>
+                          </td>
 
-                        {/* Notes */}
-                        <div className="space-y-4 mb-6">
-                          {subjects.map((sub, subIdx) => {
+                          {displayedSubjects.map((sub, subIdx) => {
                             const grade = rawGrades.find(g => g.student_id === student.id && g.subject_name === sub.subject_name);
+                            const keyClasse = `${student.id}-${sub.subject_name}-grade_value`;
+                            const keyCompo = `${student.id}-${sub.subject_name}-compo_value`;
+
                             return (
-                              <div key={sub.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                                <p className="text-xs font-bold text-slate-500 uppercase mb-3">
-                                  {sub.subject_name}
-                                </p>
-                                <div className="flex gap-3 items-center">
-                                  {isSecondCycle && (
-                                    <div className="flex-1 relative">
-                                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">
-                                        Classe
-                                      </label>
-                                      <input
-                                        ref={(el) => {
-                                          if (el) inputRefs.current[`${student.id}-${sub.subject_name}-grade`] = el;
-                                        }}
-                                        type="number"
-                                        step="0.25"
-                                        max="20"
-                                        defaultValue={grade?.grade_value || ''}
-                                        onBlur={(e) => saveGrade(student.id, sub.subject_name, 'grade_value', e.target.value)}
-                                        onKeyDown={(e) => handleKeyDown(e, studentIdx, subIdx, 'grade')}
-                                        className={`w-full h-12 bg-white border-2 text-center font-bold text-slate-700 rounded-lg text-lg shadow-inner focus:border-indigo-500 outline-none transition-all ${
-                                          savedGrades.has(`${student.id}-${sub.subject_name}-grade_value`)
-                                            ? 'border-green-500 bg-green-50'
-                                            : 'border-slate-200'
-                                        }`}
-                                        placeholder="00"
-                                      />
-                                      {savedGrades.has(`${student.id}-${sub.subject_name}-grade_value`) && (
-                                        <Check size={16} className="absolute top-8 right-2 text-green-600" />
-                                      )}
-                                    </div>
-                                  )}
-                                  <div className="flex-1 relative">
-                                    <label className={`text-[10px] font-bold uppercase block mb-1 ${
-                                      isSecondCycle ? 'text-indigo-500' : 'text-emerald-500'
-                                    }`}>
-                                      {isSecondCycle ? 'Compo' : 'Note'}
-                                    </label>
+                              <Fragment key={`${student.id}-${sub.id}`}>
+                                {isSecondCycle && (
+                                  <td className="p-1.5 text-center">
                                     <input
                                       ref={(el) => {
-                                        if (el) inputRefs.current[`${student.id}-${sub.subject_name}-compo`] = el;
+                                        if (el) inputRefs.current[`${student.id}-${sub.subject_name}-grade`] = el;
                                       }}
                                       type="number"
                                       step="0.25"
-                                      max={isSecondCycle ? "20" : "10"}
-                                      defaultValue={grade?.compo_value || ''}
-                                      onBlur={(e) => saveGrade(student.id, sub.subject_name, 'compo_value', e.target.value)}
-                                      onKeyDown={(e) => handleKeyDown(e, studentIdx, subIdx, 'compo')}
-                                      className={`w-full h-12 border-2 text-center font-bold rounded-lg text-lg shadow-inner outline-none transition-all ${
-                                        isSecondCycle
-                                          ? 'bg-indigo-50 border-indigo-200 text-indigo-600 focus:border-indigo-500'
-                                          : 'bg-emerald-50 border-emerald-200 text-emerald-600 focus:border-emerald-500'
-                                      } ${
-                                        savedGrades.has(`${student.id}-${sub.subject_name}-compo_value`)
-                                          ? 'border-green-500 bg-green-50'
-                                          : ''
+                                      min="0"
+                                      max="20"
+                                      inputMode="decimal"
+                                      defaultValue={grade?.grade_value ?? ''}
+                                      onBlur={(e) => saveGrade(student.id, sub.subject_name, 'grade_value', e.target.value)}
+                                      onKeyDown={(e) => handleMatrixKeyDown(e, studentIdx, subIdx, 'grade')}
+                                      className={`w-14 h-8 text-center font-bold text-xs rounded-lg border outline-none transition ${
+                                        savedGrades.has(keyClasse)
+                                          ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                                          : 'border-slate-200 bg-slate-50/60 focus:bg-white focus:border-blue-600'
                                       }`}
-                                      placeholder="00"
+                                      placeholder="—"
                                     />
-                                    {savedGrades.has(`${student.id}-${sub.subject_name}-compo_value`) && (
-                                      <Check size={16} className="absolute top-8 right-2 text-green-600" />
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
+                                  </td>
+                                )}
+
+                                <td className="p-1.5 text-center border-r border-slate-200">
+                                  <input
+                                    ref={(el) => {
+                                      if (el) inputRefs.current[`${student.id}-${sub.subject_name}-compo`] = el;
+                                    }}
+                                    type="number"
+                                    step="0.25"
+                                    min="0"
+                                    max={isSecondCycle ? "20" : "10"}
+                                    inputMode="decimal"
+                                    defaultValue={grade?.compo_value ?? ''}
+                                    onBlur={(e) => saveGrade(student.id, sub.subject_name, 'compo_value', e.target.value)}
+                                    onKeyDown={(e) => handleMatrixKeyDown(e, studentIdx, subIdx, 'compo')}
+                                    className={`w-14 h-8 text-center font-bold text-xs rounded-lg border outline-none transition ${
+                                      savedGrades.has(keyCompo)
+                                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                                        : 'border-slate-200 bg-blue-50/40 text-blue-900 focus:bg-white focus:border-blue-600'
+                                    }`}
+                                    placeholder="—"
+                                  />
+                                </td>
+                              </Fragment>
                             );
                           })}
-                        </div>
 
-                        {/* Navigation Buttons */}
-                        <div className="flex gap-3">
-                          <button
-                            onClick={() => setCurrentStudentIndex(Math.max(0, currentStudentIndex - 1))}
-                            disabled={currentStudentIndex === 0}
-                            className="flex-1 py-3 bg-slate-200 text-slate-700 rounded-lg font-bold uppercase text-xs flex items-center justify-center gap-2 hover:bg-slate-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <ChevronUp size={18} />
-                            Précédent
-                          </button>
-                          <button
-                            onClick={() => setCurrentStudentIndex(Math.min(filteredStudentsSaisie.length - 1, currentStudentIndex + 1))}
-                            disabled={currentStudentIndex === filteredStudentsSaisie.length - 1}
-                            className="flex-1 py-3 bg-indigo-600 text-white rounded-lg font-bold uppercase text-xs flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            Suivant
-                            <ChevronDown size={18} />
-                          </button>
-                        </div>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* VUE MOBILE : FICHE FLUIDE ET CLAVIER OPTIMISÉ */}
+            <div className="md:hidden space-y-4">
+              {filteredStudentsSaisie.length === 0 ? (
+                <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center text-xs font-bold text-slate-400">
+                  Aucun élève trouvé
+                </div>
+              ) : activeMobileStudent && (
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
+                  
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs uppercase">
+                        {activeMobileStudent.first_name?.[0]}{activeMobileStudent.last_name?.[0]}
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-extrabold text-slate-900 capitalize leading-tight">
+                          {activeMobileStudent.first_name} {activeMobileStudent.last_name}
+                        </h3>
+                        <span className="text-[10px] text-slate-400 font-bold block">
+                          Élève {currentStudentIndex + 1} sur {filteredStudentsSaisie.length}
+                        </span>
                       </div>
                     </div>
-                  ))}
-                </>
-              )}
-            </div>
 
-            {/* DESKTOP: Grille de Cartes (4 par ligne) */}
-            <div className="hidden md:block">
-              {filteredStudentsSaisie.length === 0 ? (
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 text-center">
-                  <p className="text-slate-500 font-bold">Aucun élève trouvé</p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {/* Navigation Buttons */}
-                  <div className="flex gap-3 justify-between items-center">
-                    <button
-                      onClick={() => scrollGrid('left')}
-                      className="p-3 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 font-bold text-sm"
-                    >
-                      <ChevronLeft size={20} />
-                      Précédent
-                    </button>
-                    <span className="text-sm font-bold text-slate-600">
-                      {filteredStudentsSaisie.length} élève{filteredStudentsSaisie.length > 1 ? 's' : ''}
-                    </span>
-                    <button
-                      onClick={() => scrollGrid('right')}
-                      className="p-3 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all shadow-sm flex items-center gap-2 font-bold text-sm"
-                    >
-                      Suivant
-                      <ChevronRight size={20} />
-                    </button>
-                  </div>
-
-                  {/* Grille de Cartes avec Scroll Horizontal */}
-                  <div
-                    ref={gridContainerRef}
-                    className="overflow-x-auto pb-4 scroll-smooth"
-                    style={{ scrollBehavior: 'smooth' }}
-                  >
-                    <div className="grid gap-4 min-w-max" style={{ gridTemplateColumns: 'repeat(4, minmax(280px, 1fr))' }}>
-                      {filteredStudentsSaisie.map((student, studentIdx) => (
-                        <div
-                          key={student.id}
-                          className="bg-white p-4 rounded-2xl border border-slate-200 shadow-lg hover:shadow-xl transition-all"
-                        >
-                          {/* Header */}
-                          <div className="mb-4 pb-3 border-b border-slate-200">
-                            <h3 className="text-sm font-bold uppercase text-slate-900 truncate">
-                              {student.first_name}
-                            </h3>
-                            <p className="text-xs text-slate-600 truncate">{student.last_name}</p>
-                          </div>
-
-                          {/* Notes */}
-                          <div className="space-y-3 mb-4 max-h-[350px] overflow-y-auto">
-                            {subjects.map((sub, subIdx) => {
-                              const grade = rawGrades.find(g => g.student_id === student.id && g.subject_name === sub.subject_name);
-                              return (
-                                <div key={sub.id} className="p-2 bg-slate-50 rounded-lg border border-slate-200">
-                                  <p className="text-[9px] font-bold text-slate-500 uppercase mb-2 truncate">
-                                    {sub.subject_name}
-                                  </p>
-                                  <div className="flex gap-2 items-center">
-                                    {isSecondCycle && (
-                                      <div className="flex-1 relative">
-                                        <input
-                                          ref={(el) => {
-                                            if (el) inputRefs.current[`${student.id}-${sub.subject_name}-grade`] = el;
-                                          }}
-                                          type="number"
-                                          step="0.25"
-                                          max="20"
-                                          defaultValue={grade?.grade_value || ''}
-                                          onBlur={(e) => saveGrade(student.id, sub.subject_name, 'grade_value', e.target.value)}
-                                          onKeyDown={(e) => handleKeyDown(e, studentIdx, subIdx, 'grade')}
-                                          className={`w-full h-9 bg-white border-2 text-center font-bold text-slate-700 rounded-lg text-sm shadow-inner focus:border-indigo-500 outline-none transition-all ${
-                                            savedGrades.has(`${student.id}-${sub.subject_name}-grade_value`)
-                                              ? 'border-green-500 bg-green-50'
-                                              : 'border-slate-200'
-                                          }`}
-                                          placeholder="00"
-                                        />
-                                        {savedGrades.has(`${student.id}-${sub.subject_name}-grade_value`) && (
-                                          <Check size={12} className="absolute top-2 right-1 text-green-600" />
-                                        )}
-                                      </div>
-                                    )}
-                                    <div className="flex-1 relative">
-                                      <input
-                                        ref={(el) => {
-                                          if (el) inputRefs.current[`${student.id}-${sub.subject_name}-compo`] = el;
-                                        }}
-                                        type="number"
-                                        step="0.25"
-                                        max={isSecondCycle ? "20" : "10"}
-                                        defaultValue={grade?.compo_value || ''}
-                                        onBlur={(e) => saveGrade(student.id, sub.subject_name, 'compo_value', e.target.value)}
-                                        onKeyDown={(e) => handleKeyDown(e, studentIdx, subIdx, 'compo')}
-                                        className={`w-full h-9 border-2 text-center font-bold rounded-lg text-sm shadow-inner outline-none transition-all ${
-                                          isSecondCycle
-                                            ? 'bg-indigo-50 border-indigo-200 text-indigo-600 focus:border-indigo-500'
-                                            : 'bg-emerald-50 border-emerald-200 text-emerald-600 focus:border-emerald-500'
-                                        } ${
-                                          savedGrades.has(`${student.id}-${sub.subject_name}-compo_value`)
-                                            ? 'border-green-500 bg-green-50'
-                                            : ''
-                                        }`}
-                                        placeholder="00"
-                                      />
-                                      {savedGrades.has(`${student.id}-${sub.subject_name}-compo_value`) && (
-                                        <Check size={12} className="absolute top-2 right-1 text-green-600" />
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setCurrentStudentIndex(Math.max(0, currentStudentIndex - 1))}
+                        disabled={currentStudentIndex === 0}
+                        className="p-2 border border-slate-200 rounded-lg text-slate-600 disabled:opacity-30"
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      <button
+                        onClick={() => setCurrentStudentIndex(Math.min(filteredStudentsSaisie.length - 1, currentStudentIndex + 1))}
+                        disabled={currentStudentIndex === filteredStudentsSaisie.length - 1}
+                        className="p-2 border border-slate-200 rounded-lg text-slate-600 disabled:opacity-30"
+                      >
+                        <ChevronRight size={16} />
+                      </button>
                     </div>
                   </div>
+
+                  <div className="space-y-3">
+                    {displayedSubjects.map(sub => {
+                      const grade = rawGrades.find(g => g.student_id === activeMobileStudent.id && g.subject_name === sub.subject_name);
+                      return (
+                        <div key={sub.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-bold text-slate-800 truncate">{sub.subject_name}</span>
+                            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Coeff. {sub.coefficient}</span>
+                          </div>
+
+                          <div className="flex gap-2.5">
+                            {isSecondCycle && (
+                              <div className="flex-1">
+                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Classe /20</label>
+                                <input
+                                  type="number"
+                                  step="0.25"
+                                  min="0"
+                                  max="20"
+                                  inputMode="decimal"
+                                  defaultValue={grade?.grade_value ?? ''}
+                                  onBlur={(e) => saveGrade(activeMobileStudent.id, sub.subject_name, 'grade_value', e.target.value)}
+                                  className="w-full h-11 bg-white border border-slate-300 text-center font-bold text-base text-slate-900 rounded-lg outline-none focus:border-blue-600"
+                                  placeholder="—"
+                                />
+                              </div>
+                            )}
+
+                            <div className="flex-1">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                                {isSecondCycle ? 'Composition /20' : 'Note d\'examen /10'}
+                              </label>
+                              <input
+                                type="number"
+                                step="0.25"
+                                min="0"
+                                max={isSecondCycle ? "20" : "10"}
+                                inputMode="decimal"
+                                defaultValue={grade?.compo_value ?? ''}
+                                onBlur={(e) => saveGrade(activeMobileStudent.id, sub.subject_name, 'compo_value', e.target.value)}
+                                className="w-full h-11 bg-white border border-slate-300 text-center font-bold text-base text-blue-600 rounded-lg outline-none focus:border-blue-600"
+                                placeholder="—"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    onClick={() => setCurrentStudentIndex(Math.min(filteredStudentsSaisie.length - 1, currentStudentIndex + 1))}
+                    disabled={currentStudentIndex === filteredStudentsSaisie.length - 1}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-40"
+                  >
+                    <span>Passer à l'élève suivant</span>
+                    <ArrowRight size={15} />
+                  </button>
+
                 </div>
               )}
             </div>
+
           </div>
         )}
 
-        {/* TAB: RESULTATS */}
+        {/* ======================================================== */}
+        {/* ONGLET 2 : RESULTATS & BULLETINS                         */}
+        {/* ======================================================== */}
         {tab === 'resultats' && selectedClassId && (
           <div className="space-y-6">
-            {/* Export Button */}
-            <button
-              onClick={downloadAllInOnePDF}
-              disabled={loading || bulletinData.length === 0}
-              className="w-full bg-slate-900 text-white py-3 sm:py-4 rounded-xl font-bold uppercase text-sm tracking-wider flex items-center justify-center gap-3 hover:bg-indigo-600 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Download size={20} />
-              {loading ? 'Création du PDF...' : 'Exporter tous les bulletins'}
-            </button>
+            <div className="flex justify-between items-center border-b border-slate-200/80 pb-4">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                {bulletinData.length} bulletin{bulletinData.length > 1 ? 's' : ''} délibéré{bulletinData.length > 1 ? 's' : ''}
+              </span>
+              <button
+                onClick={downloadAllInOnePDF}
+                disabled={loading || bulletinData.length === 0}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition disabled:opacity-40 shadow-xs"
+              >
+                <Download size={14} />
+                <span>{loading ? 'Génération du PDF...' : 'Télécharger tous les bulletins'}</span>
+              </button>
+            </div>
 
-            {/* Bulletins Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {bulletinData.map((s) => (
-                <div key={s.id} className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-lg hover:shadow-xl transition-all">
-                  {/* Header */}
-                  <div className="flex justify-between items-start mb-4 pb-4 border-b border-slate-200">
+                <div key={s.id} className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                  <div className="flex justify-between items-start border-b border-slate-100 pb-3">
                     <div>
-                      <h3 className="text-lg sm:text-xl font-bold uppercase text-slate-900">
-                        {s.first_name}
+                      <h3 className="text-base font-extrabold text-slate-900 capitalize">
+                        {s.first_name} {s.last_name}
                       </h3>
-                      <p className="text-sm text-slate-600">{s.last_name}</p>
                     </div>
-                    <div className="bg-indigo-600 text-white px-3 py-1 rounded-full text-xs font-bold">
-                      Rang: {s.rang}
-                    </div>
+                    <span className="text-xs font-black px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+                      Rang : {s.rang} / {students.length}
+                    </span>
                   </div>
 
-                  {/* Stats */}
-                  <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div className="bg-indigo-600 p-3 sm:p-4 rounded-xl text-center text-white">
-                      <p className="text-[10px] font-bold uppercase opacity-70">Moyenne</p>
-                      <p className="text-2xl sm:text-3xl font-black">
-                        {s.moyenne}
-                        <span className="text-xs opacity-75 ml-1">/{isSecondCycle ? 20 : 10}</span>
-                      </p>
+                  <div className="grid grid-cols-2 gap-3 text-center">
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Moyenne Générale</span>
+                      <span className="text-2xl font-black text-blue-600 mt-0.5 block">
+                        {s.moyenne} <span className="text-xs font-normal text-slate-400">/{isSecondCycle ? 20 : 10}</span>
+                      </span>
                     </div>
-                    <div className={`p-3 sm:p-4 rounded-xl text-center font-bold text-sm uppercase ${
+
+                    <div className={`p-3 rounded-xl border flex flex-col justify-center ${
                       s.moyenne >= (isSecondCycle ? 10 : 5)
-                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                        : 'bg-rose-50 text-rose-700 border border-rose-200'
+                        ? 'bg-emerald-50/50 border-emerald-200 text-emerald-800'
+                        : 'bg-rose-50/50 border-rose-200 text-rose-800'
                     }`}>
-                      <p className="text-[10px] font-bold opacity-70">Mention</p>
-                      <p>{getMention(s.moyenne)}</p>
+                      <span className="text-[10px] font-bold uppercase block opacity-70">Mention</span>
+                      <span className="text-sm font-black mt-0.5 block">{getMention(s.moyenne)}</span>
                     </div>
                   </div>
 
-                  {/* Notes Preview */}
-                  <div className="mb-4 max-h-[150px] overflow-y-auto space-y-2">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase">Notes:</p>
+                  <div className="max-h-[140px] overflow-y-auto space-y-1.5 divide-y divide-slate-100">
                     {s.notes.map((n: any) => (
-                      <div key={n.name} className="flex justify-between items-center p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs">
-                        <span className="font-bold text-slate-700 truncate">{n.name}</span>
-                        <span className="font-bold text-indigo-600 bg-white px-2 py-1 rounded border border-slate-200">
-                          {n.moyenneMatiere}
-                        </span>
+                      <div key={n.name} className="flex justify-between items-center pt-1.5 text-xs">
+                        <span className="font-semibold text-slate-700 truncate pr-2">{n.name}</span>
+                        <span className="font-bold text-slate-900">{n.moyenneMatiere}</span>
                       </div>
                     ))}
                   </div>
 
-                  {/* Download Button */}
                   <button
                     onClick={() => downloadPDF(s)}
-                    className="w-full py-2.5 sm:py-3 bg-indigo-600 text-white rounded-lg font-bold uppercase text-xs tracking-wider flex items-center justify-center gap-2 hover:bg-slate-900 transition-all shadow-md"
+                    className="w-full py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
                   >
-                    <FileText size={16} />
-                    Générer Bulletin
+                    <FileText size={14} className="text-blue-600" />
+                    <span>Télécharger le bulletin</span>
                   </button>
 
-                  {/* Hidden PDF Template */}
+                  {/* Template PDF Masqué Strictement Préservé */}
                   <div style={{ position: 'absolute', top: '-10000px', left: 0 }}>
                     <div
                       id={`bulletin-pdf-${s.id}`}
@@ -1243,6 +1158,78 @@ export default function EngineScolaire() {
             </div>
           </div>
         )}
+
+        {/* ======================================================== */}
+        {/* ONGLET 3 : CONFIGURATION DES MATIÈRES                    */}
+        {/* ======================================================== */}
+        {tab === 'config' && selectedClassId && (
+          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 space-y-6 shadow-xs">
+            <div className="border-b border-slate-100 pb-3">
+              <h2 className="text-sm font-bold text-slate-900 uppercase">Matières de la classe</h2>
+              <p className="text-xs text-slate-500 font-medium">Définissez les disciplines enseignées et leurs coefficients respectifs</p>
+            </div>
+
+            {!isReadOnly && (
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 pb-5 border-b border-slate-100 items-end">
+                <div className="sm:col-span-6 space-y-1">
+                  <label className="text-xs font-bold text-slate-700">Intitulé de la matière</label>
+                  <input
+                    value={newSubName}
+                    onChange={(e) => setNewSubName(e.target.value)}
+                    type="text"
+                    placeholder="Ex: Mathématiques, Histoire, Anglais..."
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs outline-none focus:bg-white focus:border-blue-600 transition"
+                  />
+                </div>
+                <div className="sm:col-span-3 space-y-1">
+                  <label className="text-xs font-bold text-slate-700">Coefficient</label>
+                  <input
+                    value={newSubCoeff}
+                    onChange={(e) => setNewSubCoeff(e.target.value)}
+                    type="number"
+                    step="1"
+                    placeholder="1"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs outline-none focus:bg-white focus:border-blue-600 transition"
+                  />
+                </div>
+                <div className="sm:col-span-3">
+                  <button
+                    onClick={addSubject}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 rounded-xl transition flex items-center justify-center gap-1.5 shadow-xs"
+                  >
+                    <Plus size={15} />
+                    <span>Ajouter la matière</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              {subjects.length === 0 ? (
+                <p className="text-xs font-medium text-slate-400 py-6 text-center">Aucune matière configurée pour le moment.</p>
+              ) : (
+                subjects.map(s => (
+                  <div key={s.id} className="flex justify-between items-center p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl hover:bg-slate-50 transition">
+                    <div>
+                      <p className="font-bold text-slate-900 text-sm">{s.subject_name}</p>
+                      <span className="text-xs font-bold text-blue-600">Coefficient : {s.coefficient}</span>
+                    </div>
+                    {!isReadOnly && (
+                      <button
+                        onClick={() => deleteSubject(s.id)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                        title="Supprimer la matière"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+
       </main>
     </div>
   );

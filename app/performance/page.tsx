@@ -5,15 +5,15 @@ import { supabase } from '@/utils/supabase';
 import { useYear } from '@/context/YearContext';
 import { 
   Trophy, AlertTriangle, TrendingUp, Users, 
-  BookOpen, Target, Loader2, Award, Star, Search, ChevronDown, Lock
+  Target, Loader2, Award, Star, Search, ChevronDown
 } from 'lucide-react';
 
 export default function PerformancePage() {
   return (
     <Suspense fallback={
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-slate-500 gap-4">
-        <Loader2 className="animate-spin text-green-600" size={40} />
-        <p className="font-black animate-pulse text-xs uppercase tracking-widest">Analyse des données...</p>
+      <div className="flex flex-col items-center justify-center min-h-[50vh] text-slate-500 gap-3">
+        <Loader2 className="animate-spin text-blue-600" size={28} />
+        <p className="font-bold text-xs uppercase tracking-widest text-slate-500">Analyse des performances...</p>
       </div>
     }>
       <PerformanceContent />
@@ -26,7 +26,6 @@ function PerformanceContent() {
   const [stats, setStats] = useState<any>(null);
   const [period, setPeriod] = useState('1er Trimestre');
 
-  // Hook pour l'année scolaire
   const { selectedYearId, isLoading: yearLoading } = useYear();
 
   const allPeriods = [
@@ -126,111 +125,143 @@ function PerformanceContent() {
   }, [fetchPerformanceData, yearLoading, selectedYearId]);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 md:py-10 space-y-8 md:space-y-10 bg-[#f8fafc]">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6 antialiased text-slate-900 font-sans pb-24">
       
-      {/* HEADER ADAPTIF */}
-      <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-6 bg-white p-6 md:p-8 rounded-[2rem] md:rounded-[2.5rem] shadow-sm border border-slate-100">
+      {/* 1. EN-TÊTE ÉPURÉ & FILTRE DE PÉRIODE */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
-          <h1 className="text-2xl md:text-4xl font-black italic tracking-tighter text-slate-950">Performance</h1>
-          <p className="text-slate-400 font-bold mt-1 uppercase text-[9px] md:text-[10px] tracking-widest flex items-center gap-2">
-            <Target size={14} className="text-green-600" /> {period}
-          </p>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Statistiques Académiques</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+            Performance Globale
+          </h1>
         </div>
         
-        <div className="relative">
+        <div className="relative w-full sm:w-72">
           <select 
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
-            className="w-full md:w-72 pl-10 pr-4 py-3.5 bg-slate-50 border-2 border-slate-100 rounded-2xl appearance-none font-black text-slate-700 focus:border-green-500 outline-none transition-all cursor-pointer text-xs md:text-sm"
+            className="w-full pl-9 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-xs text-slate-800 outline-none focus:border-blue-600 transition cursor-pointer appearance-none shadow-xs"
           >
             {allPeriods.map(p => <option key={p} value={p}>{p}</option>)}
           </select>
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={15} />
+          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={15} />
         </div>
       </div>
 
       {loading ? (
-        <div className="flex flex-col h-64 items-center justify-center gap-4">
-          <Loader2 className="animate-spin text-green-600" size={32} />
-          <p className="font-black text-slate-400 uppercase text-[10px] tracking-widest animate-pulse">Calcul en cours...</p>
+        <div className="flex flex-col h-64 items-center justify-center gap-3 bg-white rounded-2xl border border-slate-200/80">
+          <Loader2 className="animate-spin text-blue-600" size={28} />
+          <p className="font-bold text-slate-400 uppercase text-xs tracking-wider">Calcul des moyennes en cours...</p>
         </div>
       ) : !stats ? (
-        <div className="text-center py-16 bg-white rounded-[2rem] border-2 border-dashed border-slate-200 px-6">
-          <p className="text-slate-400 font-bold italic text-lg md:text-xl">Aucune donnée pour cette période</p>
+        <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-200 p-6">
+          <Target className="mx-auto text-slate-300 mb-2" size={28} />
+          <p className="text-slate-400 font-bold text-xs uppercase tracking-wider">Aucune note enregistrée pour cette période.</p>
         </div>
       ) : (
         <>
-          {/* STATS GLOBALES ADAPTIVES */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-            <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex md:flex-col items-center md:items-start gap-4 md:gap-0">
-                <div className="w-10 h-10 md:w-12 md:h-12 bg-blue-600 rounded-xl md:rounded-2xl flex items-center justify-center text-white md:mb-4 shrink-0"><Users size={20} /></div>
-                <div>
-                  <p className="text-[9px] md:text-[10px] font-black uppercase text-slate-400 tracking-widest">Effectif</p>
-                  <h3 className="text-2xl md:text-4xl font-black text-slate-900">{stats.global.total}</h3>
-                </div>
+          {/* 2. STATS GLOBALES (CARTES PLATES) */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
+            <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1 shadow-xs">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Effectif évalué</span>
+              <p className="text-2xl sm:text-3xl font-black text-slate-900 leading-tight">
+                {stats.global.total} <span className="text-xs font-bold text-slate-400">élèves</span>
+              </p>
             </div>
-            <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex md:flex-col items-center md:items-start gap-4 md:gap-0">
-                <div className="w-10 h-10 md:w-12 md:h-12 bg-emerald-500 rounded-xl md:rounded-2xl flex items-center justify-center text-white md:mb-4 shrink-0"><Award size={20} /></div>
-                <div>
-                  <p className="text-[9px] md:text-[10px] font-black uppercase text-slate-400 tracking-widest">Admis</p>
-                  <div className="flex items-baseline gap-2">
-                      <h3 className="text-2xl md:text-4xl font-black text-slate-900">{stats.global.admit}</h3>
-                      <span className="text-emerald-600 font-bold text-[10px] md:text-sm">({((stats.global.admit/stats.global.total)*100).toFixed(0)}%)</span>
-                  </div>
-                </div>
+
+            <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1 shadow-xs">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Moyenne ≥ 10 (Admis)</span>
+              <div className="flex items-baseline gap-2">
+                <p className="text-2xl sm:text-3xl font-black text-emerald-600 leading-tight">
+                  {stats.global.admit}
+                </p>
+                <span className="text-xs font-extrabold text-emerald-600">
+                  ({((stats.global.admit / stats.global.total) * 100).toFixed(0)}%)
+                </span>
+              </div>
             </div>
-            <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex md:flex-col items-center md:items-start gap-4 md:gap-0">
-                <div className="w-10 h-10 md:w-12 md:h-12 bg-rose-500 rounded-xl md:rounded-2xl flex items-center justify-center text-white md:mb-4 shrink-0"><AlertTriangle size={20} /></div>
-                <div>
-                  <p className="text-[9px] md:text-[10px] font-black uppercase text-slate-400 tracking-widest">Échecs</p>
-                  <div className="flex items-baseline gap-2">
-                      <h3 className="text-2xl md:text-4xl font-black text-slate-900">{stats.global.fail}</h3>
-                      <span className="text-rose-600 font-bold text-[10px] md:text-sm">({((stats.global.fail/stats.global.total)*100).toFixed(0)}%)</span>
-                  </div>
-                </div>
+
+            <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1 shadow-xs">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Moyenne &lt; 10 (En difficulté)</span>
+              <div className="flex items-baseline gap-2">
+                <p className="text-2xl sm:text-3xl font-black text-rose-600 leading-tight">
+                  {stats.global.fail}
+                </p>
+                <span className="text-xs font-extrabold text-rose-600">
+                  ({((stats.global.fail / stats.global.total) * 100).toFixed(0)}%)
+                </span>
+              </div>
             </div>
           </div>
 
-          {/* TOP & FLOP */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-10">
-            <RankingCard title="Top 10 - Excellence" data={stats.top10} color="emerald" icon={<Trophy size={20} />} />
-            <RankingCard title="Top 10 - Soutien" data={stats.flop10} color="rose" icon={<AlertTriangle size={20} />} />
+          {/* 3. CLASSEMENTS TOP 10 & SOUTIEN */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            <RankingCard title="Top 10 - Excellence" data={stats.top10} isTop={true} />
+            <RankingCard title="Top 10 - À soutenir" data={stats.flop10} isTop={false} />
           </div>
 
-          {/* MAJORS RESPONSIVE */}
-          <div className="space-y-4 md:space-y-6">
-            <h2 className="text-xl md:text-2xl font-black text-slate-900 flex items-center gap-3">
-              <Star className="text-amber-500 fill-amber-500" size={20} /> Majors
-            </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+          {/* 4. MAJORS PAR MATIÈRE */}
+          <div className="space-y-3">
+            <div className="border-b border-slate-200/80 pb-2 flex items-center justify-between">
+              <h2 className="text-sm font-bold text-slate-900 uppercase flex items-center gap-2">
+                <Star className="text-amber-500 fill-amber-500" size={16} />
+                <span>Premiers par discipline (Majors)</span>
+              </h2>
+              <span className="text-xs font-bold text-slate-400">
+                {Object.keys(stats.subjectMajors).length} matière{Object.keys(stats.subjectMajors).length > 1 ? 's' : ''}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {Object.entries(stats.subjectMajors).map(([subject, data]: any) => (
-                <div key={subject} className="bg-white p-5 md:p-6 rounded-[1.5rem] md:rounded-[2rem] border border-slate-100 flex md:flex-col items-center justify-between md:justify-center text-center shadow-sm">
-                  <div className="text-left md:text-center">
-                    <p className="text-[8px] md:text-[9px] font-black uppercase text-slate-400 mb-1">{subject}</p>
-                    <p className="font-black text-slate-900 text-xs md:text-sm mb-0 md:mb-3 truncate max-w-[140px] md:max-w-full">{data.studentName}</p>
+                <div key={subject} className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block truncate">{subject}</span>
+                    <p className="font-bold text-slate-900 text-xs truncate mt-0.5 capitalize">{data.studentName}</p>
                   </div>
-                  <span className="bg-amber-100 text-amber-700 px-3 py-1 md:px-4 md:py-1 rounded-full font-black text-[10px] md:text-xs shrink-0">{data.score}/20</span>
+                  <span className="bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-lg font-black text-xs shrink-0">
+                    {data.score}/20
+                  </span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* PERFORMANCE PAR CLASSE */}
-          <div className="bg-slate-900 p-6 md:p-12 rounded-[2.5rem] md:rounded-[4rem] text-white">
-            <h2 className="text-xl md:text-3xl font-black italic mb-8 md:text-center">Taux par Classe</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {/* 5. TAUX DE SUCCÈS PAR CLASSE (STYLE PLAT) */}
+          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+            <div className="border-b border-slate-100 pb-3">
+              <h2 className="text-sm font-bold text-slate-900 uppercase tracking-tight flex items-center gap-2">
+                <TrendingUp size={16} className="text-blue-600" />
+                <span>Taux d'admission par classe</span>
+              </h2>
+              <p className="text-xs text-slate-500 font-medium">Pourcentage d'élèves ayant obtenu une moyenne supérieure ou égale à 10</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
               {Object.entries(stats.classStats).map(([name, data]: any) => {
-                const percent = Math.round((data.admit / (data.admit + data.fail)) * 100);
+                const total = data.admit + data.fail;
+                const percent = total > 0 ? Math.round((data.admit / total) * 100) : 0;
                 return (
-                  <div key={name} className="bg-slate-800/40 p-6 md:p-8 rounded-3xl border border-slate-700/50">
-                    <p className="text-slate-500 text-[9px] md:text-[10px] font-black uppercase mb-3 tracking-widest">{name}</p>
-                    <div className="flex justify-between items-end mb-4">
-                      <span className="text-3xl md:text-5xl font-black tracking-tighter">{percent}%</span>
-                      <span className="text-green-400 font-bold text-[10px] uppercase mb-1">Succès</span>
+                  <div key={name} className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2.5">
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-xs font-bold text-slate-800 uppercase truncate pr-2">{name}</span>
+                      <span className="text-base font-black text-slate-900">{percent}%</span>
                     </div>
-                    <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
-                      <div className="bg-green-500 h-full transition-all duration-1000" style={{ width: `${percent}%` }} />
+
+                    <div className="w-full bg-slate-200/70 h-2 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full transition-all duration-500 ${percent >= 50 ? 'bg-emerald-500' : 'bg-rose-500'}`} 
+                        style={{ width: `${percent}%` }} 
+                      />
+                    </div>
+
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500">
+                      <span>{data.admit} admis</span>
+                      <span>{data.fail} échec{data.fail > 1 ? 's' : ''}</span>
                     </div>
                   </div>
                 );
@@ -239,33 +270,49 @@ function PerformanceContent() {
           </div>
         </>
       )}
+
     </div>
   );
 }
 
-function RankingCard({ title, data, color, icon }: any) {
-  const isEmerald = color === 'emerald';
+function RankingCard({ title, data, isTop }: { title: string; data: any[]; isTop: boolean }) {
   return (
-    <div className="bg-white p-5 md:p-8 rounded-[2.5rem] md:rounded-[3.5rem] border border-slate-100 shadow-sm">
-      <div className="flex items-center gap-3 mb-6 md:mb-8">
-        <div className={`p-2.5 rounded-xl ${isEmerald ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>{icon}</div>
-        <h2 className="text-lg md:text-xl font-black italic text-slate-900">{title}</h2>
+    <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+      <div className="border-b border-slate-100 pb-3 flex items-center gap-2">
+        {isTop ? (
+          <Trophy size={16} className="text-emerald-600" />
+        ) : (
+          <AlertTriangle size={16} className="text-rose-600" />
+        )}
+        <h2 className="text-sm font-bold text-slate-900 uppercase">{title}</h2>
       </div>
-      <div className="space-y-2.5">
-        {data.map((s: any, i: number) => (
-          <div key={i} className={`flex items-center justify-between p-3.5 md:p-4 rounded-xl md:rounded-2xl border-l-4 ${isEmerald ? 'bg-emerald-50/20 border-emerald-500' : 'bg-rose-50/20 border-rose-500'}`}>
-            <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
-              <span className={`font-black text-xs md:text-sm shrink-0 ${isEmerald ? 'text-emerald-600' : 'text-rose-600'}`}>#{i+1}</span>
-              <div className="truncate">
-                <p className="font-black text-slate-900 text-xs md:text-sm truncate">{s.name}</p>
-                <p className="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{s.className}</p>
+
+      <div className="divide-y divide-slate-100">
+        {data.length === 0 ? (
+          <p className="text-xs text-slate-400 font-medium py-6 text-center">Aucune donnée disponible.</p>
+        ) : (
+          data.map((s: any, i: number) => (
+            <div key={i} className="py-2.5 flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className={`w-5 text-[11px] font-black shrink-0 ${isTop ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  #{i + 1}
+                </span>
+                <div className="truncate">
+                  <p className="font-bold text-slate-900 truncate capitalize">{s.name}</p>
+                  <span className="text-[10px] font-medium text-slate-400 block">{s.className}</span>
+                </div>
               </div>
+
+              <span className={`px-2.5 py-1 rounded-md font-black shrink-0 border ${
+                isTop 
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                  : 'bg-rose-50 text-rose-700 border-rose-200'
+              }`}>
+                {s.average.toFixed(2)}
+              </span>
             </div>
-            <span className={`px-3 py-1 md:px-4 md:py-1 rounded-lg md:rounded-xl font-black text-xs md:text-sm bg-white shadow-sm border shrink-0 ${isEmerald ? 'text-emerald-600 border-emerald-100' : 'text-rose-600 border-rose-100'}`}>
-              {s.average.toFixed(2)}
-            </span>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   );

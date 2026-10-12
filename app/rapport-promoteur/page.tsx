@@ -183,170 +183,220 @@ export default function RapportPromoteurPage() {
 
   if (loading || yearLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-50">
-        <Loader2 className="animate-spin text-blue-600" size={40} />
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="animate-spin text-blue-600" size={28} />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-8">
-      <div className="max-w-3xl mx-auto">
-        {/* Header Simplifié */}
-        <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl md:text-4xl font-black text-slate-900 tracking-tight">
-              Rapport <span className="text-blue-600">Promoteur</span>
-            </h1>
-            <p className="text-slate-500 font-bold text-xs uppercase tracking-widest mt-1">
-              Résumé essentiel de votre établissement
-            </p>
+    <div className="w-full max-w-5xl mx-auto space-y-6 pb-20 font-sans text-slate-900 antialiased">
+      
+      {/* 1. EN-TÊTE ÉPURÉ & ACTION VOCALE */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-b border-slate-200/80 pb-5">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Synthèse Décisionnelle</span>
           </div>
-          <button 
-            onClick={toggleSpeech}
-            className={`flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-sm uppercase transition-all shadow-lg active:scale-95 ${
-              isSpeaking ? 'bg-rose-500 text-white animate-pulse' : 'bg-slate-900 text-white hover:bg-blue-600'
-            }`}
-          >
-            {isSpeaking ? <VolumeX size={18} /> : <Volume2 size={18} />}
-            {isSpeaking ? 'Arrêter la lecture' : 'Écouter le rapport'}
-          </button>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+            Rapport Promoteur
+          </h1>
+          <p className="text-xs text-slate-500 font-medium mt-0.5">
+            Résumé stratégique et financier de l'établissement
+          </p>
         </div>
 
-        {/* Grille de Rapport Facile */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          
-          {/* Effectif */}
-          <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
-                <Users size={24} />
-              </div>
-              <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Effectif Global</span>
-            </div>
-            <p className="text-3xl font-black text-slate-900">{data.totalStudents} <span className="text-sm text-slate-400 font-bold uppercase tracking-widest">Élèves</span></p>
-          </div>
-
-          {/* Caisse Actuelle */}
-          <div className="bg-slate-900 p-6 rounded-[2.5rem] text-white shadow-xl shadow-blue-900/10">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-3 bg-white/10 text-blue-400 rounded-2xl">
-                <Landmark size={24} />
-              </div>
-              <span className="text-[10px] font-black uppercase text-white/40 tracking-widest">Argent en Caisse</span>
-            </div>
-            <p className="text-3xl font-black text-blue-400">{data.netCaisse.toLocaleString()} <span className="text-sm text-white/60 font-bold uppercase tracking-widest">FCFA</span></p>
-          </div>
-
-          {/* Encaissements */}
-          <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm col-span-1 md:col-span-2">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
-                <TrendingUp size={24} />
-              </div>
-              <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Flux des Recettes</span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div>
-                <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Encaissé ce jour</p>
-                <p className="text-2xl font-black text-emerald-600">{data.dailyCollected.toLocaleString()} F</p>
-              </div>
-              <div>
-                <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Encaissé ce mois</p>
-                <p className="text-2xl font-black text-slate-900">{data.monthlyCollected.toLocaleString()} F</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Dépenses */}
-          <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm col-span-1 md:col-span-2">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-3 bg-rose-50 text-rose-600 rounded-2xl">
-                <Wallet size={24} />
-              </div>
-              <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Flux des Dépenses</span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div>
-                <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Dépensé ce jour</p>
-                <p className="text-2xl font-black text-rose-600">{data.dailyExpenses.toLocaleString()} F</p>
-              </div>
-              <div>
-                <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Dépensé ce mois</p>
-                <p className="text-2xl font-black text-slate-900">{data.monthlyExpenses.toLocaleString()} F</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-slate-900 col-span-1 md:col-span-2 p-6 rounded-[2.5rem] text-white shadow-xl shadow-slate-900/10">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-3 bg-white/10 rounded-2xl">
-                <ArrowRight size={24} />
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase text-slate-200 tracking-widest">Comparaison mensuelle</p>
-                <p className="text-sm text-slate-400 mt-1">{data.currentMonthName} vs {data.previousMonthName}</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="rounded-3xl bg-white/10 p-4">
-                <p className="text-[9px] uppercase tracking-widest text-slate-300 font-bold mb-2">Encaissement</p>
-                <p className="text-xl font-black text-white">{data.monthlyCollected.toLocaleString()} F</p>
-                <p className="text-[11px] text-slate-300 mt-2">Mois dernier {data.previousMonthlyCollected.toLocaleString()} F</p>
-                <p className={`text-[11px] font-bold mt-3 ${data.collectionGrowthPercent === null ? 'text-slate-300' : data.collectionGrowthPercent >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                  {data.collectionGrowthPercent === null ? 'Nouveau mois' : `${data.collectionGrowthPercent >= 0 ? '+' : ''}${data.collectionGrowthPercent}%`}
-                </p>
-              </div>
-              <div className="rounded-3xl bg-white/10 p-4">
-                <p className="text-[9px] uppercase tracking-widest text-slate-300 font-bold mb-2">Dépenses</p>
-                <p className="text-xl font-black text-white">{data.monthlyExpenses.toLocaleString()} F</p>
-                <p className="text-[11px] text-slate-300 mt-2">Mois dernier {data.previousMonthlyExpenses.toLocaleString()} F</p>
-                <p className={`text-[11px] font-bold mt-3 ${data.expenseGrowthPercent === null ? 'text-slate-300' : data.expenseGrowthPercent <= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                  {data.expenseGrowthPercent === null ? 'Nouveau mois' : `${data.expenseGrowthPercent >= 0 ? '+' : ''}${data.expenseGrowthPercent}%`}
-                </p>
-              </div>
-              <div className="rounded-3xl bg-white/10 p-4">
-                <p className="text-[9px] uppercase tracking-widest text-slate-300 font-bold mb-2">Résultat net</p>
-                <p className="text-xl font-black text-white">{data.monthlyProfit.toLocaleString()} F</p>
-                <p className="text-[11px] text-slate-300 mt-2">Mois dernier {data.previousMonthlyProfit.toLocaleString()} F</p>
-                <p className={`text-[11px] font-bold mt-3 ${data.profitGrowthPercent === null ? 'text-slate-300' : data.profitGrowthPercent >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                  {data.profitGrowthPercent === null ? 'Nouveau mois' : `${data.profitGrowthPercent >= 0 ? '+' : ''}${data.profitGrowthPercent}%`}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Prévisions */}
-          <div className="bg-blue-600 p-6 rounded-[2.5rem] text-white shadow-xl shadow-blue-600/20">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-3 bg-white/20 text-white rounded-2xl">
-                <Calendar size={24} />
-              </div>
-              <span className="text-[10px] font-black uppercase text-blue-100 tracking-widest">Reste à percevoir</span>
-            </div>
-            <p className="text-2xl font-black">{data.remainingToCollect.toLocaleString()} F</p>
-            <p className="text-[9px] font-bold text-blue-100 uppercase mt-2 italic">D'ici la fin de l'année</p>
-          </div>
-
-          {/* Salaires */}
-          <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-3 bg-amber-50 text-amber-600 rounded-2xl">
-                <Info size={24} />
-              </div>
-              <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Masse Salariale</span>
-            </div>
-            <p className="text-2xl font-black text-slate-900">{data.monthlySalaries.toLocaleString()} F</p>
-            <p className="text-[9px] font-bold text-slate-400 uppercase mt-2 italic">À payer ce mois-ci</p>
-          </div>
-
-        </div>
-
-        {/* Note de bas de page */}
-        <div className="mt-12 text-center">
-          <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.3em]">KalanNyetaa Intelligence</p>
-        </div>
+        <button 
+          onClick={toggleSpeech}
+          className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-xs self-start sm:self-auto ${
+            isSpeaking 
+              ? 'bg-rose-600 text-white animate-pulse' 
+              : 'bg-blue-600 hover:bg-blue-700 text-white'
+          }`}
+        >
+          {isSpeaking ? <VolumeX size={15} /> : <Volume2 size={15} />}
+          <span>{isSpeaking ? 'Arrêter la lecture' : 'Écouter le rapport'}</span>
+        </button>
       </div>
+
+      {/* 2. GRILLE PRINCIPALE DE CARTES PLATES */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        
+        {/* Effectif global */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+          <div className="flex items-center gap-2.5 text-slate-500">
+            <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+              <Users size={18} />
+            </div>
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Effectif Global</span>
+          </div>
+          <p className="text-2xl sm:text-3xl font-black text-slate-900 leading-tight">
+            {data.totalStudents} <span className="text-xs font-bold text-slate-400">élèves inscrits</span>
+          </p>
+        </div>
+
+        {/* Caisse actuelle */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+          <div className="flex items-center gap-2.5 text-slate-500">
+            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
+              <Landmark size={18} />
+            </div>
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Trésorerie Active (En Caisse)</span>
+          </div>
+          <p className="text-2xl sm:text-3xl font-black text-emerald-600 leading-tight">
+            {data.netCaisse.toLocaleString()} <span className="text-xs font-bold text-emerald-400">FCFA</span>
+          </p>
+        </div>
+
+        {/* Flux des recettes */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs col-span-1 md:col-span-2 space-y-4">
+          <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
+            <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+              <TrendingUp size={18} />
+            </div>
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-900 block">Flux des Recettes</span>
+              <span className="text-[11px] text-slate-400 font-medium">Encaissements de scolarité</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Encaissé ce jour</span>
+              <p className="text-xl sm:text-2xl font-black text-emerald-600 leading-tight">
+                +{data.dailyCollected.toLocaleString()} F
+              </p>
+            </div>
+            <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total mois ({data.currentMonthName})</span>
+              <p className="text-xl sm:text-2xl font-black text-slate-900 leading-tight">
+                {data.monthlyCollected.toLocaleString()} F
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Flux des dépenses */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs col-span-1 md:col-span-2 space-y-4">
+          <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
+            <div className="p-2 bg-rose-50 text-rose-600 rounded-xl">
+              <Wallet size={18} />
+            </div>
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-900 block">Flux des Décaissements</span>
+              <span className="text-[11px] text-slate-400 font-medium">Charges et sorties enregistrées</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Dépensé ce jour</span>
+              <p className="text-xl sm:text-2xl font-black text-rose-600 leading-tight">
+                -{data.dailyExpenses.toLocaleString()} F
+              </p>
+            </div>
+            <div className="p-3.5 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total mois ({data.currentMonthName})</span>
+              <p className="text-xl sm:text-2xl font-black text-slate-900 leading-tight">
+                {data.monthlyExpenses.toLocaleString()} F
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Comparaison mensuelle */}
+        <div className="bg-white col-span-1 md:col-span-2 p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+          <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
+            <div className="p-2 bg-slate-100 text-slate-700 rounded-xl">
+              <ArrowRight size={18} />
+            </div>
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-900 block">Comparaison d'un mois à l'autre</span>
+              <span className="text-[11px] text-slate-500 font-medium">
+                {data.currentMonthName} par rapport à {data.previousMonthName}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Encaissement</span>
+              <p className="text-lg sm:text-xl font-black text-slate-900">{data.monthlyCollected.toLocaleString()} F</p>
+              <span className="text-[10px] text-slate-400 block">Mois préc. : {data.previousMonthlyCollected.toLocaleString()} F</span>
+              <span className={`inline-block text-[11px] font-bold ${
+                data.collectionGrowthPercent === null 
+                  ? 'text-slate-400' 
+                  : data.collectionGrowthPercent >= 0 ? 'text-emerald-600' : 'text-rose-600'
+              }`}>
+                {data.collectionGrowthPercent === null ? 'Période initiale' : `${data.collectionGrowthPercent >= 0 ? '+' : ''}${data.collectionGrowthPercent}%`}
+              </span>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Dépenses</span>
+              <p className="text-lg sm:text-xl font-black text-slate-900">{data.monthlyExpenses.toLocaleString()} F</p>
+              <span className="text-[10px] text-slate-400 block">Mois préc. : {data.previousMonthlyExpenses.toLocaleString()} F</span>
+              <span className={`inline-block text-[11px] font-bold ${
+                data.expenseGrowthPercent === null 
+                  ? 'text-slate-400' 
+                  : data.expenseGrowthPercent <= 0 ? 'text-emerald-600' : 'text-rose-600'
+              }`}>
+                {data.expenseGrowthPercent === null ? 'Période initiale' : `${data.expenseGrowthPercent >= 0 ? '+' : ''}${data.expenseGrowthPercent}%`}
+              </span>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Résultat net mensuel</span>
+              <p className={`text-lg sm:text-xl font-black ${data.monthlyProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {data.monthlyProfit.toLocaleString()} F
+              </p>
+              <span className="text-[10px] text-slate-400 block">Mois préc. : {data.previousMonthlyProfit.toLocaleString()} F</span>
+              <span className={`inline-block text-[11px] font-bold ${
+                data.profitGrowthPercent === null 
+                  ? 'text-slate-400' 
+                  : data.profitGrowthPercent >= 0 ? 'text-emerald-600' : 'text-rose-600'
+              }`}>
+                {data.profitGrowthPercent === null ? 'Période initiale' : `${data.profitGrowthPercent >= 0 ? '+' : ''}${data.profitGrowthPercent}%`}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Prévisions - Reste à percevoir */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+          <div className="flex items-center gap-2.5 text-slate-500">
+            <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+              <Calendar size={18} />
+            </div>
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Reste à percevoir</span>
+          </div>
+          <p className="text-2xl sm:text-3xl font-black text-blue-600 leading-tight">
+            {data.remainingToCollect.toLocaleString()} <span className="text-xs font-bold text-blue-400">F</span>
+          </p>
+          <span className="text-[11px] font-semibold text-slate-400 block">
+            Reliquat théorique sur la scolarité annuelle
+          </span>
+        </div>
+
+        {/* Salaires prévisionnels */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+          <div className="flex items-center gap-2.5 text-slate-500">
+            <div className="p-2 bg-amber-50 text-amber-700 rounded-xl">
+              <Info size={18} />
+            </div>
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Masse Salariale Mensuelle</span>
+          </div>
+          <p className="text-2xl sm:text-3xl font-black text-slate-900 leading-tight">
+            {data.monthlySalaries.toLocaleString()} <span className="text-xs font-bold text-slate-400">F</span>
+          </p>
+          <span className="text-[11px] font-semibold text-slate-400 block">
+            Montant cumulé dû aux enseignants chaque mois
+          </span>
+        </div>
+
+      </div>
+
     </div>
   );
 }

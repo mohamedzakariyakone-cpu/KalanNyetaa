@@ -5,28 +5,73 @@ import { supabase } from '@/utils/supabase';
 import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
 import { useYear } from '@/context/YearContext';
 import { useCacheRefresh } from '@/hooks/useCacheRefresh';
-import { Trash2, PlusCircle, School, Search, Loader2, ArrowUpRight, Users, Lock, AlertCircle, Layers, RefreshCw } from 'lucide-react';
+import { 
+  Trash2, Plus, School, Search, Loader2, ArrowUpRight, 
+  Users, Lock, AlertCircle, RefreshCw
+} from 'lucide-react';
 import Link from 'next/link';
 
-const LEVELS = [
-  { id: "Maternelle", label: "🧸 Maternelle", color: "bg-pink-50/60 text-pink-700 border-pink-100", dot: "bg-pink-500" },
-  { id: "Premier Cycle", label: "📖 Premier Cycle (Primaire)", color: "bg-blue-50/60 text-blue-700 border-blue-100", dot: "bg-blue-500" },
-  { id: "Second Cycle", label: "🏫 Second Cycle (Collège)", color: "bg-purple-50/60 text-purple-700 border-purple-100", dot: "bg-purple-500" },
-  { id: "Lycée", label: "🔬 Lycée", color: "bg-indigo-50/60 text-indigo-700 border-indigo-100", dot: "bg-indigo-500" }
+// Palettes Material UI douces pour chaque cycle
+const CYCLES = [
+  { 
+    id: "Maternelle", 
+    label: "Maternelle",
+    dot: "bg-rose-500",
+    activeClass: "bg-rose-600 text-white border-rose-600 shadow-xs",
+    inactiveClass: "text-rose-950 bg-rose-50/70 border-rose-200/80 hover:bg-rose-100/70",
+    badgeActive: "bg-white/20 text-white",
+    badgeInactive: "bg-rose-200/60 text-rose-900",
+    subActive: "text-rose-100",
+    subInactive: "text-rose-700/80"
+  },
+  { 
+    id: "Premier Cycle", 
+    label: "Premier Cycle (Primaire)",
+    dot: "bg-amber-500",
+    activeClass: "bg-amber-600 text-white border-amber-600 shadow-xs",
+    inactiveClass: "text-amber-950 bg-amber-50/70 border-amber-200/80 hover:bg-amber-100/70",
+    badgeActive: "bg-white/20 text-white",
+    badgeInactive: "bg-amber-200/60 text-amber-900",
+    subActive: "text-amber-100",
+    subInactive: "text-amber-700/80"
+  },
+  { 
+    id: "Second Cycle", 
+    label: "Second Cycle (Collège)",
+    dot: "bg-emerald-500",
+    activeClass: "bg-emerald-600 text-white border-emerald-600 shadow-xs",
+    inactiveClass: "text-emerald-950 bg-emerald-50/70 border-emerald-200/80 hover:bg-emerald-100/70",
+    badgeActive: "bg-white/20 text-white",
+    badgeInactive: "bg-emerald-200/60 text-emerald-900",
+    subActive: "text-emerald-100",
+    subInactive: "text-emerald-700/80"
+  },
+  { 
+    id: "Lycée", 
+    label: "Lycée",
+    dot: "bg-indigo-500",
+    activeClass: "bg-indigo-600 text-white border-indigo-600 shadow-xs",
+    inactiveClass: "text-indigo-950 bg-indigo-50/70 border-indigo-200/80 hover:bg-indigo-100/70",
+    badgeActive: "bg-white/20 text-white",
+    badgeInactive: "bg-indigo-200/60 text-indigo-900",
+    subActive: "text-indigo-100",
+    subInactive: "text-indigo-700/80"
+  }
 ];
 
 export default function ClassesPage() {
   const [classes, setClasses] = useState<any[]>([]);
   const [className, setClassName] = useState('');
-  const [level, setLevel] = useState('');
+  const [selectedCycle, setSelectedCycle] = useState('Premier Cycle');
+  const [activeCycleFilter, setActiveCycleFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showAddSection, setShowAddSection] = useState(false);
 
   const { selectedYearId, selectedYear, isReadOnly, isLoading: yearLoading } = useYear();
 
-  // Déclaration de fetchClasses acceptant un rafraîchissement forcé
   const fetchClasses = useCallback(async (forceRefresh = false) => {
     if (!selectedYearId) return;
     
@@ -45,14 +90,13 @@ export default function ClassesPage() {
       forceRefresh ? { forceRefresh: true } : undefined
     );
 
-    if (error) console.error('Erreur de récupération des classes:', error);
+    if (error) console.error('Erreur récupération classes:', error);
     
     setClasses(data || []);
     setLoading(false);
     setIsRefreshing(false);
   }, [selectedYearId, classes.length]);
 
-  // Hook pour rafraîchir automatiquement quand le cache local est invalidé
   useCacheRefresh({
     cachePattern: /^classes:/,
     onInvalidate: () => fetchClasses(true),
@@ -62,12 +106,8 @@ export default function ClassesPage() {
     refreshIntervalMs: 120000,
   });
 
-  // ÉCOUTEUR : Capte l'événement global de réussite envoyé par OfflineSync
   useEffect(() => {
-    const handleGlobalRefresh = () => {
-      fetchClasses(true); 
-    };
-
+    const handleGlobalRefresh = () => fetchClasses(true);
     window.addEventListener('global-sync-success', handleGlobalRefresh);
     return () => window.removeEventListener('global-sync-success', handleGlobalRefresh);
   }, [fetchClasses]);
@@ -78,19 +118,19 @@ export default function ClassesPage() {
 
   const addClass = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!className || !level || !selectedYearId || isReadOnly) return;
+    if (!className || !selectedCycle || !selectedYearId || isReadOnly) return;
     setSubmitting(true);
 
-    const upperName = className.toUpperCase();
+    const upperName = className.toUpperCase().trim();
 
     const { error } = await offlineWrite({
       table: 'classes',
       action: 'INSERT',
-      payload: { name: upperName, level, academic_year_id: selectedYearId },
+      payload: { name: upperName, level: selectedCycle, academic_year_id: selectedYearId },
       cacheKey: `classes:${selectedYearId}`,
       optimisticUpdate: () => {
         setClasses((prev) => [
-          { id: `offline-${Date.now()}`, name: upperName, level, academic_year_id: selectedYearId, students: [] },
+          { id: `offline-${Date.now()}`, name: upperName, level: selectedCycle, academic_year_id: selectedYearId, students: [] },
           ...prev,
         ]);
       },
@@ -100,8 +140,7 @@ export default function ClassesPage() {
       alert("Erreur : Cette classe existe déjà !");
     } else {
       setClassName(''); 
-      setLevel('');
-      // 🔄 ACTUALISATION FORCÉE IMMÉDIATE APRÈS ENREGISTREMENT TERMINÉ
+      setShowAddSection(false);
       await fetchClasses(true);
     }
     setSubmitting(false);
@@ -109,7 +148,7 @@ export default function ClassesPage() {
 
   const deleteClass = async (id: string, name: string) => {
     if (isReadOnly) return;
-    if (window.confirm(`Voulez-vous vraiment supprimer la classe ${name} ?`)) {
+    if (window.confirm(`Confirmez-vous la suppression définitive de ${name} ?`)) {
       const { error } = await offlineWrite({
         table: 'classes',
         action: 'DELETE',
@@ -129,22 +168,35 @@ export default function ClassesPage() {
     }
   };
 
-  const classesByLevel = useMemo(() => {
-    const filtered = classes.filter(cls =>
-      cls.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      cls.level.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+  const cycleMetrics = useMemo(() => {
+    const metrics: Record<string, { count: number; students: number }> = {
+      all: { count: classes.length, students: 0 }
+    };
 
-    const groups: Record<string, any[]> = { "Maternelle": [], "Premier Cycle": [], "Second Cycle": [], "Lycée": [] };
-    filtered.forEach(cls => {
-      if (groups[cls.level] !== undefined) groups[cls.level].push(cls);
-      else {
-        if (!groups[cls.level]) groups[cls.level] = [];
-        groups[cls.level].push(cls);
+    CYCLES.forEach(c => {
+      metrics[c.id] = { count: 0, students: 0 };
+    });
+
+    classes.forEach(c => {
+      const studentCount = c.students?.length || 0;
+      metrics.all.students += studentCount;
+
+      if (metrics[c.level]) {
+        metrics[c.level].count += 1;
+        metrics[c.level].students += studentCount;
       }
     });
-    return groups;
-  }, [classes, searchTerm]);
+
+    return metrics;
+  }, [classes]);
+
+  const filteredClasses = useMemo(() => {
+    return classes.filter(cls => {
+      const matchSearch = cls.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchCycle = activeCycleFilter === 'all' || cls.level === activeCycleFilter;
+      return matchSearch && matchCycle;
+    });
+  }, [classes, searchTerm, activeCycleFilter]);
 
   const totalStudents = useMemo(() => {
     return classes.reduce((acc, cls) => acc + (cls.students?.length || 0), 0);
@@ -152,222 +204,261 @@ export default function ClassesPage() {
 
   if (yearLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[50vh] text-slate-500 font-medium gap-2">
-        <Loader2 className="animate-spin text-green-600" size={20} />
-        <span className="text-sm">Chargement des paramètres...</span>
+      <div className="flex items-center justify-center min-h-[50vh] text-slate-500 font-bold gap-2">
+        <Loader2 className="animate-spin text-blue-600" size={22} />
+        <span className="text-sm">Chargement des données...</span>
       </div>
     );
   }
 
   if (!selectedYearId) {
     return (
-      <div className="max-w-xl mx-auto my-12 bg-amber-50/60 border border-amber-100 p-6 rounded-2xl text-center text-amber-800">
-        <AlertCircle size={28} className="mx-auto mb-3 text-amber-600" />
-        <h2 className="text-base font-bold mb-1">Aucune année scolaire active</h2>
-        <p className="text-xs opacity-90">Veuillez sélectionner une année scolaire dans le menu pour gérer la structure.</p>
+      <div className="max-w-xl mx-auto my-12 bg-white border border-amber-200 p-6 rounded-2xl text-center text-amber-900 shadow-xs">
+        <AlertCircle size={32} className="mx-auto mb-3 text-amber-600" />
+        <h2 className="text-base font-bold mb-1">Aucune session active</h2>
+        <p className="text-xs text-slate-600 font-medium">Sélectionnez une année scolaire dans le menu supérieur.</p>
       </div>
     );
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 py-6 md:py-10 space-y-8 antialiased text-slate-800">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6 antialiased text-slate-900">
       
-      {/* Header épuré avec bouton Actualiser */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+      {/* 1. EN-TÊTE ÉPURÉ */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
-          <h1 className="text-xl md:text-2xl font-black tracking-tight text-slate-900 flex items-center gap-2">
-            <School className="text-slate-400" size={24} /> Structure Pédagogique
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-2 h-2 rounded-full bg-blue-600" />
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Organisation de l'établissement</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+            Structure des Classes
           </h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Année Académique : <span className="text-green-600 font-semibold">{typeof selectedYear === 'object' ? selectedYear?.label : selectedYear}</span>
-          </p>
         </div>
 
-        {/* Bloc actions & stats à droite */}
-        <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
-          {/* BOUTON ACTUALISER MANUEL */}
+        <div className="flex items-center gap-3 self-start sm:self-auto">
           <button
             onClick={() => fetchClasses(true)}
             disabled={isRefreshing || loading}
-            className="flex items-center gap-1.5 bg-white hover:bg-slate-50 text-slate-700 px-3 py-1.5 rounded-lg border border-slate-200 text-[11px] font-bold uppercase tracking-wider shadow-2xs transition active:scale-95 disabled:opacity-60"
+            className="p-2.5 bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl transition disabled:opacity-50"
+            title="Rafraîchir"
           >
-            <RefreshCw size={12} className={`${isRefreshing ? 'animate-spin text-green-600' : 'text-slate-500'}`} />
-            <span>{isRefreshing ? 'Mise à jour...' : 'Actualiser'}</span>
+            <RefreshCw size={15} className={isRefreshing ? "animate-spin text-blue-600" : ""} />
           </button>
 
-          {/* Badges de statistiques légers */}
-          <div className="flex items-center gap-3 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 text-[11px] font-semibold text-slate-500">
-            <span className="flex items-center gap-1"><Layers size={12}/> <strong>{classes.length}</strong> Classes</span>
-            <span className="text-slate-200">|</span>
-            <span className="flex items-center gap-1"><Users size={12}/> <strong>{totalStudents}</strong> Élèves</span>
-          </div>
+          {!isReadOnly && (
+            <button
+              onClick={() => {
+                setShowAddSection(!showAddSection);
+                if (activeCycleFilter !== 'all') setSelectedCycle(activeCycleFilter);
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs"
+            >
+              <Plus size={15} />
+              <span>{showAddSection ? "Fermer" : "Ajouter une classe"}</span>
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Alerte si lecture seule */}
       {isReadOnly && (
-        <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-3 flex items-center gap-2.5 text-amber-800 text-xs">
-          <Lock size={14} className="shrink-0 text-amber-600" />
-          <p><strong>Mode lecture seule :</strong> Cette année scolaire est archivée. Modifications désactivées.</p>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-center gap-2 text-xs font-bold text-amber-900">
+          <Lock size={15} className="text-amber-700 shrink-0" />
+          <span>Année scolaire en lecture seule. La création et la suppression sont désactivées.</span>
         </div>
       )}
 
-      {/* Layout Principal */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        
-        {/* Formulaire de création */}
-        <div className="bg-white p-5 rounded-xl border border-slate-200/60 shadow-xs lg:col-span-1 lg:sticky lg:top-6 order-1 lg:order-2">
-          <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide flex items-center gap-1.5 mb-1">
-            Créer une classe
-          </h2>
-          <p className="text-[11px] text-slate-400 mb-4">Ajoutez une nouvelle section d'enseignement.</p>
-          
-          <form onSubmit={addClass} className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold uppercase text-slate-400 block pl-0.5">Nom complet</label>
+      {/* 2. FORMULAIRE INLINE COMPACT (SUR DEMANDE) */}
+      {showAddSection && !isReadOnly && (
+        <form onSubmit={addClass} className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs space-y-3 animate-in fade-in duration-150">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">Création rapide d'une section</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+            <div className="sm:col-span-6 space-y-1">
+              <label className="text-xs font-bold text-slate-700 block">Intitulé de la classe</label>
               <input
                 type="text"
-                placeholder="Ex: 10ÈME LETTRES, CM2 B"
-                className="w-full p-2.5 bg-slate-50/50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-500/10 focus:border-green-500 outline-none text-xs font-bold uppercase transition disabled:opacity-50"
+                placeholder="Ex: 8ÈME ANNÉE B, 11ÈME SCIENCES..."
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold uppercase outline-none focus:bg-white focus:border-blue-600 transition"
                 value={className}
                 onChange={(e) => setClassName(e.target.value)}
-                disabled={isReadOnly}
                 required
+                autoFocus
               />
             </div>
 
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold uppercase text-slate-400 block pl-0.5">Niveau / Cycle</label>
-              <select 
-                className="w-full p-2.5 bg-slate-50/50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-green-500/10 focus:border-green-500 outline-none text-xs font-medium cursor-pointer transition disabled:opacity-50"
-                value={level}
-                onChange={(e) => setLevel(e.target.value)}
-                disabled={isReadOnly}
+            <div className="sm:col-span-4 space-y-1">
+              <label className="text-xs font-bold text-slate-700 block">Cycle d'enseignement</label>
+              <select
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-blue-600 transition cursor-pointer"
+                value={selectedCycle}
+                onChange={(e) => setSelectedCycle(e.target.value)}
                 required
               >
-                <option value="">Sélectionner...</option>
-                {LEVELS.map(l => (
-                  <option key={l.id} value={l.id}>{l.label}</option>
+                {CYCLES.map(c => (
+                  <option key={c.id} value={c.id}>{c.label}</option>
                 ))}
               </select>
             </div>
 
-            {/* BOUTON AVEC ÉTAT D'ENREGISTREMENT ET ACTUALISATION INTÉGRÉE */}
-            <button 
-              type="submit"
-              disabled={submitting || isReadOnly}
-              className={`w-full text-white py-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 font-bold text-xs shadow-xs disabled:opacity-50 ${
-                submitting ? 'bg-green-700' : 'bg-slate-900 hover:bg-green-700'
+            <div className="sm:col-span-2">
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                {submitting ? <Loader2 className="animate-spin" size={15} /> : "Enregistrer"}
+              </button>
+            </div>
+          </div>
+        </form>
+      )}
+
+      {/* 3. DISPOSITION MASTER-DETAIL : CARTE DES CYCLES MATERIAL UI & REGISTRE SOBRE */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        {/* Colonne Gauche : Card des cycles avec couleurs Material UI */}
+        <div className="lg:col-span-4 space-y-2">
+          <div className="bg-white border border-slate-200 rounded-2xl p-2.5 space-y-2 shadow-xs">
+            <div className="px-2 pt-1 pb-1 border-b border-slate-100 flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Cycles scolaires</span>
+              <span className="text-[11px] font-bold text-slate-600">{classes.length} classes</span>
+            </div>
+
+            {/* Bouton Toutes les classes (Style Neutre Material) */}
+            <button
+              onClick={() => setActiveCycleFilter('all')}
+              className={`w-full p-3 rounded-xl text-left flex items-center justify-between border transition-all ${
+                activeCycleFilter === 'all'
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                  : 'text-slate-800 bg-slate-50/80 border-slate-200/70 hover:bg-slate-100'
               }`}
             >
-              {submitting ? (
-                <>
-                  <Loader2 className="animate-spin" size={14}/>
-                  <span>Enregistrement...</span>
-                </>
-              ) : (
-                <>
-                  <PlusCircle size={14} />
-                  <span>{isReadOnly ? 'Verrouillé' : 'Enregistrer la classe'}</span>
-                </>
-              )}
+              <div>
+                <span className="text-xs font-bold block">Toutes les classes</span>
+                <span className={`text-[11px] font-semibold block mt-0.5 ${activeCycleFilter === 'all' ? 'text-slate-300' : 'text-slate-500'}`}>
+                  {cycleMetrics.all.students} élèves au total
+                </span>
+              </div>
+              <span className={`text-xs px-2.5 py-0.5 rounded-lg font-bold ${
+                activeCycleFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200/80 text-slate-800'
+              }`}>
+                {cycleMetrics.all.count}
+              </span>
             </button>
-          </form>
+
+            {/* Boutons colorés selon Material UI pour chaque cycle */}
+            {CYCLES.map(c => {
+              const isActive = activeCycleFilter === c.id;
+              const data = cycleMetrics[c.id] || { count: 0, students: 0 };
+
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => setActiveCycleFilter(c.id)}
+                  className={`w-full p-3 rounded-xl text-left flex items-center justify-between border transition-all ${
+                    isActive ? c.activeClass : c.inactiveClass
+                  }`}
+                >
+                  <div className="min-w-0 pr-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${isActive ? 'bg-white' : c.dot}`} />
+                      <span className="text-xs font-bold truncate block">{c.label}</span>
+                    </div>
+                    <span className={`text-[11px] font-semibold block mt-0.5 pl-4 ${isActive ? c.subActive : c.subInactive}`}>
+                      {data.students} élève{data.students > 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <span className={`text-xs px-2.5 py-0.5 rounded-lg font-bold shrink-0 ${
+                    isActive ? c.badgeActive : c.badgeInactive
+                  }`}>
+                    {data.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Section Affichage et Recherche */}
-        <div className="lg:col-span-2 space-y-6 order-2 lg:order-1">
+        {/* Colonne Droite : Registre des classes (Uniforme, propre et plat) */}
+        <div className="lg:col-span-8 space-y-4">
           
-          {/* Barre de recherche */}
+          {/* Barre de filtre textuel */}
           <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-            <input 
-              type="text" 
-              placeholder="Filtrer par nom de classe..." 
-              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-green-500/10 focus:border-green-500 text-xs transition"
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+            <input
+              type="text"
+              placeholder="Filtrer une classe par son nom..."
+              className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none focus:border-blue-600 transition"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
 
-          {loading && classes.length === 0 ? (
-            <div className="flex items-center gap-2 text-slate-400 py-12 justify-center bg-white rounded-xl border border-slate-100 text-xs">
-              <Loader2 className="animate-spin text-green-600" size={16}/> Chargement de la structure...
-            </div>
-          ) : classes.length === 0 ? (
-            <div className="bg-white text-center p-12 rounded-xl border border-dashed border-slate-200 text-slate-400 text-xs font-medium">
-              Aucune classe configurée pour cette année scolaire.
-            </div>
-          ) : (
-            <div className="space-y-8">
-              {LEVELS.map(lvl => {
-                const levelClasses = classesByLevel[lvl.id] || [];
-                if (levelClasses.length === 0 && searchTerm) return null;
+          {/* Registre des sections (Design sobre sans couleur individuelle superflue) */}
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+            {loading && classes.length === 0 ? (
+              <div className="p-10 text-center text-xs font-bold text-slate-400 flex items-center justify-center gap-2">
+                <Loader2 className="animate-spin text-blue-600" size={18} />
+                Chargement des sections...
+              </div>
+            ) : filteredClasses.length === 0 ? (
+              <div className="p-10 text-center text-xs font-bold text-slate-400">
+                Aucune classe enregistrée dans ce filtre.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {filteredClasses.map((cls) => {
+                  const studentCount = cls.students?.length || 0;
 
-                return (
-                  <div key={lvl.id} className="space-y-3">
-                    
-                    {/* En-tête de catégorie */}
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2 pl-1">
-                      <div className="flex items-center gap-2.5">
-                        <span className={`w-3 h-3 rounded-full ${lvl.dot} shrink-0`} />
-                        <h2 className="text-sm md:text-base font-black text-slate-900 tracking-tight uppercase">
-                          {lvl.label}
-                        </h2>
+                  return (
+                    <div
+                      key={cls.id}
+                      className="p-4 flex items-center justify-between gap-4 hover:bg-slate-50/80 transition"
+                    >
+                      <div className="min-w-0 space-y-1">
+                        <h4 className="text-sm font-extrabold text-slate-900 uppercase tracking-tight">
+                          {cls.name}
+                        </h4>
+                        <span className="text-xs text-slate-500 font-medium block">
+                          Cycle : {cls.level}
+                        </span>
                       </div>
-                      <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
-                        {levelClasses.length} {levelClasses.length > 1 ? 'classes' : 'classe'}
-                      </span>
+
+                      <div className="flex items-center gap-3.5 shrink-0">
+                        <span className="text-xs font-bold text-slate-700 bg-slate-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                          <Users size={13} className="text-slate-400" />
+                          <span>{studentCount} élève{studentCount > 1 ? 's' : ''}</span>
+                        </span>
+
+                        <Link
+                          href={`/students?class=${cls.id}`}
+                          className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 transition px-2.5 py-1.5 rounded-lg hover:bg-blue-50"
+                        >
+                          <span>Fiches</span>
+                          <ArrowUpRight size={14} />
+                        </Link>
+
+                        {!isReadOnly && (
+                          <button
+                            onClick={() => deleteClass(cls.id, cls.name)}
+                            className="p-1.5 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                            title="Supprimer la classe"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
-                    {levelClasses.length === 0 ? (
-                      <p className="text-[11px] text-slate-400 italic pl-5">Aucune classe indexée dans cette catégorie.</p>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {levelClasses.map((cls) => (
-                          <div key={cls.id} className="bg-white p-6 rounded-3xl border border-slate-200/70 shadow-xl hover:shadow-2xl transition-all flex h-full min-h-[220px] flex-col group relative">
-                            
-                            {/* Actions de suppression */}
-                            <button 
-                              onClick={(e) => { e.preventDefault(); deleteClass(cls.id, cls.name); }}
-                              disabled={isReadOnly}
-                              className={`absolute top-5 right-5 transition-colors z-20 ${isReadOnly ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 hover:text-red-600'}`}
-                            >
-                              {isReadOnly ? <Lock size={12} /> : <Trash2 size={13} />}
-                            </button>
-
-                            <div className="mb-5 text-center">
-                              <h3 className="text-xl sm:text-2xl font-extrabold text-slate-900 group-hover:text-green-700 transition-colors uppercase tracking-tight leading-tight">
-                                {cls.name}
-                              </h3>
-                              <p className="text-[10px] text-slate-400 font-medium mt-1">Code unique : {cls.id.substring(0, 8).toUpperCase()}</p>
-                            </div>
-
-                            <div className="flex items-center justify-between mt-auto pt-2.5 border-t border-slate-100">
-                              <div className="flex items-center gap-1 text-slate-500">
-                                <Users size={12} className="text-slate-400" />
-                                <span className="text-xs font-semibold text-slate-600">{cls.students?.length || 0} Élèves</span>
-                              </div>
-                              
-                              <Link 
-                                href={`/students?class=${cls.id}`}
-                                className="inline-flex items-center gap-0.5 text-[10px] font-bold text-green-600 hover:text-green-700 hover:underline"
-                              >
-                                Accéder aux fiches <ArrowUpRight size={12} />
-                              </Link>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
 
       </div>
+
     </div>
   );
 }

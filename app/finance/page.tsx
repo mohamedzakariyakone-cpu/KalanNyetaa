@@ -6,9 +6,9 @@ import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
 import { useCacheRefresh } from '@/hooks/useCacheRefresh';
 import { useYear } from '@/context/YearContext';
 import {
-  Target, Loader2, MessageSquare, Search, BellRing, AlertTriangle,
-  Zap, Users, Landmark, ArrowUpRight, PieChart, Lock, Calendar, Plus, X, Trash2, TrendingDown, Wallet, Users2,
-  BarChart3, TrendingUp, Eye, EyeOff, RotateCcw, Download, Filter
+  Loader2, MessageSquare, Search, AlertTriangle,
+  ArrowUpRight, PieChart, Lock, Calendar, Trash2, TrendingDown, Wallet, Users2,
+  TrendingUp, RotateCcw, Landmark, ShieldCheck, CheckCircle2, Plus, X
 } from 'lucide-react';
 
 const MONTHS = [
@@ -26,30 +26,6 @@ const EXPENSE_CATEGORIES = [
   'Assurance',
   'Autre'
 ];
-
-// --- Composants UI Internes Optimisés ---
-
-const GlassCard = ({ children, title, icon: Icon, className = "", action }: { children: React.ReactNode, title?: string, icon?: React.ElementType, className?: string, action?: React.ReactNode }) => (
-  <div className={`bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm hover:shadow-md transition-all w-full ${className}`}>
-    <div className="flex justify-between items-center mb-3">
-      <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 italic">{title}</h3>
-      <div className="flex items-center gap-2">
-        {action}
-        {Icon && <div className="p-2 bg-slate-50 rounded-xl text-slate-900"><Icon size={16} /></div>}
-      </div>
-    </div>
-    {children}
-  </div>
-);
-
-const ProgressBar = ({ progress, color = "bg-indigo-600" }: { progress: number, color?: string }) => (
-  <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden mt-2">
-    <div 
-      className={`h-full transition-all duration-1000 ${color}`} 
-      style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} 
-    />
-  </div>
-);
 
 interface Payment {
   amount?: string | number;
@@ -142,13 +118,13 @@ export default function CFODashboardImproved() {
   const [expCategory, setExpCategory] = useState('Autre');
   const [searchTerm, setSearchTerm] = useState('');
   const [expenseSearchTerm, setExpenseSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'students' | 'expenses'>('students');
+  
+  // Onglets organisés façon console administrative
+  const [activeTab, setActiveTab] = useState<'students' | 'expenses' | 'trash'>('students');
   const [viewMode, setViewMode] = useState<'annual' | 'monthly'>('annual');
   const [selectedMonthIndex, setSelectedMonthIndex] = useState<number>(new Date().getMonth());
-  const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
-  const [showTrashModal, setShowTrashModal] = useState(false);
   const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
-  const [showDeletedOnly, setShowDeletedOnly] = useState(false);
+  
   const { selectedYearId, isReadOnly, isLoading: yearLoading, selectedYear } = useYear();
 
   const formatNumberInput = (value: string) => {
@@ -197,7 +173,6 @@ export default function CFODashboardImproved() {
           .eq('academic_year_id', selectedYearId);
       });
 
-      // Récupérer les dépenses actives (non supprimées) filtrées par school_id
       const { data: expensesData, error: expensesError } = await offlineFetch<Expense[]>(`finance_expenses:${selectedYearId}`, async () => {
         return await supabase
           .from('expenses')
@@ -208,7 +183,6 @@ export default function CFODashboardImproved() {
           .order('created_at', { ascending: false });
       });
 
-      // Récupérer les dépenses supprimées (corbeille)
       const { data: deletedData, error: deletedError } = await offlineFetch<Expense[]>(`finance_deleted_expenses:${selectedYearId}`, async () => {
         return await supabase
           .from('expenses')
@@ -254,8 +228,6 @@ export default function CFODashboardImproved() {
     onInvalidate: () => fetchData(),
     debounceMs: 150,
     refreshOnFocus: true,
-    refreshOnVisibilityChange: true,
-    refreshIntervalMs: 120000,
   });
 
   useEffect(() => { 
@@ -269,7 +241,6 @@ export default function CFODashboardImproved() {
     const monthlySalaries = teachers.reduce((sum: number, t: Teacher) => sum + (Number(t.salary) || 0), 0);
     const annualSalaries = monthlySalaries * 10;
 
-    // Calculer les dépenses par catégorie
     const expensesByCategory: Record<string, number> = {};
     expenses.forEach(exp => {
       const cat = exp.category || 'Autre';
@@ -390,7 +361,6 @@ export default function CFODashboardImproved() {
 
   const handleAddExpense = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     const numericAmount = parseInt(expAmount.replace(/\s/g, ''), 10);
 
     if (!expDesc || isNaN(numericAmount) || numericAmount <= 0 || !selectedYearId) {
@@ -398,12 +368,12 @@ export default function CFODashboardImproved() {
       return;
     }
     if (isReadOnly) {
-      alert('Impossible d\'ajouter une dépense en mode lecture seule');
+      alert('Action impossible en mode lecture seule');
       return;
     }
     
     setIsSubmittingExpense(true);
-    const { data, error } = await offlineWrite({
+    const { error } = await offlineWrite({
       table: 'expenses',
       action: 'INSERT',
       payload: [{
@@ -434,15 +404,14 @@ export default function CFODashboardImproved() {
     setExpDesc('');
     setExpAmount('');
     setExpCategory('Autre');
-    setShowAddExpenseModal(false);
     fetchData();
   };
 
   const handleDeleteExpense = async (id: string) => {
     if (isReadOnly) return;
-    if (!confirm('Voulez-vous vraiment supprimer cette dépense ?')) return;
+    if (!confirm('Déplacer cette dépense vers la corbeille ?')) return;
 
-    const { data, error } = await offlineWrite({
+    const { error } = await offlineWrite({
       table: 'expenses',
       action: 'UPDATE',
       payload: [{
@@ -472,7 +441,7 @@ export default function CFODashboardImproved() {
   const handleRestoreExpense = async (id: string) => {
     if (isReadOnly) return;
 
-    const { data, error } = await offlineWrite({
+    const { error } = await offlineWrite({
       table: 'expenses',
       action: 'UPDATE',
       payload: [{
@@ -503,7 +472,7 @@ export default function CFODashboardImproved() {
     if (isReadOnly) return;
     if (!confirm('Supprimer définitivement cette dépense ? Cette action est irréversible.')) return;
 
-    const { data, error } = await offlineWrite({
+    const { error } = await offlineWrite({
       table: 'expenses',
       action: 'DELETE',
       payload: null,
@@ -530,6 +499,13 @@ export default function CFODashboardImproved() {
     );
   }, [expenses, expenseSearchTerm]);
 
+  const filteredDeletedExpenses = useMemo(() => {
+    return deletedExpenses.filter(e => 
+      (e.description || '').toLowerCase().includes(expenseSearchTerm.toLowerCase()) ||
+      (e.category || '').toLowerCase().includes(expenseSearchTerm.toLowerCase())
+    );
+  }, [deletedExpenses, expenseSearchTerm]);
+
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return '---';
     const date = new Date(dateStr);
@@ -537,259 +513,324 @@ export default function CFODashboardImproved() {
   };
 
   if (loading) return (
-    <div className="flex h-screen w-full items-center justify-center bg-white">
-      <Loader2 className="animate-spin text-indigo-600" size={32} />
+    <div className="flex h-64 w-full items-center justify-center">
+      <Loader2 className="animate-spin text-blue-600" size={28} />
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 w-full overflow-x-hidden pb-12">
-      <div className="w-full max-w-7xl mx-auto px-0 sm:px-6 lg:px-8 pt-4 sm:pt-6">
-        
-        {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 px-4 sm:px-0">
-          <div className="w-full md:w-auto">
-            <div className="flex items-center gap-2 mb-1">
-              <Zap className="text-indigo-600" size={16} fill="currentColor" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Comptabilité d'École</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 uppercase italic leading-tight">
-              Intelligence <span className="text-indigo-600">Financière</span>
-            </h1>
-            {selectedYear && !selectedYear.is_current && (
-              <p className="text-[10px] font-bold text-amber-600 mt-1 flex items-center gap-1">
-                <AlertTriangle size={12} /> Année historique - Lecture seule
-              </p>
-            )}
+    <div className="w-full max-w-6xl mx-auto space-y-6 pb-16 font-sans text-slate-900 antialiased">
+      
+      {/* 1. EN-TÊTE ÉPURÉ DE LA GESTION FINANCIÈRE */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2 border-b border-slate-200/80 pb-5">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-2 h-2 rounded-full bg-blue-600" />
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Direction Financière</span>
           </div>
-  
-          <div className="flex gap-2 w-full md:w-auto">
-            {isReadOnly && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 rounded-xl text-[11px] font-bold">
-                <Lock size={13} className="shrink-0" /> Lecture seule
-              </div>
-            )}
-            <button onClick={fetchData} disabled={yearLoading} className="flex-1 md:flex-none px-4 py-2.5 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase shadow-sm text-center active:scale-95 transition-transform hover:bg-slate-800">
-              Actualiser
-            </button>
-          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+            Comptabilité & Trésorerie
+          </h1>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5 px-4 sm:px-0">
-          <div className="flex flex-wrap gap-3 w-full sm:w-auto">
-            <label className="flex flex-col text-[10px] text-slate-500 font-black uppercase tracking-widest">
-              Vue
-              <select
-                value={viewMode}
-                onChange={(e) => setViewMode(e.target.value as 'annual' | 'monthly')}
-                className="mt-2 min-w-[140px] rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:ring-2 ring-indigo-100"
-              >
-                <option value="annual">Annuel</option>
-                <option value="monthly">Mensuel</option>
-              </select>
-            </label>
-            {viewMode === 'monthly' && (
-              <label className="flex flex-col text-[10px] text-slate-500 font-black uppercase tracking-widest">
-                Mois
-                <select
-                  value={selectedMonthIndex}
-                  onChange={(e) => setSelectedMonthIndex(Number(e.target.value))}
-                  className="mt-2 min-w-[140px] rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:ring-2 ring-indigo-100"
-                >
-                  {MONTHS.map((month, index) => (
-                    <option key={month} value={index}>{month}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-          </div>
-          <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-            Période : {viewMode === 'annual' ? 'Données annuelles' : MONTHS[selectedMonthIndex]}
-          </div>
-        </div>
-
-        {error && (
-          <div className="mx-4 sm:mx-0 bg-rose-50 border border-rose-100 text-rose-600 p-3.5 rounded-xl text-xs font-bold mb-6 flex items-center gap-2">
-            <AlertTriangle size={16} /> {error}
-          </div>
-        )}
-
-        {/* Grille Principale - Indicateurs Clés */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-12 gap-3 sm:gap-6 px-4 sm:px-0 mb-6">
-          {/* Score de Recouvrement */}
-          <div className="col-span-2 lg:col-span-3 bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-5 text-white flex flex-col items-center justify-center shadow-lg text-center">
-            <div className="text-3xl sm:text-4xl font-black italic text-green-400">{analytics.healthScore}%</div>
-            <div className="text-[9px] font-bold uppercase mt-1 opacity-70 tracking-widest">Recouvrement Annuel</div>
-            <ProgressBar progress={analytics.healthScore} color="bg-green-400" />
-          </div>
-        
-          {/* Trésorerie */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between col-span-1 lg:col-span-3 hover:shadow-md transition-all">
-            <div>
-              <p className="text-[9px] font-black uppercase text-slate-400 tracking-tight">Trésorerie Actuelle</p>
-              <div className={`text-base sm:text-xl font-black italic mt-1 truncate ${analytics.netCash >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                {analytics.netCash.toLocaleString()} F
-              </div>
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
+          {isReadOnly && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs font-bold">
+              <Lock size={13} className="shrink-0" /> Lecture seule
             </div>
-            <div className="text-[8px] text-slate-400 font-bold uppercase mt-2 flex items-center gap-1">
-              <Wallet size={12} className="text-slate-400" /> Reste après dépenses
-            </div>
-          </div>
-
-          {/* Dépenses Totales */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between col-span-1 lg:col-span-3 hover:shadow-md transition-all">
-            <div>
-              <p className="text-[9px] font-black uppercase text-rose-400 tracking-tight">Dépenses Totales</p>
-              <div className="text-base sm:text-xl font-black italic text-rose-600 mt-1 truncate">
-                {analytics.totalExpenses.toLocaleString()} F
-              </div>
-            </div>
-            <div className="text-[10px] font-bold uppercase text-slate-500 mt-2">
-              {analytics.expenseCount} enregistrements
-            </div>
-            <div className="text-[8px] text-slate-400 font-bold uppercase mt-2 flex items-center gap-1">
-              <TrendingDown size={12} className="text-rose-400" /> Dépense globale
-            </div>
-          </div>
-
-          {/* Autonomie */}
-          <GlassCard title="Autonomie (Runway)" icon={Landmark} className="col-span-2 lg:col-span-3">
-            <div className="text-xl font-black italic text-slate-900">{analytics.runway.toFixed(1)} <span className="text-xs uppercase font-semibold">Mois</span></div>
-            <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase italic">Survie de la caisse</p>
-          </GlassCard>
-
-          {/* Dépense Moyenne */}
-          <GlassCard title="Dépense Moyenne" icon={BarChart3} className="col-span-2 lg:col-span-3">
-            <div className="text-xl font-black italic text-slate-900">{analytics.averageExpense.toLocaleString()} F</div>
-            <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase italic">Par transaction</p>
-          </GlassCard>
-
-          {/* Moyenne Mensuelle */}
-          <GlassCard title="Moyenne Mensuelle" icon={TrendingUp} className="col-span-2 lg:col-span-3">
-            <div className="text-xl font-black italic text-slate-900">{analytics.monthlyAverageExpense.toLocaleString()} F</div>
-            <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase italic">Projection annuelle</p>
-          </GlassCard>
-        </div>
-
-        {/* Charges Salariales */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 sm:mt-6 px-4 sm:px-0">
-          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition-all">
-            <div>
-              <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-wider">Masse Salariale Mensuelle</p>
-              <div className="text-xl sm:text-2xl font-black italic text-indigo-600">{analytics.monthlySalaries.toLocaleString()} F</div>
-              <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Salaires bruts cumulés / mois</p>
-            </div>
-            <div className="p-3.5 bg-indigo-50 rounded-2xl text-indigo-600 hidden sm:block">
-              <Users2 size={24} />
-            </div>
-          </div>
-
-          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between hover:shadow-md transition-all">
-            <div>
-              <p className="text-[10px] font-black uppercase text-slate-400 mb-1 tracking-wider">Masse Salariale Annuelle</p>
-              <div className="text-xl sm:text-2xl font-black italic text-indigo-800">{analytics.annualSalaries.toLocaleString()} F</div>
-              <p className="text-[9px] text-slate-400 font-bold uppercase mt-1">Projection sur 10 mois de cours</p>
-            </div>
-            <div className="p-3.5 bg-indigo-50 rounded-2xl text-indigo-800 hidden sm:block">
-              <Calendar size={24} />
-            </div>
-          </div>
-        </div>
-
-        {/* Objectifs Mensuels */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4 sm:mt-6 px-4 sm:px-0">
-          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
-            <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Encaissé</p>
-            <div className="text-xl sm:text-2xl font-black italic text-slate-900">{analytics.selectedPeriodCollected.toLocaleString()} F</div>
-            <div className="mt-2 flex items-center gap-1 text-[10px] font-bold text-green-600">
-              <ArrowUpRight size={14} /> {analytics.selectedPeriodProgress}% de l'objectif
-            </div>
-            <p className="text-[9px] text-slate-400 mt-2 uppercase">Période : {analytics.selectedPeriodLabel}</p>
-          </div>
-
-          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
-            <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Objectif Attendu</p>
-            <div className="text-xl sm:text-2xl font-black italic text-slate-900">{analytics.selectedPeriodTarget.toLocaleString()} F</div>
-            <div className="mt-2 text-[10px] font-bold text-slate-400 italic">Calculé selon les échelonnements</div>
-          </div>
-
-          <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm sm:col-span-2 lg:col-span-1 hover:shadow-md transition-all">
-            <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Potentiel Général Annuel</p>
-            <div className="text-xl font-black italic text-slate-900">{analytics.totalPotential.toLocaleString()} F</div>
-            <div className="text-[9px] font-black uppercase text-emerald-600 mt-1">Déjà encaissé : {analytics.collected.toLocaleString()} F</div>
-          </div>
-        </div>
-
-        {/* Dépenses par Catégorie */}
-        {Object.keys(analytics.expensesByCategory).length > 0 && (
-          <div className="mt-6 px-4 sm:px-0">
-            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <PieChart size={16} className="text-indigo-600" />
-                <h3 className="text-[10px] font-black uppercase text-slate-400 italic tracking-widest">Dépenses par Catégorie</h3>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {Object.entries(analytics.expensesByCategory)
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([category, amount]) => (
-                    <div key={category} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <p className="text-[9px] font-bold text-slate-400 uppercase truncate">{category}</p>
-                      <p className="text-sm font-black text-slate-900 mt-1">{(amount as number).toLocaleString()} F</p>
-                      <p className="text-[8px] text-slate-400 mt-1">
-                        {((amount as number / analytics.totalExpenses) * 100).toFixed(1)}%
-                      </p>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Onglets Mobile */}
-        <div className="flex border-b border-slate-200 mt-6 sm:hidden bg-white sticky top-0 z-20 shadow-xs">
+          )}
           <button 
-            onClick={() => setActiveTab('students')}
-            className={`flex-1 py-3 text-center text-xs font-black uppercase tracking-wider transition-colors ${activeTab === 'students' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-slate-400'}`}
+            onClick={fetchData} 
+            disabled={yearLoading} 
+            className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition shadow-xs active:scale-95"
           >
-            Élèves ({analytics.processedStudents.length})
-          </button>
-          <button 
-            onClick={() => setActiveTab('expenses')}
-            className={`flex-1 py-3 text-center text-xs font-black uppercase tracking-wider transition-colors ${activeTab === 'expenses' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-slate-400'}`}
-          >
-            Dépenses ({expenses.length})
+            Actualiser
           </button>
         </div>
+      </div>
 
-        {/* Blocs de contenu */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-4 sm:mt-6">
-          
-          {/* SECTION : EXPENSES */}
-          <div className={`lg:col-span-5 flex flex-col gap-6 px-4 sm:px-0 ${activeTab === 'expenses' ? 'block' : 'hidden sm:block'}`}>
+      {error && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-700 p-3.5 rounded-xl text-xs font-bold flex items-center gap-2">
+          <AlertTriangle size={15} /> {error}
+        </div>
+      )}
+
+      {/* 2. CONTRÔLE DE PÉRIODE & KPI CLÉS PLATS */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200/80">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider pl-1">Période :</span>
+          <select
+            value={viewMode}
+            onChange={(e) => setViewMode(e.target.value as 'annual' | 'monthly')}
+            className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-bold text-slate-900 outline-none focus:border-blue-600 cursor-pointer"
+          >
+            <option value="annual">Exercice Annuel</option>
+            <option value="monthly">Vue Mensuelle</option>
+          </select>
+
+          {viewMode === 'monthly' && (
+            <select
+              value={selectedMonthIndex}
+              onChange={(e) => setSelectedMonthIndex(Number(e.target.value))}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-xs font-bold text-slate-900 outline-none focus:border-blue-600 cursor-pointer"
+            >
+              {MONTHS.map((month, index) => (
+                <option key={month} value={index}>{month}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        <div className="text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1 rounded-lg border border-blue-100 self-start sm:self-auto">
+          {viewMode === 'annual' ? 'Données globales annuelles' : `Mois : ${MONTHS[selectedMonthIndex]}`}
+        </div>
+      </div>
+
+      {/* GRILLE DES 4 KPI PLATS */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+        <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Recouvrement Annuel</span>
+          <p className="text-2xl sm:text-3xl font-black text-slate-900 leading-tight">
+            {analytics.healthScore}%
+          </p>
+          <span className="text-[11px] font-bold text-slate-400 block pt-1">
+            {analytics.collected.toLocaleString()} F encaissés
+          </span>
+        </div>
+
+        <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Trésorerie Active</span>
+          <p className={`text-2xl sm:text-3xl font-black leading-tight ${analytics.netCash >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+            {analytics.netCash.toLocaleString()} <span className="text-xs font-bold text-slate-400">F</span>
+          </p>
+          <span className="text-[11px] font-bold text-slate-400 block pt-1">
+            Solde net après décaissements
+          </span>
+        </div>
+
+        <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Dépenses Directes</span>
+          <p className="text-2xl sm:text-3xl font-black text-rose-600 leading-tight">
+            {analytics.totalExpenses.toLocaleString()} <span className="text-xs font-bold text-rose-400">F</span>
+          </p>
+          <span className="text-[11px] font-bold text-slate-400 block pt-1">
+            {analytics.expenseCount} opérations enregistrées
+          </span>
+        </div>
+
+        <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Masse Salariale</span>
+          <p className="text-2xl sm:text-3xl font-black text-blue-600 leading-tight">
+            {analytics.monthlySalaries.toLocaleString()} <span className="text-xs font-bold text-blue-400">F/m</span>
+          </p>
+          <span className="text-[11px] font-bold text-slate-400 block pt-1">
+            Autonomie : {analytics.runway.toFixed(1)} mois
+          </span>
+        </div>
+      </div>
+
+      {/* 3. BARRE DE NAVIGATION DES MODULES PLATS */}
+      <div className="flex border-b border-slate-200 gap-1 overflow-x-auto">
+        <button
+          onClick={() => setActiveTab('students')}
+          className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition whitespace-nowrap ${
+            activeTab === 'students'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          Registre Scolarités ({analytics.processedStudents.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('expenses')}
+          className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition whitespace-nowrap ${
+            activeTab === 'expenses'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          Dépenses & Décaissements ({expenses.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('trash')}
+          className={`px-4 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition whitespace-nowrap flex items-center gap-1.5 ${
+            activeTab === 'trash'
+              ? 'border-rose-600 text-rose-600'
+              : 'border-transparent text-slate-500 hover:text-rose-600'
+          }`}
+        >
+          <Trash2 size={13} />
+          <span>Corbeille ({deletedExpenses.length})</span>
+        </button>
+      </div>
+
+      {/* 4. CONTENU DU MODULE : SCOLARITÉS */}
+      {activeTab === 'students' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs">
             
-            {/* Formulaire d'ajout */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-[10px] font-black uppercase text-slate-400 italic tracking-widest">Enregistrer une Dépense</h3>
-                <PieChart size={14} className="text-slate-400" />
+            <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 uppercase">Suivi des paiements élèves</h3>
+                <p className="text-xs text-slate-500">Relance rapide WhatsApp et contrôle des impayés</p>
               </div>
-              <form onSubmit={handleAddExpense} className="space-y-3">
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                <input 
+                  type="text" 
+                  placeholder="Rechercher un élève..."
+                  className="w-full pl-9 pr-3 py-2 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:bg-white focus:border-blue-600 transition"
+                  value={searchTerm} 
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Vue Table Desktop */}
+            <div className="hidden sm:block w-full overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-bold uppercase text-slate-500 tracking-wider">
+                    <th className="px-5 py-3">Élève</th>
+                    <th className="px-4 py-3">Classe</th>
+                    <th className="px-4 py-3 text-right">Frais Annuel</th>
+                    <th className="px-4 py-3 text-right">Encaissé</th>
+                    <th className="px-4 py-3 text-right">Restant dû</th>
+                    <th className="px-5 py-3 text-right">Relance</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {analytics.processedStudents
+                    .filter((s: ProcessedStudent) => `${s.first_name} ${s.last_name}`.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-xs text-center text-slate-400 py-8 font-medium">Aucun élève trouvé.</td>
+                      </tr>
+                    ) : analytics.processedStudents
+                    .filter((s: ProcessedStudent) => `${s.first_name} ${s.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()))
+                    .map((s: ProcessedStudent) => {
+                      const remaining = s.annual_fee - s.totalPaid;
+                      return (
+                        <tr key={s.id} className="hover:bg-slate-50/70 transition">
+                          <td className="px-5 py-3">
+                            <div className="font-bold text-slate-900 capitalize">{s.last_name} {s.first_name}</div>
+                            <span className="text-[10px] text-slate-400 font-medium">{s.parent_phone || 'Sans contact'}</span>
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-slate-700">
+                            {s.className}
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-700">
+                            {s.annual_fee.toLocaleString()} F
+                          </td>
+                          <td className="px-4 py-3 text-right font-black text-emerald-600">
+                            {s.totalPaid.toLocaleString()} F
+                          </td>
+                          <td className="px-4 py-3 text-right font-black">
+                            <span className={remaining > 0 ? 'text-rose-600' : 'text-slate-400'}>
+                              {remaining.toLocaleString()} F
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <button 
+                              onClick={() => {
+                                const msg = encodeURIComponent(`Bonjour, rappel concernant la scolarité de ${s.first_name}. Reste à régler : ${remaining.toLocaleString()} FCFA. Merci de régulariser.`);
+                                window.open(`https://wa.me/${s.parent_phone?.replace(/\D/g,'')}?text=${msg}`, '_blank');
+                              }}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 border border-slate-200 rounded-lg transition"
+                              title="Envoyer message WhatsApp"
+                            >
+                              <MessageSquare size={13} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Vue Cartes Mobile */}
+            <div className="sm:hidden divide-y divide-slate-100">
+              {analytics.processedStudents
+                .filter((s: ProcessedStudent) => `${s.first_name} ${s.last_name}`.toLowerCase().includes(searchTerm.toLowerCase()))
+                .map((s: ProcessedStudent) => {
+                  const remaining = s.annual_fee - s.totalPaid;
+                  return (
+                    <div key={s.id} className="p-4 space-y-2.5">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="text-xs font-bold text-slate-900 capitalize">{s.last_name} {s.first_name}</p>
+                          <span className="text-[10px] text-slate-500 font-medium">{s.className}</span>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            const msg = encodeURIComponent(`Bonjour, rappel pour la scolarité de ${s.first_name}. Solde restant : ${remaining.toLocaleString()} F.`);
+                            window.open(`https://wa.me/${s.parent_phone?.replace(/\D/g,'')}?text=${msg}`, '_blank');
+                          }}
+                          className="p-2 text-blue-600 bg-blue-50 border border-blue-100 rounded-xl"
+                        >
+                          <MessageSquare size={14} />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                          <span className="text-[9px] text-slate-400 block font-bold">Frais</span>
+                          <span className="font-bold text-slate-800">{s.annual_fee.toLocaleString()} F</span>
+                        </div>
+                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                          <span className="text-[9px] text-slate-400 block font-bold">Payé</span>
+                          <span className="font-bold text-emerald-600">{s.totalPaid.toLocaleString()} F</span>
+                        </div>
+                        <div className="bg-slate-50 p-2 rounded-lg border border-slate-100">
+                          <span className="text-[9px] text-slate-400 block font-bold">Reste</span>
+                          <span className={`font-bold ${remaining > 0 ? 'text-rose-600' : 'text-slate-400'}`}>
+                            {remaining.toLocaleString()} F
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 5. CONTENU DU MODULE : DÉPENSES & DÉCAISSEMENTS */}
+      {activeTab === 'expenses' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          {/* Colonne gauche : Formulaire de saisie plat (5 cols) */}
+          <div className="lg:col-span-5 space-y-6">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+              <div className="border-b border-slate-100 pb-2.5">
+                <h3 className="text-sm font-bold text-slate-900 uppercase">Enregistrer une dépense</h3>
+                <p className="text-xs text-slate-500">Ajoutez une sortie de caisse certifiée</p>
+              </div>
+
+              <form onSubmit={handleAddExpense} className="space-y-3.5">
                 <div>
-                  <label className="block text-[9px] font-black uppercase text-slate-400 mb-1">Motif</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Motif du décaissement</label>
                   <input 
-                    type="text" placeholder="Ex: Fournitures, Électricité..."
-                    className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:ring-2 ring-indigo-100 disabled:opacity-50 transition-all"
-                    value={expDesc} onChange={(e) => setExpDesc(e.target.value)}
+                    type="text" 
+                    placeholder="Ex: Facture électricité, fournitures bureau..."
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-blue-600 transition"
+                    value={expDesc} 
+                    onChange={(e) => setExpDesc(e.target.value)}
                     disabled={isReadOnly}
                     required
                   />
                 </div>
+
                 <div>
-                  <label className="block text-[9px] font-black uppercase text-slate-400 mb-1">Catégorie</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Catégorie comptable</label>
                   <select 
                     value={expCategory}
                     onChange={(e) => setExpCategory(e.target.value)}
-                    className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:ring-2 ring-indigo-100 disabled:opacity-50"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-blue-600 transition cursor-pointer"
                     disabled={isReadOnly}
                   >
                     {EXPENSE_CATEGORIES.map(cat => (
@@ -797,70 +838,101 @@ export default function CFODashboardImproved() {
                     ))}
                   </select>
                 </div>
+
                 <div>
-                  <label className="block text-[9px] font-black uppercase text-slate-400 mb-1">Montant (FCFA)</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Montant décaissé (FCFA)</label>
                   <input 
                     type="text" 
                     placeholder="0"
-                    className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs font-black text-rose-600 outline-none focus:ring-2 ring-indigo-100 disabled:opacity-50 transition-all"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-rose-600 outline-none focus:bg-white focus:border-blue-600 transition"
                     value={expAmount}
                     onChange={handleAmountChange}
                     disabled={isReadOnly}
                     required
                   />
                 </div>
-                <button type="submit" disabled={isReadOnly || isSubmittingExpense} className="w-full py-3 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-wide disabled:opacity-50 shadow-sm active:scale-98 transition-all hover:bg-indigo-700">
-                  {isSubmittingExpense ? 'Enregistrement...' : isReadOnly ? 'Mode lecture seule' : '+ Enregistrer'}
+
+                <button 
+                  type="submit" 
+                  disabled={isReadOnly || isSubmittingExpense} 
+                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition disabled:opacity-40"
+                >
+                  {isSubmittingExpense ? 'Enregistrement...' : 'Valider la sortie'}
                 </button>
               </form>
             </div>
 
-            {/* Historique des dépenses */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex-1">
-              <div className="flex flex-col gap-2 mb-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-[10px] font-black uppercase text-slate-400 italic tracking-widest">Historique des Dépenses</h3>
-                  <button
-                    onClick={() => setShowTrashModal(true)}
-                    className="p-1.5 hover:bg-slate-50 rounded-lg transition-colors"
-                    title="Voir la corbeille"
-                  >
-                    <Trash2 size={14} className="text-slate-400 hover:text-slate-600" />
-                  </button>
+            {/* Répartition par catégorie plate */}
+            {Object.keys(analytics.expensesByCategory).length > 0 && (
+              <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+                <div className="flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                  <PieChart size={14} className="text-blue-600" />
+                  <h4 className="text-xs font-bold uppercase text-slate-800">Dépenses par catégorie</h4>
                 </div>
-                <div className="relative w-full mt-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
+                <div className="space-y-2">
+                  {Object.entries(analytics.expensesByCategory)
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([category, amount]) => (
+                      <div key={category} className="flex justify-between items-center text-xs p-2 rounded-lg bg-slate-50 border border-slate-100">
+                        <span className="font-semibold text-slate-700">{category}</span>
+                        <div className="text-right">
+                          <span className="font-bold text-slate-900">{amount.toLocaleString()} F</span>
+                          <span className="text-[10px] text-slate-400 block">
+                            {((amount / analytics.totalExpenses) * 100).toFixed(0)}%
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Colonne droite : Registre des dépenses actives (7 cols) */}
+          <div className="lg:col-span-7 space-y-4">
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+              <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+                <h3 className="text-sm font-bold text-slate-900 uppercase">
+                  Historique des décaissements ({filteredExpenses.length})
+                </h3>
+                <div className="relative w-full sm:w-60">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
                   <input 
-                    type="text" placeholder="Filtrer..."
-                    className="w-full pl-9 pr-3 py-2 bg-slate-50 rounded-xl text-[11px] font-semibold outline-none border border-slate-200 focus:ring-2 ring-indigo-100"
-                    value={expenseSearchTerm} onChange={(e) => setExpenseSearchTerm(e.target.value)}
+                    type="text" 
+                    placeholder="Filtrer motif ou catégorie..."
+                    className="w-full pl-9 pr-3 py-1.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:bg-white focus:border-blue-600 transition"
+                    value={expenseSearchTerm} 
+                    onChange={(e) => setExpenseSearchTerm(e.target.value)}
                   />
                 </div>
               </div>
 
-              <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+              <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
                 {filteredExpenses.length === 0 ? (
-                  <p className="text-[11px] font-semibold text-slate-400 text-center py-6">Aucune dépense enregistrée.</p>
+                  <p className="text-xs font-semibold text-slate-400 text-center py-10">Aucune dépense active.</p>
                 ) : filteredExpenses.map((ex, i) => (
-                  <div key={ex.id || i} className="flex justify-between items-start p-3 bg-slate-50 rounded-xl border border-slate-100 hover:border-slate-200 transition-all hover:shadow-sm">
-                    <div className="min-w-0 flex-1 pr-2">
-                      <p className="text-[11px] font-bold text-slate-900 truncate">{ex.description}</p>
+                  <div key={ex.id || i} className="p-4 flex items-center justify-between gap-3 hover:bg-slate-50/70 transition">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-900 truncate">{ex.description}</p>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[9px] font-semibold bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full">
+                        <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">
                           {ex.category || 'Autre'}
                         </span>
-                        <span className="text-[9px] text-slate-400">{formatDate(ex.created_at)}</span>
+                        <span className="text-[11px] text-slate-400 font-medium">{formatDate(ex.created_at)}</span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 ml-2">
-                      <span className="text-[11px] font-black text-rose-600 whitespace-nowrap">{(Number(ex.amount) || 0).toLocaleString()} F</span>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="text-xs font-black text-rose-600 whitespace-nowrap">
+                        -{(Number(ex.amount) || 0).toLocaleString()} F
+                      </span>
                       {!isReadOnly && (
                         <button
                           onClick={() => handleDeleteExpense(ex.id || '')}
-                          className="p-1.5 hover:bg-rose-50 rounded-lg transition-colors"
-                          title="Supprimer"
+                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                          title="Mettre à la corbeille"
                         >
-                          <Trash2 size={12} className="text-slate-400 hover:text-rose-600" />
+                          <Trash2 size={13} />
                         </button>
                       )}
                     </div>
@@ -870,77 +942,76 @@ export default function CFODashboardImproved() {
             </div>
           </div>
 
-          {/* SECTION : STUDENTS (placeholder) */}
-          <div className={`lg:col-span-7 px-4 sm:px-0 ${activeTab === 'students' ? 'block' : 'hidden sm:block'}`}>
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-              <p className="text-[11px] font-semibold text-slate-400 text-center">Section Élèves à configurer</p>
+        </div>
+      )}
+
+      {/* 6. CONTENU DU MODULE : CORBEILLE DES DÉPENSES */}
+      {activeTab === 'trash' && (
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+          <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 uppercase">Corbeille des écritures supprimées</h3>
+              <p className="text-xs text-slate-500 font-medium">Restauration en un clic ou suppression définitive</p>
+            </div>
+            <div className="relative w-full sm:w-60">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+              <input 
+                type="text" 
+                placeholder="Filtrer la corbeille..."
+                className="w-full pl-9 pr-3 py-1.5 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold outline-none focus:bg-white focus:border-blue-600 transition"
+                value={expenseSearchTerm} 
+                onChange={(e) => setExpenseSearchTerm(e.target.value)}
+              />
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Modal Corbeille */}
-      {showTrashModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center">
-              <h2 className="text-[12px] font-black uppercase text-slate-900 tracking-widest">Corbeille des Dépenses</h2>
-              <button
-                onClick={() => setShowTrashModal(false)}
-                className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
-              >
-                <X size={18} className="text-slate-600" />
-              </button>
-            </div>
-            
-            <div className="p-4">
-              {deletedExpenses.length === 0 ? (
-                <p className="text-[11px] font-semibold text-slate-400 text-center py-8">Aucune dépense supprimée.</p>
-              ) : (
-                <div className="space-y-2">
-                  {deletedExpenses.map((ex, i) => (
-                    <div key={ex.id || i} className="flex justify-between items-start p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="min-w-0 flex-1 pr-2">
-                        <p className="text-[11px] font-bold text-slate-900 truncate">{ex.description}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-[9px] font-semibold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full">
-                            {ex.category || 'Autre'}
-                          </span>
-                          <span className="text-[9px] text-slate-400">Supprimée : {formatDate(ex.deleted_at)}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 ml-2">
-                        <span className="text-[11px] font-black text-slate-600 whitespace-nowrap">{(Number(ex.amount) || 0).toLocaleString()} F</span>
-                        {!isReadOnly && (
-                          <>
-                            <button
-                              onClick={() => {
-                                handleRestoreExpense(ex.id || '');
-                                setShowTrashModal(false);
-                              }}
-                              className="p-1.5 hover:bg-green-50 rounded-lg transition-colors"
-                              title="Restaurer"
-                            >
-                              <RotateCcw size={12} className="text-slate-400 hover:text-green-600" />
-                            </button>
-                            <button
-                              onClick={() => handlePermanentDelete(ex.id || '')}
-                              className="p-1.5 hover:bg-rose-50 rounded-lg transition-colors"
-                              title="Supprimer définitivement"
-                            >
-                              <X size={12} className="text-slate-400 hover:text-rose-600" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+          <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
+            {filteredDeletedExpenses.length === 0 ? (
+              <p className="text-xs font-semibold text-slate-400 text-center py-10">La corbeille est vide.</p>
+            ) : filteredDeletedExpenses.map((ex, i) => (
+              <div key={ex.id || i} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 transition">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold text-slate-600 line-through truncate">{ex.description}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
+                      {ex.category || 'Autre'}
+                    </span>
+                    <span className="text-[11px] text-slate-400">Supprimé le : {formatDate(ex.deleted_at)}</span>
+                  </div>
                 </div>
-              )}
-            </div>
+
+                <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                  <span className="text-xs font-bold text-slate-500">
+                    {(Number(ex.amount) || 0).toLocaleString()} F
+                  </span>
+
+                  {!isReadOnly && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => handleRestoreExpense(ex.id || '')}
+                        className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-bold flex items-center gap-1 transition"
+                        title="Restaurer"
+                      >
+                        <RotateCcw size={12} />
+                        <span>Restaurer</span>
+                      </button>
+                      <button
+                        onClick={() => handlePermanentDelete(ex.id || '')}
+                        className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-bold flex items-center gap-1 transition"
+                        title="Détruire définitivement"
+                      >
+                        <Trash2 size={12} />
+                        <span>Détruire</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
+
     </div>
   );
 }

@@ -42,23 +42,22 @@ function getLocalCache(cacheKey: string): Promise<any | null> {
     });
   }).catch(() => null);
 }
+
 async function setLocalCache(cacheKey: string, data: any): Promise<void> {
   try {
     const db = await initIndexedDB();
-
     const transaction = db.transaction('recouvrement_cache', 'readwrite');
     const store = transaction.objectStore('recouvrement_cache');
-
     store.put({ cacheKey, data, updatedAt: Date.now() });
-
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve) => {
       transaction.oncomplete = () => resolve();
-      transaction.onerror = () => resolve(); // ou reject si tu veux stricter
+      transaction.onerror = () => resolve();
     });
   } catch {
-    // silent fail volontaire
+    // silent fail
   }
 }
+
 // ==========================================
 // TYPES
 // ==========================================
@@ -86,11 +85,7 @@ type ProcessedStudent = StudentWithPayment & {
   reliquatGlobal: number;
 };
 
-// ==========================================
-// UTILITAIRES FORMATAGE
-// ==========================================
 function formatMontant(val: number): string {
-  // Formatage sans séparateur /  — utiliser l'espace fine insécable unicode
   return val.toLocaleString('fr-FR').replace(/\u202F/g, '\u00A0');
 }
 
@@ -123,9 +118,8 @@ async function generateRapportPDF(
   const contentW = pageW - marginL - marginR;
   const today = todayFR();
 
-  // ---- Couleurs palette ----
-  const indigo = [67, 56, 202] as [number, number, number];
-  const indigoLight = [238, 242, 255] as [number, number, number];
+  const blue = [37, 99, 235] as [number, number, number];
+  const blueLight = [239, 246, 255] as [number, number, number];
   const slate900 = [15, 23, 42] as [number, number, number];
   const slate600 = [71, 85, 105] as [number, number, number];
   const slate200 = [226, 232, 240] as [number, number, number];
@@ -133,37 +127,30 @@ async function generateRapportPDF(
   const rose = [225, 29, 72] as [number, number, number];
   const amber = [180, 83, 9] as [number, number, number];
 
-  // ---- EN-TÊTE PRINCIPAL ----
-  // Bandeau indigo haut
-  doc.setFillColor(...indigo);
+  doc.setFillColor(...blue);
   doc.rect(0, 0, pageW, 42, 'F');
 
-  // Nom de l'école (dynamique)
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(16);
   doc.text(schoolName.toUpperCase(), marginL, 14);
 
-  // Sous-titre rapport
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
-  doc.setTextColor(199, 210, 254);
+  doc.setTextColor(219, 234, 254);
   doc.text('RAPPORT DE RECOUVREMENT DES FRAIS DE SCOLARITÉ', marginL, 21);
 
-  // Classe + Tranche
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(255, 255, 255);
   doc.text(`Classe : ${activeClassName}  —  Tranche N°${selectedTranche}`, marginL, 30);
 
-  // Année & date à droite
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.setTextColor(199, 210, 254);
+  doc.setTextColor(219, 234, 254);
   doc.text(`Année : ${selectedYear}`, pageW - marginR, 14, { align: 'right' });
   doc.text(`Édité le ${today}`, pageW - marginR, 20, { align: 'right' });
 
-  // Filtre actif
   const filterLabels: Record<string, string> = {
     all: 'Tous les élèves',
     EN_RETARD: 'En retard uniquement',
@@ -173,10 +160,9 @@ async function generateRapportPDF(
   };
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(7.5);
-  doc.setTextColor(199, 210, 254);
+  doc.setTextColor(219, 234, 254);
   doc.text(`Filtre appliqué : ${filterLabels[statusFilter] || statusFilter}`, marginL, 38);
 
-  // ---- BLOC STATISTIQUES (4 cartes) ----
   let y = 52;
   const cardW = (contentW - 9) / 4;
 
@@ -184,27 +170,23 @@ async function generateRapportPDF(
     { label: 'Attendu (T' + selectedTranche + ')', value: formatMontant(stats.globalAttendu) + ' FCFA', color: slate900 },
     { label: 'Perçu sur Tranche', value: formatMontant(stats.globalPercu) + ' FCFA', color: emerald },
     { label: 'Reste à recouvrer', value: formatMontant(stats.resteRecouvrer) + ' FCFA', color: rose },
-    { label: 'Taux de recouvrement', value: stats.tauxRecouvrement.toFixed(1) + '%', color: indigo },
+    { label: 'Taux recouvrement', value: stats.tauxRecouvrement.toFixed(1) + '%', color: blue },
   ];
 
   statCards.forEach((card, i) => {
     const x = marginL + i * (cardW + 3);
-    // Fond carte
-    doc.setFillColor(...indigoLight);
+    doc.setFillColor(...blueLight);
     doc.roundedRect(x, y, cardW, 18, 2, 2, 'F');
-    // Libellé
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6.5);
     doc.setTextColor(...slate600);
     doc.text(card.label.toUpperCase(), x + 3, y + 6);
-    // Valeur
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(...card.color);
     doc.text(card.value, x + 3, y + 14);
   });
 
-  // Comptage par statut
   y += 24;
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
@@ -214,18 +196,17 @@ async function generateRapportPDF(
     marginL, y
   );
 
-  // ---- TABLEAU DES ÉLÈVES ----
   y += 6;
 
   const statusLabel = (s: string) => {
     if (s === 'TOTALEMENT_SOLDE') return 'Année Soldée';
     if (s === 'EN_REGLE') return 'En règle';
-    if (s === 'INCOMPLET') return 'Tranche Incomplète';
+    if (s === 'INCOMPLET') return 'Incomplet';
     return 'En retard';
   };
 
   const statusColor = (s: string): [number, number, number] => {
-    if (s === 'TOTALEMENT_SOLDE') return indigo;
+    if (s === 'TOTALEMENT_SOLDE') return blue;
     if (s === 'EN_REGLE') return emerald;
     if (s === 'INCOMPLET') return amber;
     return rose;
@@ -256,7 +237,7 @@ async function generateRapportPDF(
       lineWidth: 0.3,
     },
     headStyles: {
-      fillColor: indigo,
+      fillColor: blue,
       textColor: [255, 255, 255],
       fontStyle: 'bold',
       fontSize: 7.5,
@@ -278,12 +259,10 @@ async function generateRapportPDF(
       if (data.column.index === 6 && data.section === 'body') {
         const student = filteredStudents[data.row.index];
         if (student) {
-          const col = statusColor(student.statutTranche);
-          data.cell.styles.textColor = col;
+          data.cell.styles.textColor = statusColor(student.statutTranche);
           data.cell.styles.fontStyle = 'bold';
         }
       }
-      // Colorier colonne "Reste" en rouge si > 0
       if (data.column.index === 5 && data.section === 'body') {
         const student = filteredStudents[data.row.index];
         if (student && student.resteAFinancerTranche > 0) {
@@ -295,7 +274,6 @@ async function generateRapportPDF(
     },
   });
 
-  // ---- PIED DE PAGE sur chaque page ----
   const totalPages = (doc as any).internal.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
@@ -314,7 +292,7 @@ async function generateRapportPDF(
 }
 
 // ==========================================
-// GÉNÉRATION PDF — AVIS AUX PARENTS (découpables, 8 par page)
+// GÉNÉRATION PDF — AVIS AUX PARENTS (8 par page)
 // ==========================================
 async function generateAvisPDF(
   avisStudents: ProcessedStudent[],
@@ -331,22 +309,20 @@ async function generateAvisPDF(
   }
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const pageW = doc.internal.pageSize.getWidth();  // 210mm
-  const pageH = doc.internal.pageSize.getHeight(); // 297mm
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
   const today = todayFR();
 
-  // 8 avis par page : 2 colonnes × 4 lignes
   const cols = 2;
   const rows = 4;
-  const marginX = 8;   // marge gauche/droite page
-  const marginY = 8;   // marge haut/bas page
-  const gapX = 6;      // gouttière horizontale entre colonnes
-  const gapY = 5;      // gouttière verticale entre lignes
+  const marginX = 8;
+  const marginY = 8;
+  const gapX = 6;
+  const gapY = 5;
 
-  const avisW = (pageW - marginX * 2 - gapX) / cols;               // ~94mm
-  const avisH = (pageH - marginY * 2 - gapY * (rows - 1)) / rows;  // ~65mm
+  const avisW = (pageW - marginX * 2 - gapX) / cols;
+  const avisH = (pageH - marginY * 2 - gapY * (rows - 1)) / rows;
 
-  // Précalcul des positions (x, y) des 8 slots par page
   const positions: { x: number; y: number }[] = [];
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -357,15 +333,13 @@ async function generateAvisPDF(
     }
   }
 
-  // Palette
-  const indigo    = [67, 56, 202]   as [number, number, number];
-  const rose      = [225, 29, 72]   as [number, number, number];
-  const emerald   = [5, 150, 105]   as [number, number, number];
-  const slate900  = [15, 23, 42]    as [number, number, number];
-  const slate600  = [71, 85, 105]   as [number, number, number];
-  const slate200  = [226, 232, 240] as [number, number, number];
-  const amber50   = [255, 251, 235] as [number, number, number];
-  const amberBdr  = [217, 119, 6]   as [number, number, number];
+  const blue = [37, 99, 235] as [number, number, number];
+  const rose = [225, 29, 72] as [number, number, number];
+  const slate900 = [15, 23, 42] as [number, number, number];
+  const slate600 = [71, 85, 105] as [number, number, number];
+  const slate200 = [226, 232, 240] as [number, number, number];
+  const amber50 = [255, 251, 235] as [number, number, number];
+  const amberBdr = [217, 119, 6] as [number, number, number];
 
   let posIdx = 0;
   let firstPage = true;
@@ -373,31 +347,27 @@ async function generateAvisPDF(
   for (let i = 0; i < avisStudents.length; i++) {
     const student = avisStudents[i];
 
-    // Nouvelle page tous les 8 avis
     if (posIdx === 0 && !firstPage) doc.addPage();
     firstPage = false;
 
     const { x, y } = positions[posIdx];
 
-    // ---- Bordure + fond blanc ----
     doc.setFillColor(255, 255, 255);
     doc.setDrawColor(...slate200);
     doc.setLineWidth(0.35);
     doc.roundedRect(x, y, avisW, avisH, 2, 2, 'FD');
 
-    // Trait de coupe pointillé
     doc.setDrawColor(185, 185, 185);
     doc.setLineWidth(0.15);
     doc.setLineDashPattern([1.2, 1.2], 0);
     doc.roundedRect(x - 0.8, y - 0.8, avisW + 1.6, avisH + 1.6, 2, 2, 'D');
     doc.setLineDashPattern([], 0);
 
-    // ---- Bandeau en-tête indigo ----
     const headerH = 13;
-    doc.setFillColor(...indigo);
+    doc.setFillColor(...blue);
     doc.roundedRect(x, y, avisW, headerH, 2, 2, 'F');
-    doc.setFillColor(...indigo);
-    doc.rect(x, y + headerH - 3, avisW, 3, 'F'); // aplat coins bas
+    doc.setFillColor(...blue);
+    doc.rect(x, y + headerH - 3, avisW, 3, 'F');
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(6.5);
@@ -406,20 +376,16 @@ async function generateAvisPDF(
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(5);
-    doc.setTextColor(199, 210, 254);
+    doc.setTextColor(219, 234, 254);
     doc.text('AVIS DE RECOUVREMENT — À REMETTRE AUX PARENTS / TUTEURS', x + 3, y + 10);
 
-    // Année scolaire à droite du bandeau
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(5);
-    doc.setTextColor(199, 210, 254);
+    doc.setTextColor(219, 234, 254);
     doc.text(String(selectedYear), x + avisW - 3, y + 5.5, { align: 'right' });
-    
 
-    // ---- Corps ----
     let cy = y + headerH + 3.5;
 
-    // Titre "AVIS DE PAIEMENT"
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7);
     doc.setTextColor(...slate900);
@@ -437,7 +403,6 @@ async function generateAvisPDF(
     doc.line(x + 3, cy, x + avisW - 3, cy);
 
     cy += 3.5;
-    // Nom élève centré
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
     doc.setTextColor(...slate900);
@@ -445,7 +410,6 @@ async function generateAvisPDF(
     doc.text(nomComplet, x + avisW / 2, cy, { align: 'center' });
 
     cy += 4.5;
-    // Bloc financier (fond amber)
     const blocH = 17;
     doc.setFillColor(...amber50);
     doc.setDrawColor(...amberBdr);
@@ -453,14 +417,14 @@ async function generateAvisPDF(
     doc.roundedRect(x + 3, cy, avisW - 6, blocH, 1.5, 1.5, 'FD');
 
     const colLabel = x + 5;
-    const colVal   = x + avisW - 5;
+    const colVal = x + avisW - 5;
     const lh = 4.8;
     cy += 4;
 
     const rows2 = [
       { label: `Montant Tranche N°${selectedTranche}`, value: formatMontant(student.montantParTranche) + ' FCFA', highlight: false },
-      { label: 'Total versé à ce jour',               value: formatMontant(student.scolarite_payee)    + ' FCFA', highlight: false },
-      { label: 'Reste dû (cette tranche)',             value: formatMontant(student.resteAFinancerTranche) + ' FCFA', highlight: true  },
+      { label: 'Total versé à ce jour', value: formatMontant(student.scolarite_payee) + ' FCFA', highlight: false },
+      { label: 'Reste dû (cette tranche)', value: formatMontant(student.resteAFinancerTranche) + ' FCFA', highlight: true },
     ];
 
     rows2.forEach(row => {
@@ -471,13 +435,12 @@ async function generateAvisPDF(
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(6);
-     doc.setTextColor(row.highlight ? 244 : 15, row.highlight ? 63 : 23, row.highlight ? 94 : 42)
+      doc.setTextColor(row.highlight ? 225 : 15, row.highlight ? 29 : 23, row.highlight ? 72 : 42);
       doc.text(row.value, colVal, cy, { align: 'right' });
       cy += lh;
     });
 
     cy += 2;
-    // Badge statut
     const statutText = student.statutTranche === 'INCOMPLET'
       ? 'PAIEMENT PARTIEL — COMPLÉTER SANS DÉLAI'
       : 'PAIEMENT NON EFFECTUÉ — RÉGULARISATION URGENTE';
@@ -489,7 +452,6 @@ async function generateAvisPDF(
     doc.text(statutText, x + avisW / 2, cy + 4, { align: 'center' });
 
     cy += 8.5;
-    // Message court
     doc.setFont('helvetica', 'italic');
     doc.setFontSize(4.8);
     doc.setTextColor(...slate600);
@@ -498,7 +460,6 @@ async function generateAvisPDF(
     doc.text(msgLines, x + avisW / 2, cy, { align: 'center' });
 
     cy += msgLines.length * 3.2 + 2;
-    // Ligne signature
     doc.setDrawColor(...slate200);
     doc.setLineWidth(0.2);
     doc.line(x + 3, cy, x + avisW / 2 - 2, cy);
@@ -510,16 +471,13 @@ async function generateAvisPDF(
     posIdx = (posIdx + 1) % 8;
   }
 
-  // ---- Traits de coupe globaux sur chaque page ----
   const totalPages = (doc as any).internal.getNumberOfPages();
   for (let p = 1; p <= totalPages; p++) {
     doc.setPage(p);
     doc.setDrawColor(185, 185, 185);
     doc.setLineWidth(0.15);
     doc.setLineDashPattern([2, 2], 0);
-    // Trait vertical central
     doc.line(pageW / 2, 4, pageW / 2, pageH - 4);
-    // 3 traits horizontaux (entre les 4 lignes)
     for (let r = 1; r < rows; r++) {
       const tyLine = marginY + r * (avisH + gapY) - gapY / 2;
       doc.line(4, tyLine, pageW - 4, tyLine);
@@ -537,14 +495,14 @@ async function generateAvisPDF(
 }
 
 // ==========================================
-// COMPOSANT PRINCIPAL AVEC SUSPENSE
+// COMPOSANT PRINCIPAL
 // ==========================================
 export default function RecouvrementPage() {
   return (
     <Suspense fallback={
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-slate-500 gap-4">
-        <Loader2 className="animate-spin text-indigo-600" size={32} />
-        <p className="font-bold animate-pulse text-xs uppercase tracking-widest">Chargement du module recouvrement...</p>
+      <div className="flex flex-col items-center justify-center min-h-[50vh] text-slate-500 gap-3">
+        <Loader2 className="animate-spin text-blue-600" size={28} />
+        <p className="font-bold text-xs uppercase tracking-widest text-slate-500">Chargement du module recouvrement...</p>
       </div>
     }>
       <RecouvrementContent />
@@ -574,7 +532,6 @@ function RecouvrementContent() {
 
   const { selectedYearId, selectedYear, isReadOnly } = useYear();
 
-  // Fermer le menu export au clic extérieur
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
@@ -585,7 +542,6 @@ function RecouvrementContent() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Récupération du nom de l'école depuis la table schools
   useEffect(() => {
     async function loadSchoolName() {
       try {
@@ -602,7 +558,6 @@ function RecouvrementContent() {
     loadSchoolName();
   }, []);
 
-  // Chargement des classes
   useEffect(() => {
     async function loadClasses() {
       if (!selectedYearId) return;
@@ -631,7 +586,6 @@ function RecouvrementContent() {
     loadClasses();
   }, [selectedYearId]);
 
-  // Chargement des élèves
   const fetchStudents = useCallback(async () => {
     if (!selectedYearId || !classFilter) {
       setStudents([]);
@@ -686,13 +640,8 @@ function RecouvrementContent() {
     return classes.find(c => c.id === classFilter)?.name || '';
   }, [classes, classFilter]);
 
-  // ====================================
-  // LOGIQUE COEUR : CALCUL PAR TRANCHE
-  // ====================================
   const processedStudents = useMemo((): ProcessedStudent[] => {
     return students
-      // Exclure les élèves dont le plan de paiement ne comporte pas la tranche sélectionnée
-      // Ex: un élève en 1 tranche n'apparaît PAS dans Tranche 2, 3 ou 4
       .filter(student => {
         const totalTranches = student.payment_plan_tranches || 3;
         return totalTranches >= selectedTranche;
@@ -703,25 +652,19 @@ function RecouvrementContent() {
         const totalTranches = student.payment_plan_tranches || 3;
         const montantParTranche = totalTranches > 0 ? total / totalTranches : total;
 
-        // Cumul théorique attendu au seuil de la tranche sélectionnée
         const montantAttenduPourTrancheSelectionnee = montantParTranche * selectedTranche;
-        // Cumul théorique attendu à la tranche précédente
         const montantAttenduTranchePrecedente = montantParTranche * (selectedTranche - 1);
 
         let statutTranche = 'EN_RETARD';
         let resteAFinancerTranche = Math.max(0, montantAttenduPourTrancheSelectionnee - paye);
 
         if (paye >= total) {
-          // A soldé l'intégralité de l'année
           statutTranche = 'TOTALEMENT_SOLDE';
         } else if (paye >= montantAttenduPourTrancheSelectionnee) {
-          // À jour ou en avance sur le cumul de cette tranche
           statutTranche = 'EN_REGLE';
         } else if (paye > montantAttenduTranchePrecedente && paye < montantAttenduPourTrancheSelectionnee) {
-          // A versé quelque chose pour cette tranche mais pas le total requis
           statutTranche = 'INCOMPLET';
         } else {
-          // Versement cumulé n'a pas dépassé le seuil de la tranche précédente → rien pour cette tranche
           statutTranche = 'EN_RETARD';
         }
 
@@ -769,8 +712,6 @@ function RecouvrementContent() {
     return { retardCount, incompletCount, regleCount, soldeCount, globalAttendu, globalPercu, resteRecouvrer, tauxRecouvrement };
   }, [processedStudents]);
 
-  // Élèves pour les avis parents = filteredStudents restreints aux statuts impayés
-  // Respecte donc la recherche ET le filtre statut actif
   const retardStudents = useMemo(() => {
     return filteredStudents.filter(s => s.statutTranche === 'EN_RETARD' || s.statutTranche === 'INCOMPLET');
   }, [filteredStudents]);
@@ -789,149 +730,146 @@ function RecouvrementContent() {
     window.open(whatsappUrl, '_blank');
   };
 
- const handleExportRapport = async () => {
-  setExportMenuOpen(false);
-  setExportingRapport(true);
-  try {
-    await generateRapportPDF(
-      filteredStudents,
-      stats,
-      activeClassName,
-      selectedTranche,
-      statusFilter,
-      schoolName,
-      String(selectedYear?.id || '')
-    );
-  } finally {
-    setExportingRapport(false);
-  }
-};
+  const handleExportRapport = async () => {
+    setExportMenuOpen(false);
+    setExportingRapport(true);
+    try {
+      await generateRapportPDF(
+        filteredStudents,
+        stats,
+        activeClassName,
+        selectedTranche,
+        statusFilter,
+        schoolName,
+        String(selectedYear?.id || '')
+      );
+    } finally {
+      setExportingRapport(false);
+    }
+  };
 
-const handleExportAvis = async () => {
-  setExportMenuOpen(false);
-  setExportingAvis(true);
-  try {
-    await generateAvisPDF(
-      retardStudents,
-      activeClassName,
-      selectedTranche,
-      schoolName,
-      String(selectedYear?.id || '')
-    );
-  } finally {
-    setExportingAvis(false);
-  }
-};
+  const handleExportAvis = async () => {
+    setExportMenuOpen(false);
+    setExportingAvis(true);
+    try {
+      await generateAvisPDF(
+        retardStudents,
+        activeClassName,
+        selectedTranche,
+        schoolName,
+        String(selectedYear?.id || '')
+      );
+    } finally {
+      setExportingAvis(false);
+    }
+  };
 
-  // ---- Badge statut ----
   const StatutBadge = ({ statut }: { statut: string }) => {
     const configs: Record<string, { label: string; cls: string }> = {
-      TOTALEMENT_SOLDE: { label: 'Année Soldée ✓', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+      TOTALEMENT_SOLDE: { label: 'Année Soldée ✓', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
       EN_REGLE: { label: 'En règle', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-      INCOMPLET: { label: 'Incomplet', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-      EN_RETARD: { label: 'En retard !', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
+      INCOMPLET: { label: 'Incomplet', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
+      EN_RETARD: { label: 'En retard', cls: 'bg-rose-50 text-rose-700 border-rose-200' },
     };
     const cfg = configs[statut] || configs['EN_RETARD'];
     return (
-      <span className={`px-2 py-0.5 text-[9px] font-black uppercase rounded-md border ${cfg.cls} whitespace-nowrap`}>
+      <span className={`px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-md border ${cfg.cls} whitespace-nowrap`}>
         {cfg.label}
       </span>
     );
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 space-y-4 pb-28 pt-4">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6 antialiased text-slate-900 font-sans pb-28">
 
-      {/* ======== EN-TÊTE ======== */}
-      <div className="flex items-start justify-between gap-3">
+      {/* 1. EN-TÊTE ÉPURÉ & PLAT */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
         <div>
-          <h1 className="text-base sm:text-xl font-black text-slate-900 uppercase flex items-center gap-2 tracking-tight">
-            <Layers className="text-indigo-600 shrink-0" size={22} />
-            <span>Recouvrement</span>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Recouvrement & Scolarité</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">
+            Suivi des Échéances
           </h1>
-          <p className="text-[10px] text-slate-500 font-medium mt-0.5 hidden sm:block">
-            Suivi des tranches de paiement, filtrage des impayés et relances parentales directes.
-          </p>
         </div>
 
-        {/* Bouton export — visible seulement si classe sélectionnée */}
         {classFilter && (
           <div className="relative shrink-0" ref={exportMenuRef}>
             <button
               onClick={() => setExportMenuOpen(v => !v)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wide shadow-sm shadow-indigo-500/20 transition-all"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs"
             >
               <Download size={14} />
-              <span className="hidden sm:inline">Exporter</span>
-              <ChevronDown size={12} className={`transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
+              <span>Exporter</span>
+              <ChevronDown size={13} className={`transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {exportMenuOpen && (
-              <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-200/60 overflow-hidden z-50">
-                <div className="p-2 space-y-1">
-                  <button
-                    onClick={handleExportRapport}
-                    disabled={exportingRapport}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-indigo-50 transition-colors text-left group"
-                  >
-                    <div className="h-9 w-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
-                      {exportingRapport ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
-                    </div>
-                    <div>
-                      <p className="text-xs font-black text-slate-900 group-hover:text-indigo-700">Rapport de recouvrement</p>
-                      <p className="text-[10px] text-slate-500">Tableau filtré — PDF A4</p>
-                    </div>
-                  </button>
+              <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 space-y-1 z-50 animate-in fade-in duration-100">
+                <button
+                  onClick={handleExportRapport}
+                  disabled={exportingRapport}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-blue-50 text-left transition disabled:opacity-50"
+                >
+                  <div className="h-8 w-8 rounded-lg bg-blue-50 text-blue-700 border border-blue-100 flex items-center justify-center shrink-0">
+                    {exportingRapport ? <Loader2 size={14} className="animate-spin" /> : <FileText size={15} />}
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900">Rapport complet</p>
+                    <p className="text-[10px] text-slate-500 font-medium">Tableau A4 filtré</p>
+                  </div>
+                </button>
 
-                  <button
-                    onClick={handleExportAvis}
-                    disabled={exportingAvis}
-                    className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-rose-50 transition-colors text-left group"
-                  >
-                    <div className="h-9 w-9 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
-                      {exportingAvis ? <Loader2 size={16} className="animate-spin" /> : <Bell size={16} />}
-                    </div>
-                    <div>
-                      <p className="text-xs font-black text-slate-900 group-hover:text-rose-700">Avis aux parents</p>
-                      <p className="text-[10px] text-slate-500">{retardStudents.length} élève(s) selon filtre actif — 8 par page</p>
-                    </div>
-                  </button>
-                </div>
+                <button
+                  onClick={handleExportAvis}
+                  disabled={exportingAvis}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-rose-50 text-left transition disabled:opacity-50"
+                >
+                  <div className="h-8 w-8 rounded-lg bg-rose-50 text-rose-700 border border-rose-100 flex items-center justify-center shrink-0">
+                    {exportingAvis ? <Loader2 size={14} className="animate-spin" /> : <Bell size={15} />}
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900">Avis aux parents</p>
+                    <p className="text-[10px] text-slate-500 font-medium">{retardStudents.length} élèves concernés (8/page)</p>
+                  </div>
+                </button>
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* ======== SÉLECTION CLASSE — DESKTOP ======== */}
-      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/60 shadow-sm space-y-3">
-        <label className="text-[10px] font-black uppercase text-indigo-600 tracking-widest flex items-center gap-1.5">
-          <GraduationCap size={13} /> Classe à analyser
+      {/* 2. SÉLECTION DES CLASSES (STYLE PLAT) */}
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 space-y-3">
+        <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+          <GraduationCap size={14} className="text-blue-600" />
+          <span>Sélectionner la classe</span>
         </label>
 
-        {/* Mobile : dropdown élégant */}
+        {/* Mobile dropdown */}
         <div className="sm:hidden">
           <button
             onClick={() => setMobileClassOpen(v => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800"
+            className="w-full flex items-center justify-between px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800"
           >
             <span>{activeClassName || 'Choisir une classe...'}</span>
-            <ChevronDown size={16} className={`text-slate-400 transition-transform ${mobileClassOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown size={14} className={`text-slate-400 transition-transform ${mobileClassOpen ? 'rotate-180' : ''}`} />
           </button>
 
           {mobileClassOpen && (
-            <div className="mt-2 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-64 overflow-y-auto">
+            <div className="mt-2 bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
               {loadingClasses ? (
-                <div className="p-4 flex items-center gap-2 text-xs text-slate-500">
-                  <Loader2 size={14} className="animate-spin text-indigo-600" /> Chargement...
+                <div className="p-4 flex items-center gap-2 text-xs text-slate-400 font-medium">
+                  <Loader2 size={14} className="animate-spin text-blue-600" /> Chargement...
                 </div>
               ) : (
                 classes.map(c => (
                   <button
                     key={c.id}
                     onClick={() => handleClassSelect(c.id)}
-                    className={`w-full text-left px-4 py-3 text-sm font-bold border-b border-slate-100 last:border-0 transition-colors ${
-                      c.id === classFilter ? 'bg-indigo-600 text-white' : 'text-slate-800 hover:bg-slate-50'
+                    className={`w-full text-left px-4 py-2.5 text-xs font-bold border-b border-slate-100 last:border-0 ${
+                      c.id === classFilter ? 'bg-blue-600 text-white' : 'text-slate-800 hover:bg-slate-50'
                     }`}
                   >
                     {c.name}
@@ -942,10 +880,10 @@ const handleExportAvis = async () => {
           )}
         </div>
 
-        {/* Desktop : grille de boutons */}
+        {/* Desktop boutons plats */}
         {loadingClasses ? (
-          <div className="hidden sm:flex items-center gap-2 py-2 text-xs font-medium text-slate-500">
-            <Loader2 className="animate-spin text-indigo-600" size={16} /> Chargement des classes...
+          <div className="hidden sm:flex items-center gap-2 py-2 text-xs text-slate-400 font-medium">
+            <Loader2 className="animate-spin text-blue-600" size={15} /> Chargement des classes...
           </div>
         ) : (
           <div className="hidden sm:grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
@@ -955,10 +893,10 @@ const handleExportAvis = async () => {
                 <button
                   key={c.id}
                   onClick={() => handleClassSelect(c.id)}
-                  className={`p-3 rounded-xl font-black text-xs uppercase tracking-wide border transition-all text-center ${
+                  className={`py-2 px-3 rounded-xl font-bold text-xs uppercase tracking-wide border transition text-center ${
                     isSelected
-                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/10'
-                      : 'bg-slate-50 text-slate-700 border-slate-200/60 hover:bg-slate-100 hover:border-slate-300'
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                      : 'bg-slate-50 text-slate-700 border-slate-200/80 hover:bg-slate-100 hover:border-slate-300'
                   }`}
                 >
                   {c.name}
@@ -969,96 +907,88 @@ const handleExportAvis = async () => {
         )}
       </div>
 
-      {/* ======== CONTENU SI CLASSE SÉLECTIONNÉE ======== */}
+      {/* 3. CONTENU PRINCIPAL SI CLASSE SÉLECTIONNÉE */}
       {!classFilter ? (
-        <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-12 text-center">
-          <Filter className="mx-auto text-slate-300 mb-3" size={32} />
+        <div className="bg-white border border-dashed border-slate-200 rounded-2xl p-12 text-center">
+          <Filter className="mx-auto text-slate-300 mb-2" size={28} />
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            Choisissez une classe ci-dessus pour démarrer l'analyse.
+            Sélectionnez une classe ci-dessus pour afficher le recouvrement.
           </p>
         </div>
       ) : (
         <>
-          {/* ======== SÉLECTEUR TRANCHE (dynamique selon plans de la classe) ======== */}
+          {/* SÉLECTEUR DE TRANCHE */}
           {(() => {
-            // Nombre max de tranches parmi les élèves de la classe (max 4)
             const maxTranches = students.length > 0
               ? Math.min(Math.max(...students.map(s => s.payment_plan_tranches || 3)), 4)
               : 4;
             return (
-              <div className="bg-white p-4 rounded-2xl border border-slate-200/60 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Tranche à auditer</p>
-                    <p className="text-sm font-bold text-slate-700 mt-0.5">
-                      Classe : <span className="text-indigo-600 font-extrabold uppercase">{activeClassName}</span>
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
-                    {Array.from({ length: maxTranches }, (_, i) => i + 1).map(t => (
-                      <button
-                        key={t}
-                        onClick={() => setSelectedTranche(t)}
-                        className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${
-                          selectedTranche === t ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-900'
-                        }`}
-                      >
-                        T{t}
-                      </button>
-                    ))}
-                  </div>
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block">Échéance analysée</span>
+                  <p className="text-sm font-bold text-slate-900 mt-0.5">
+                    Classe : <span className="text-blue-600 font-extrabold uppercase">{activeClassName}</span>
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
+                  {Array.from({ length: maxTranches }, (_, i) => i + 1).map(t => (
+                    <button
+                      key={t}
+                      onClick={() => setSelectedTranche(t)}
+                      className={`px-4 py-1.5 rounded-lg text-xs font-extrabold uppercase tracking-wider transition ${
+                        selectedTranche === t 
+                          ? 'bg-white text-blue-600 shadow-xs' 
+                          : 'text-slate-600 hover:text-slate-950'
+                      }`}
+                    >
+                      Tranche {t}
+                    </button>
+                  ))}
                 </div>
               </div>
             );
           })()}
 
-          {/* ======== STATS CARDS (scroll horizontal mobile) ======== */}
-          <div className="flex gap-3 overflow-x-auto pb-1 -mx-3 px-3 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-4 snap-x snap-mandatory">
-            {[
-              {
-                icon: <DollarSign size={18} />, iconBg: 'bg-slate-100 text-slate-700',
-                label: `Attendu (T${selectedTranche})`, value: formatMontant(stats.globalAttendu), unit: 'FCFA',
-                valClass: 'text-slate-900'
-              },
-              {
-                icon: <CheckCircle size={18} />, iconBg: 'bg-emerald-50 text-emerald-600',
-                label: 'Perçu sur Tranche', value: formatMontant(stats.globalPercu), unit: 'FCFA',
-                valClass: 'text-emerald-600'
-              },
-              {
-                icon: <AlertTriangle size={18} />, iconBg: 'bg-rose-50 text-rose-600',
-                label: 'Reste à recouvrer', value: formatMontant(stats.resteRecouvrer), unit: 'FCFA',
-                valClass: 'text-rose-600'
-              },
-              {
-                icon: <TrendingUp size={18} />, iconBg: 'bg-indigo-50 text-indigo-600',
-                label: 'Taux recouvrement', value: `${stats.tauxRecouvrement.toFixed(1)}%`, unit: 'atteint',
-                valClass: 'text-indigo-600'
-              },
-            ].map((card, i) => (
-              <div key={i} className="flex-shrink-0 w-[160px] sm:w-auto snap-start bg-white p-4 rounded-2xl border border-slate-200/60 shadow-sm flex items-center gap-3">
-                <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${card.iconBg}`}>
-                  {card.icon}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 leading-tight">{card.label}</p>
-                  <p className={`text-sm font-black leading-tight mt-0.5 ${card.valClass}`}>
-                    {card.value} <span className="text-[9px] text-slate-400 font-bold">{card.unit}</span>
-                  </p>
-                </div>
-              </div>
-            ))}
+          {/* KPI STATS PLATES */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
+            <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Attendu (T{selectedTranche})</span>
+              <p className="text-2xl sm:text-3xl font-black text-slate-900 leading-tight">
+                {formatMontant(stats.globalAttendu)} <span className="text-xs font-bold text-slate-400">F</span>
+              </p>
+            </div>
+
+            <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Perçu sur Tranche</span>
+              <p className="text-2xl sm:text-3xl font-black text-emerald-600 leading-tight">
+                {formatMontant(stats.globalPercu)} <span className="text-xs font-bold text-emerald-400">F</span>
+              </p>
+            </div>
+
+            <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Reste à recouvrer</span>
+              <p className="text-2xl sm:text-3xl font-black text-rose-600 leading-tight">
+                {formatMontant(stats.resteRecouvrer)} <span className="text-xs font-bold text-rose-400">F</span>
+              </p>
+            </div>
+
+            <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Taux recouvrement</span>
+              <p className="text-2xl sm:text-3xl font-black text-blue-600 leading-tight">
+                {stats.tauxRecouvrement.toFixed(1)}%
+              </p>
+            </div>
           </div>
 
-          {/* ======== FILTRES ET RECHERCHE ======== */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/60 shadow-sm space-y-3">
-            {/* Champ recherche */}
+          {/* FILTRES PAR STATUT ET RECHERCHE */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 space-y-3">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold" size={15} />
               <input
                 type="text"
-                placeholder="Rechercher un élève..."
-                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 rounded-xl text-sm font-semibold text-slate-800 placeholder-slate-400 outline-none focus:ring-2 focus:ring-indigo-500/20 border border-transparent focus:border-indigo-200 transition-all"
+                placeholder="Rechercher par prénom ou nom d'élève..."
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition"
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
               />
@@ -1069,57 +999,53 @@ const handleExportAvis = async () => {
               )}
             </div>
 
-            {/* Filtres statut — scroll horizontal mobile */}
-            <div className="flex gap-2 overflow-x-auto pb-1">
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
               {[
-                { key: 'all', label: `Tous`, count: processedStudents.length, cls: 'bg-slate-900 text-white', inactiveCls: 'bg-slate-50 text-slate-600 hover:bg-slate-100' },
-                { key: 'EN_RETARD', label: 'En retard', count: stats.retardCount, cls: 'bg-rose-600 text-white', inactiveCls: 'bg-rose-50 text-rose-700 hover:bg-rose-100', icon: <AlertTriangle size={11} /> },
-                { key: 'INCOMPLET', label: 'Incomplet', count: stats.incompletCount, cls: 'bg-amber-500 text-white', inactiveCls: 'bg-amber-50 text-amber-700 hover:bg-amber-100', icon: <Clock size={11} /> },
-                { key: 'EN_REGLE', label: 'En règle', count: stats.regleCount, cls: 'bg-emerald-600 text-white', inactiveCls: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100', icon: <CheckCircle size={11} /> },
-                { key: 'TOTALEMENT_SOLDE', label: 'Soldé', count: stats.soldeCount, cls: 'bg-indigo-600 text-white', inactiveCls: 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100', icon: <DollarSign size={11} /> },
-              ].map(filter => (
-                <button
-                  key={filter.key}
-                  onClick={() => setStatusFilter(filter.key)}
-                  className={`flex-shrink-0 flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
-                    statusFilter === filter.key
-                      ? `${filter.cls} border-transparent`
-                      : `${filter.inactiveCls} border-transparent`
-                  }`}
-                >
-                  {filter.icon}
-                  {filter.label}
-                  <span className={`ml-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-black ${
-                    statusFilter === filter.key ? 'bg-white/20' : 'bg-white/60'
-                  }`}>
-                    {filter.count}
-                  </span>
-                </button>
-              ))}
+                { key: 'all', label: 'Tous', count: processedStudents.length, activeCls: 'bg-slate-900 text-white' },
+                { key: 'EN_RETARD', label: 'En retard', count: stats.retardCount, activeCls: 'bg-rose-600 text-white' },
+                { key: 'INCOMPLET', label: 'Incomplet', count: stats.incompletCount, activeCls: 'bg-amber-600 text-white' },
+                { key: 'EN_REGLE', label: 'En règle', count: stats.regleCount, activeCls: 'bg-emerald-600 text-white' },
+                { key: 'TOTALEMENT_SOLDE', label: 'Soldé', count: stats.soldeCount, activeCls: 'bg-blue-600 text-white' },
+              ].map(f => {
+                const isActive = statusFilter === f.key;
+                return (
+                  <button
+                    key={f.key}
+                    onClick={() => setStatusFilter(f.key)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${
+                      isActive 
+                        ? `${f.activeCls} shadow-xs` 
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>{f.label}</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-white text-slate-700 font-extrabold'}`}>
+                      {f.count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* ======== LISTE DES ÉLÈVES ======== */}
-          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+          {/* TABLEAU / REGISTRE DES ÉLÈVES */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs">
             {loadingStudents ? (
-              <div className="p-12 text-center flex flex-col items-center gap-3">
-                <Loader2 className="animate-spin text-indigo-600" size={28} />
-                <p className="text-xs uppercase tracking-wider text-slate-400 font-bold animate-pulse">Chargement des données...</p>
+              <div className="p-12 text-center flex flex-col items-center gap-2">
+                <Loader2 className="animate-spin text-blue-600" size={24} />
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Chargement des données...</span>
               </div>
             ) : filteredStudents.length === 0 ? (
-              <div className="p-12 text-center">
-                <Users className="mx-auto text-slate-200 mb-3" size={32} />
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  Aucun élève dans cette catégorie.
-                </p>
+              <div className="p-12 text-center text-xs font-bold text-slate-400">
+                Aucun élève trouvé dans cette catégorie.
               </div>
             ) : (
               <>
-                {/* DESKTOP : tableau */}
+                {/* Table Desktop */}
                 <div className="hidden sm:block w-full overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead className="bg-slate-50 border-b border-slate-100 text-[9px] uppercase font-black tracking-widest text-slate-400">
-                      <tr>
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100 bg-slate-50 text-[10px] font-bold uppercase text-slate-500 tracking-wider">
                         <th className="px-5 py-3.5">Élève</th>
                         <th className="px-4 py-3.5 text-center">Plan</th>
                         <th className="px-4 py-3.5 text-right">Scolarité totale</th>
@@ -1129,38 +1055,39 @@ const handleExportAvis = async () => {
                         <th className="px-5 py-3.5 text-right">Actions</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 text-xs">
+                    <tbody className="divide-y divide-slate-100">
                       {filteredStudents.map(student => (
-                        <tr key={student.id} className="hover:bg-slate-50/60 transition-colors">
-                          <td className="px-5 py-4 font-bold text-slate-900">
-                            {student.first_name} <span className="uppercase text-slate-700">{student.last_name}</span>
+                        <tr key={student.id} className="hover:bg-slate-50/70 transition">
+                          <td className="px-5 py-3.5 font-bold text-slate-900 capitalize">
+                            {student.first_name} {student.last_name}
                           </td>
-                          <td className="px-4 py-4 text-center font-semibold text-slate-500">
+                          <td className="px-4 py-3.5 text-center font-bold text-slate-500">
                             {student.payment_plan_tranches} tr.
                           </td>
-                          <td className="px-4 py-4 text-right font-bold text-slate-800">
+                          <td className="px-4 py-3.5 text-right font-bold text-slate-800">
                             {formatMontant(student.scolarite_totale)} F
                           </td>
-                          <td className="px-4 py-4 text-right">
-                            <span className="inline-block bg-slate-100 px-2 py-1 rounded-md font-extrabold text-slate-700">
+                          <td className="px-4 py-3.5 text-right">
+                            <span className="inline-block bg-slate-100 px-2 py-0.5 rounded font-extrabold text-slate-700">
                               {formatMontant(student.scolarite_payee)} F
                             </span>
                           </td>
-                          <td className="px-4 py-4 text-right font-black">
-                            {student.resteAFinancerTranche === 0
-                              ? <span className="text-emerald-600">0 F ✓</span>
-                              : <span className="text-rose-600">+{formatMontant(student.resteAFinancerTranche)} F</span>
-                            }
+                          <td className="px-4 py-3.5 text-right font-black">
+                            {student.resteAFinancerTranche === 0 ? (
+                              <span className="text-emerald-600">0 F ✓</span>
+                            ) : (
+                              <span className="text-rose-600">+{formatMontant(student.resteAFinancerTranche)} F</span>
+                            )}
                           </td>
-                          <td className="px-4 py-4 text-center">
+                          <td className="px-4 py-3.5 text-center">
                             <StatutBadge statut={student.statutTranche} />
                           </td>
-                          <td className="px-5 py-4 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
+                          <td className="px-5 py-3.5 text-right">
+                            <div className="inline-flex items-center gap-1.5">
                               {student.parent_phone && (
                                 <a
                                   href={`tel:${student.parent_phone}`}
-                                  className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors"
+                                  className="p-1.5 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition"
                                   title="Appeler"
                                 >
                                   <Phone size={13} />
@@ -1169,13 +1096,14 @@ const handleExportAvis = async () => {
                               <button
                                 onClick={() => sendWhatsAppReminder(student)}
                                 disabled={student.statutTranche === 'EN_REGLE' || student.statutTranche === 'TOTALEMENT_SOLDE'}
-                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-black text-[9px] uppercase tracking-wide transition-all border ${
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition disabled:opacity-30 disabled:cursor-not-allowed ${
                                   student.statutTranche === 'EN_REGLE' || student.statutTranche === 'TOTALEMENT_SOLDE'
-                                    ? 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
-                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-sm'
+                                    ? 'bg-slate-100 text-slate-400'
+                                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
                                 }`}
                               >
-                                <MessageSquare size={11} /> Relancer
+                                <MessageSquare size={12} />
+                                <span>Relancer</span>
                               </button>
                             </div>
                           </td>
@@ -1185,58 +1113,55 @@ const handleExportAvis = async () => {
                   </table>
                 </div>
 
-                {/* MOBILE : cartes empilées */}
+                {/* Mobile Cards Plates */}
                 <div className="sm:hidden divide-y divide-slate-100">
                   {filteredStudents.map(student => (
                     <div key={student.id} className="p-4 space-y-3">
-                      {/* Ligne 1 : Nom + statut */}
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <p className="text-sm font-black text-slate-900">
-                            {student.first_name} <span className="uppercase">{student.last_name}</span>
+                          <p className="text-xs font-bold text-slate-900 capitalize">
+                            {student.first_name} {student.last_name}
                           </p>
-                          <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                          <span className="text-[10px] text-slate-400 font-medium">
                             Plan : {student.payment_plan_tranches} tranches
-                          </p>
+                          </span>
                         </div>
                         <StatutBadge statut={student.statutTranche} />
                       </div>
 
-                      {/* Ligne 2 : Montants */}
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="bg-slate-50 rounded-xl p-2.5">
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Scolarité</p>
-                          <p className="text-xs font-black text-slate-800 mt-0.5">{formatMontant(student.scolarite_totale)} F</p>
+                      <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                        <div className="bg-slate-50 rounded-xl p-2 border border-slate-100">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">Total</span>
+                          <span className="font-bold text-slate-800">{formatMontant(student.scolarite_totale)} F</span>
                         </div>
-                        <div className="bg-slate-50 rounded-xl p-2.5">
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Versé</p>
-                          <p className="text-xs font-black text-emerald-700 mt-0.5">{formatMontant(student.scolarite_payee)} F</p>
+                        <div className="bg-slate-50 rounded-xl p-2 border border-slate-100">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">Versé</span>
+                          <span className="font-bold text-emerald-600">{formatMontant(student.scolarite_payee)} F</span>
                         </div>
-                        <div className={`rounded-xl p-2.5 ${student.resteAFinancerTranche > 0 ? 'bg-rose-50' : 'bg-emerald-50'}`}>
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Reste T{selectedTranche}</p>
-                          <p className={`text-xs font-black mt-0.5 ${student.resteAFinancerTranche > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                            {student.resteAFinancerTranche === 0 ? '0 F ✓' : `+${formatMontant(student.resteAFinancerTranche)} F`}
-                          </p>
+                        <div className="bg-slate-50 rounded-xl p-2 border border-slate-100">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase block">Reste T{selectedTranche}</span>
+                          <span className={`font-black ${student.resteAFinancerTranche > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                            {student.resteAFinancerTranche === 0 ? '0 F ✓' : `${formatMontant(student.resteAFinancerTranche)} F`}
+                          </span>
                         </div>
                       </div>
 
-                      {/* Ligne 3 : Actions */}
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 pt-1">
                         {student.parent_phone && (
                           <a
                             href={`tel:${student.parent_phone}`}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold"
                           >
-                            <Phone size={13} />
+                            <Phone size={12} />
                             <span>Appeler</span>
                           </a>
                         )}
                         {(student.statutTranche === 'EN_RETARD' || student.statutTranche === 'INCOMPLET') && (
                           <button
                             onClick={() => sendWhatsAppReminder(student)}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700 transition-colors shadow-sm"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-bold shadow-xs"
                           >
-                            <MessageSquare size={13} />
+                            <MessageSquare size={12} />
                             <span>WhatsApp</span>
                           </button>
                         )}
@@ -1247,36 +1172,9 @@ const handleExportAvis = async () => {
               </>
             )}
           </div>
-
-          {/* ======== BARRE STICKY MOBILE (résumé + export rapide) ======== */}
-          <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 px-4 py-3 shadow-2xl">
-            <div className="flex items-center justify-between gap-3 max-w-lg mx-auto">
-              <div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">T{selectedTranche} — {activeClassName}</p>
-                <p className="text-xs font-black text-rose-600">{formatMontant(stats.resteRecouvrer)} FCFA à recouvrer</p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={handleExportRapport}
-                  disabled={exportingRapport}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-500/20"
-                >
-                  {exportingRapport ? <Loader2 size={13} className="animate-spin" /> : <FileText size={13} />}
-                  <span>Rapport</span>
-                </button>
-                <button
-                  onClick={handleExportAvis}
-                  disabled={exportingAvis}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-rose-600 text-white rounded-xl text-xs font-black shadow-md shadow-rose-500/20"
-                >
-                  {exportingAvis ? <Loader2 size={13} className="animate-spin" /> : <Bell size={13} />}
-                  <span>Avis ({retardStudents.length})</span>
-                </button>
-              </div>
-            </div>
-          </div>
         </>
       )}
+
     </div>
   );
 }

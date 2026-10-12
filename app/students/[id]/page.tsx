@@ -5,13 +5,10 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/utils/supabase";
 import { offlineFetch, offlineWrite } from "@/utils/offlineApi";
-import { useCacheRefresh } from '@/hooks/useCacheRefresh';
+import { useCacheRefresh } from "@/hooks/useCacheRefresh";
 import { useYear } from "@/context/YearContext";
 import {
-  Wallet,
-  ShieldAlert,
   ArrowLeft,
-  Plus,
   Loader2,
   Phone,
   MapPin,
@@ -19,16 +16,17 @@ import {
   X,
   CheckCircle2,
   Settings2,
-  Save,
   Download,
   MessageSquare,
   Bell,
   BookOpen,
   Clock,
-  ChevronRight,
-  Sparkles,
   ReceiptText,
   GraduationCap,
+  Calendar,
+  AlertCircle,
+  Wallet,
+  ShieldAlert,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -59,7 +57,10 @@ export default function StudentDetails() {
   const [studentAttendance, setStudentAttendance] = useState<any[]>([]);
   const [studentAnnouncements, setStudentAnnouncements] = useState<any[]>([]);
 
-  // États de saisie
+  // Navigation par modules
+  const [activeTab, setActiveTab] = useState<"finance" | "pedagogy" | "bulletin" | "discipline">("finance");
+
+  // Formulaires
   const [amount, setAmount] = useState("");
   const [month, setMonth] = useState("");
   const [reason, setReason] = useState("");
@@ -70,7 +71,6 @@ export default function StudentDetails() {
 
   const [showAvgForm, setShowAvgForm] = useState(false);
   const [newAvg, setNewAvg] = useState("");
-  const [mobileSection, setMobileSection] = useState<"overview" | "payments" | "discipline" | "bulletin">("overview");
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -82,12 +82,10 @@ export default function StudentDetails() {
     payment_plan_tranches: 1,
   });
 
-  // Fetch initial : Ne met "loading" à true QUE si on n'a pas encore de données de l'élève
   const fetchData = useCallback(
     async (silent = false) => {
       if (!silent) setLoading(true);
       try {
-        // 1. Profil de l'élève
         const { data: st } = await offlineFetch<any>(
           `student:${id}`,
           async () => {
@@ -99,7 +97,6 @@ export default function StudentDetails() {
           },
         );
 
-        // 2. Journal de scolarité
         const { data: pay } = await offlineFetch<any[]>(
           `payments:${id}`,
           async () => {
@@ -111,7 +108,6 @@ export default function StudentDetails() {
           },
         );
 
-        // 3. Discipline
         const { data: inc } = await offlineFetch<any[]>(
           `discipline:${id}`,
           async () => {
@@ -123,7 +119,6 @@ export default function StudentDetails() {
           },
         );
 
-        // 4. Paiements Annexes
         const { data: exPay } = await offlineFetch<any[]>(
           `extra_payments:${id}`,
           async () => {
@@ -135,7 +130,6 @@ export default function StudentDetails() {
           },
         );
 
-        // 5. Types de frais généraux
         const { data: exTypes } = await offlineFetch<any[]>(
           `extra_fee_types`,
           async () => {
@@ -218,7 +212,7 @@ export default function StudentDetails() {
         setExtraPayments(exPay || []);
         setExtraFeeTypes(exTypes || []);
       } catch (error) {
-        console.error("Erreur de chargement général :", error);
+        console.error("Erreur de chargement:", error);
       } finally {
         setLoading(false);
       }
@@ -302,14 +296,13 @@ export default function StudentDetails() {
     const dateStr = new Date().toLocaleDateString("fr-FR");
 
     const message = encodeURIComponent(
-      `✅ *REÇU DE PAIEMENT - ÉCOLE*\n\n` +
-        `*Élève :* ${student.first_name} ${student.last_name}\n` +
-        `*Type :* ${type}\n` +
-        `*Montant :* ${new Intl.NumberFormat("fr-FR").format(pAmount)} FCFA\n` +
-        `*Motif :* ${pMonth}\n` +
-        `*Date :* ${dateStr}\n` +
-        `---------------------------\n` +
-        `Merci pour votre confiance. 🙏`,
+      `Reçu de paiement scolaire\n\n` +
+        `Élève : ${student.first_name} ${student.last_name}\n` +
+        `Rubrique : ${type}\n` +
+        `Montant : ${new Intl.NumberFormat("fr-FR").format(pAmount)} FCFA\n` +
+        `Motif : ${pMonth}\n` +
+        `Date : ${dateStr}\n\n` +
+        `Paiement bien validé.`,
     );
     window.open(`https://wa.me/${cleanNumber}?text=${message}`, "_blank");
   };
@@ -321,8 +314,7 @@ export default function StudentDetails() {
     let totalCoeffs = 0;
     const notes = bulletinSubjects.map((subject) => {
       const grade =
-        bulletinGrades.find((g) => g.subject_name === subject.subject_name) ||
-        {};
+        bulletinGrades.find((g) => g.subject_name === subject.subject_name) || {};
       const gradeClasse = parseFloat(grade.grade_value || "0") || 0;
       const gradeCompo = parseFloat(grade.compo_value || "0") || 0;
       const moyenne = Number(((gradeClasse + gradeCompo * 2) / 3).toFixed(2));
@@ -369,10 +361,10 @@ export default function StudentDetails() {
       ...announce,
       audienceLabel:
         announce.target_audience === "Tous"
-          ? "Tous"
+          ? "Général"
           : announce.target_audience === "Classes"
             ? `Classe ${announce.classes?.name || ""}`
-            : "Cible interne",
+            : "Interne",
     }));
   }, [studentAnnouncements]);
 
@@ -445,7 +437,7 @@ export default function StudentDetails() {
     if (!student?.parent_phone) return;
     const result = await createBulletinPdf();
     const cleanNumber = student.parent_phone.replace(/\D/g, "");
-    const defaultMessage = `Bonjour, voici le bulletin de ${student.first_name} ${student.last_name} pour ${bulletinPeriod}.`;
+    const defaultMessage = `Bulletin scolaire de ${student.first_name} ${student.last_name} (${bulletinPeriod}).`;
     const encodedMessage = encodeURIComponent(defaultMessage);
 
     if (
@@ -467,7 +459,7 @@ export default function StudentDetails() {
         });
         return;
       } catch (shareError) {
-        console.error("Échec du partage Web Share :", shareError);
+        console.error("Échec du partage :", shareError);
       }
     }
 
@@ -477,7 +469,6 @@ export default function StudentDetails() {
     );
   };
 
-  // ⚡ INSTANTANÉ : Mise à jour de la moyenne de l'élève
   const handleUpdateAvg = async (e: React.FormEvent) => {
     e.preventDefault();
     setShowAvgForm(false);
@@ -507,7 +498,6 @@ export default function StudentDetails() {
     }
   };
 
-  // ⚡ INSTANTANÉ : Mise à jour de la fiche de configuration
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsEditModalOpen(false);
@@ -541,7 +531,6 @@ export default function StudentDetails() {
     }
   };
 
-  // ⚡ INSTANTANÉ : Encaissement Scolarité sans aucun loader
   const handleBasePayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isReadOnly) return;
@@ -614,7 +603,6 @@ export default function StudentDetails() {
     }
   };
 
-  // ⚡ INSTANTANÉ : Frais Compléments & Annexes
   const handleExtraPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isReadOnly) return;
@@ -664,7 +652,6 @@ export default function StudentDetails() {
     }
   };
 
-  // ⚡ INSTANTANÉ : Incident disciplinaire
   const handleAddIncident = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isReadOnly) return;
@@ -710,23 +697,27 @@ export default function StudentDetails() {
     }
   };
 
-  // Ne bloque l'écran que lors du TOUT PREMIER chargement à l'ouverture de la page
   if (loading && !student)
     return (
-      <div className="flex flex-col items-center justify-center gap-3 p-24 bg-gradient-to-br from-blue-50 to-indigo-50 text-slate-400">
-        <Loader2 className="animate-spin text-indigo-600" size={32} />
-        <p className="text-xs font-bold tracking-wide">
-          Chargement du profil…
-        </p>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-white text-slate-400 font-sans">
+        <Loader2 className="animate-spin text-blue-600" size={26} />
+        <span className="text-base font-bold text-slate-700">Ouverture de la fiche élève...</span>
       </div>
     );
+
   if (!student)
     return (
-      <div className="flex flex-col items-center justify-center gap-2 p-24 bg-gradient-to-br from-red-50 to-orange-50 text-center">
-        <p className="text-lg font-black text-slate-900">Élève non trouvé</p>
-        <p className="text-sm text-slate-500 font-medium">
-          Ce profil n'existe pas ou a été supprimé.
-        </p>
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-50 text-center font-sans">
+        <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mb-3">
+          <AlertCircle size={22} />
+        </div>
+        <p className="text-lg font-bold text-slate-900">Élève non trouvé</p>
+        <Link
+          href="/students"
+          className="mt-3 text-base font-bold text-blue-600 hover:text-blue-700"
+        >
+          Retourner au registre
+        </Link>
       </div>
     );
 
@@ -734,7 +725,6 @@ export default function StudentDetails() {
   const totalPaid = Number(student.scolarite_payee || 0);
 
   const currentYearCoverage = Math.min(totalPaid, annualFee);
-  const nextYearAdvance = Math.max(0, totalPaid - annualFee);
   const remaining = Math.max(0, annualFee - totalPaid);
   const isSolded = remaining === 0;
   const paidPct =
@@ -744,588 +734,432 @@ export default function StudentDetails() {
 
   const numTranches = student.payment_plan_tranches || 1;
   const amountPerTranche = annualFee / numTranches;
-
   const fmt = (n: number) => new Intl.NumberFormat("fr-FR").format(n);
 
-  const mobileSectionClass = (section: "overview" | "payments" | "discipline" | "bulletin") =>
-    mobileSection === section ? "block" : "hidden sm:block"
-
-  const sectionHeader = (
-    icon: React.ReactNode,
-    title: string,
-    subtitle?: string,
-    accent = "blue",
-  ) => (
-    <div className="flex items-center gap-3 mb-4">
-      <div
-        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl font-bold text-lg shadow-md ${
-          accent === "rose"
-            ? "bg-gradient-to-br from-rose-400 to-rose-600 text-white"
-            : accent === "emerald"
-              ? "bg-gradient-to-br from-emerald-400 to-emerald-600 text-white"
-              : accent === "amber"
-                ? "bg-gradient-to-br from-amber-400 to-amber-600 text-white"
-                : "bg-gradient-to-br from-blue-500 to-indigo-600 text-white"
-        }`}
-      >
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <h3 className="text-sm font-black text-slate-900 tracking-tight truncate">
-          {title}
-        </h3>
-        {subtitle && (
-          <p className="text-[11px] text-slate-500 font-bold truncate">
-            {subtitle}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 space-y-5 pb-24 px-3 sm:px-6 lg:px-8 w-full max-w-full overflow-x-hidden">
-      {/* ACTIONS DE RETOUR */}
-      <div className="flex items-center justify-between gap-3 pt-4 max-w-7xl mx-auto w-full">
-        <Link
-          href="/students"
-          className="flex items-center gap-2 text-slate-600 hover:text-indigo-600 active:scale-95 transition-all font-bold text-xs hover:shadow-lg"
-        >
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white border-2 border-indigo-200 shadow-md hover:shadow-lg hover:border-indigo-400 transition-all">
-            <ArrowLeft size={16} className="font-bold" />
-          </span>
-          <span className="hidden sm:inline">Retour au registre</span>
-        </Link>
-        <button
-          onClick={() => setIsEditModalOpen(true)}
-          className="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 to-blue-600 text-white px-4 py-2.5 text-xs font-bold shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all"
-        >
-          <Settings2 size={15} className="font-bold" />
-          <span className="hidden xs:inline">Paramètres</span>
-        </button>
-      </div>
+    <div className="min-h-screen bg-white text-slate-900 font-sans antialiased pb-24">
+      
+      {/* 1. TOP BAR */}
+      <nav className="border-b border-slate-200/80 bg-white sticky top-0 z-30">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+          <Link
+            href="/students"
+            className="inline-flex items-center gap-2 text-sm font-bold text-slate-700 hover:text-blue-600 transition"
+          >
+            <ArrowLeft size={16} />
+            <span>Élèves</span>
+          </Link>
 
-      {/* BANDEAU PROFIL */}
-      <div className="relative overflow-hidden rounded-3xl border-2 border-indigo-200 bg-gradient-to-br from-white to-blue-50 shadow-xl max-w-7xl mx-auto w-full">
-        <div className="h-20 bg-gradient-to-r from-indigo-600 via-blue-500 to-cyan-500" />
-        <div className="px-5 sm:px-8 pb-6 -mt-10 flex flex-col md:flex-row md:items-end gap-5">
-          <div className="h-20 w-20 md:h-28 md:w-28 rounded-3xl bg-white p-1.5 shadow-xl shrink-0 mx-auto md:mx-0 border-4 border-indigo-200">
-            <div className="h-full w-full rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white flex items-center justify-center text-3xl font-black shadow-lg">
-              {student.first_name?.[0]}
-              {student.last_name?.[0]}
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1 rounded-md">
+              {selectedYear?.label || "Année courante"}
+            </span>
+            <button
+              onClick={() => setIsEditModalOpen(true)}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-300 hover:border-slate-400 text-xs font-bold text-slate-800 hover:text-slate-950 transition"
+            >
+              <Settings2 size={14} className="text-slate-600" />
+              <span>Modifier</span>
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-8 space-y-8">
+
+        {/* 2. PROFIL ÉLÈVE : TEXTES EN GRAS, GRANDES POLICES, BANDEAU ÉPURÉ */}
+        <section className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-8 border-b border-slate-200">
+          
+          <div className="flex items-start sm:items-center gap-5 sm:gap-6">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-black text-3xl sm:text-4xl shrink-0 shadow-md">
+              {student.first_name?.[0]}{student.last_name?.[0]}
+            </div>
+
+            <div className="space-y-2 min-w-0">
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-950 capitalize">
+                  {student.first_name} {student.last_name}
+                </h1>
+                <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                  {student.classes?.name || "Classe non définie"}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-y-1.5 gap-x-6 text-sm sm:text-base text-slate-700 font-bold">
+                <span className="inline-flex items-center gap-2">
+                  <Phone size={16} className="text-blue-600 shrink-0" />
+                  <span>{student.parent_phone || "Aucun contact"}</span>
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <MapPin size={16} className="text-blue-600 shrink-0" />
+                  <span>{student.address || "Adresse non renseignée"}</span>
+                </span>
+              </div>
             </div>
           </div>
 
-          <div className="flex-1 min-w-0 text-center md:text-left">
-            <div className="flex flex-col md:flex-row items-center md:items-center justify-center md:justify-start gap-2 mt-1">
-              <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight truncate">
-                {student.first_name} {student.last_name}
-              </h1>
-              <span className="px-3 py-1.5 bg-gradient-to-r from-indigo-100 to-blue-100 text-indigo-700 rounded-full text-[10px] font-black uppercase tracking-wider border-2 border-indigo-300 shrink-0 shadow-md">
-                {student.classes?.name || "Aucune classe"}
+          <div className="flex items-center gap-6 sm:gap-8 self-start lg:self-auto pt-2 lg:pt-0">
+            <div>
+              <span className="text-xs sm:text-sm text-slate-500 block font-bold">Scolarité totale</span>
+              <span className="text-2xl sm:text-3xl font-black text-slate-950 mt-0.5 block">
+                {fmt(annualFee)} <span className="text-xs sm:text-sm font-bold text-slate-500">FCFA</span>
               </span>
             </div>
-            <div className="flex flex-col sm:flex-row items-center justify-center md:justify-start gap-2.5 sm:gap-5 mt-3 text-slate-600 font-bold text-xs">
-              <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full shadow-sm border border-slate-200">
-                <Phone size={14} className="text-indigo-600" />
-                {student.parent_phone || "Téléphone non renseigné"}
-              </div>
-              <div className="flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-full shadow-sm border border-slate-200">
-                <MapPin size={14} className="text-indigo-600" />
-                {student.address || "Adresse non renseignée"}
-              </div>
-            </div>
-          </div>
 
-          {/* COMPTEUR MOYENNE ACADÉMIQUE */}
-          <div className="relative shrink-0 mx-auto md:mx-0 w-full sm:w-auto">
-            <div className="flex items-center justify-between gap-6 sm:gap-4 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl border-2 border-indigo-200 px-5 py-4 sm:flex-col sm:items-center sm:text-center sm:min-w-[140px] shadow-lg">
-              <p className="text-[10px] font-black text-indigo-600 uppercase tracking-wider">
-                Dernière moyenne
-              </p>
-              <p className="text-3xl font-black text-indigo-700">
-                {student.last_exam_avg !== null &&
-                student.last_exam_avg !== undefined
+            <div className="h-10 w-px bg-slate-300" />
+
+            <div>
+              <span className="text-xs sm:text-sm text-slate-500 block font-bold">
+                {isSolded ? "Statut" : "Reste à payer"}
+              </span>
+              <span className={`text-2xl sm:text-3xl font-black mt-0.5 block ${isSolded ? "text-emerald-700" : "text-blue-600"}`}>
+                {isSolded ? "Soldé ✓" : `${fmt(remaining)} F`}
+              </span>
+            </div>
+
+            <div className="h-10 w-px bg-slate-300" />
+
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs sm:text-sm text-slate-500 font-bold">Moyenne</span>
+                <button
+                  onClick={() => setShowAvgForm(!showAvgForm)}
+                  className="text-blue-600 hover:text-blue-800 p-0.5"
+                  title="Modifier la note"
+                >
+                  <Edit3 size={13} />
+                </button>
+              </div>
+              <span className="text-2xl sm:text-3xl font-black text-slate-950 mt-0.5 block">
+                {student.last_exam_avg !== null && student.last_exam_avg !== undefined
                   ? Number(student.last_exam_avg).toFixed(2)
                   : "—"}
-                <span className="text-xs text-slate-500 font-bold">
-                  /20
-                </span>
-              </p>
+                <span className="text-xs sm:text-sm text-slate-400 font-bold"> /20</span>
+              </span>
             </div>
-            <button
-              onClick={() => setShowAvgForm(!showAvgForm)}
-              className="absolute -top-2.5 -right-2.5 sm:top-auto sm:-bottom-2.5 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white p-2.5 rounded-xl shadow-lg hover:shadow-xl hover:scale-110 active:scale-90 transition-all font-bold"
-              aria-label="Modifier la moyenne"
-            >
-              {showAvgForm ? <X size={13} /> : <Edit3 size={13} />}
-            </button>
           </div>
-        </div>
-      </div>
+        </section>
 
-      {/* FORMULAIRE RAPIDE MOYENNE */}
-      {showAvgForm && (
-        <form
-          onSubmit={handleUpdateAvg}
-          className="bg-white p-4 rounded-2xl border-2 border-indigo-200 max-w-sm flex gap-2 items-center shadow-lg animate-in fade-in slide-in-from-top-2 duration-200 max-w-7xl mx-auto w-full"
-        >
-          <input
-            type="number"
-            step="0.01"
-            min="0"
-            max="20"
-            placeholder="Nouvelle moyenne..."
-            className="flex-1 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl text-sm font-bold border-2 border-indigo-200 outline-none text-slate-800 focus:border-indigo-500 focus:bg-white transition-all"
-            value={newAvg}
-            onChange={(e) => setNewAvg(e.target.value)}
-            required
-          />
-          <button
-            type="submit"
-            className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white text-xs px-5 py-3 rounded-xl font-black shrink-0 hover:shadow-lg active:scale-95 transition-all shadow-md"
+        {showAvgForm && (
+          <form
+            onSubmit={handleUpdateAvg}
+            className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-2 max-w-sm"
           >
-            Valider
-          </button>
-        </form>
-      )}
-
-      <div className="mt-4 sm:hidden max-w-7xl mx-auto w-full">
-        <div className="grid grid-cols-4 gap-2">
-          {[
-            { key: "overview", label: "Résumé" },
-            { key: "payments", label: "Paiements" },
-            { key: "discipline", label: "Discipline" },
-            { key: "bulletin", label: "Bulletin" },
-          ].map((tab) => (
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              max="20"
+              placeholder="Ex: 14.5"
+              className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-bold outline-none focus:border-blue-600"
+              value={newAvg}
+              onChange={(e) => setNewAvg(e.target.value)}
+              required
+              autoFocus
+            />
             <button
-              key={tab.key}
-              type="button"
-              onClick={() => setMobileSection(tab.key as any)}
-              className={`rounded-2xl border-2 px-2 py-2 text-[11px] font-black transition-all ${
-                mobileSection === tab.key
-                  ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white border-indigo-600 shadow-lg"
-                  : "bg-white text-slate-600 border-slate-300 hover:border-indigo-300"
-              }`}
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700"
             >
-              {tab.label}
+              Enregistrer
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => setShowAvgForm(false)}
+              className="p-1 text-slate-400 hover:text-slate-600"
+            >
+              <X size={16} />
+            </button>
+          </form>
+        )}
+
+        {/* 3. SEGMENTED CONTROL */}
+        <div className="flex p-1 bg-slate-100 rounded-xl w-full sm:w-max gap-1">
+          {[
+            { key: "finance", label: "Finances & Tranches" },
+            { key: "pedagogy", label: "Horaires & Présence" },
+            { key: "bulletin", label: "Relevé de notes" },
+            { key: "discipline", label: "Discipline", count: incidents.length },
+          ].map((tab) => {
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key as any)}
+                className={`flex-1 sm:flex-initial px-4 py-2 rounded-lg text-xs font-bold transition ${
+                  isActive
+                    ? "bg-white text-slate-900 shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <span>{tab.label}</span>
+                {tab.count !== undefined && tab.count > 0 && (
+                  <span className="ml-1.5 text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-800 font-extrabold">
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 max-w-7xl mx-auto w-full">
-        {/* COLONNE GAUCHE */}
-        <div className="lg:col-span-4 space-y-5 lg:order-1 order-2">
-          {/* FRAIS EXTRAS */}
-          <div className={`${mobileSectionClass("payments")} bg-gradient-to-br from-white to-amber-50 p-6 rounded-3xl border-2 border-amber-200 shadow-lg`}>
-            {sectionHeader(
-              <Plus size={18} />,
-              "Compléments & annexes",
-              "Frais divers hors scolarité",
-              "amber",
-            )}
-            <form onSubmit={handleExtraPayment} className="space-y-3">
-              <select
-                className="w-full p-3.5 bg-amber-50 border-2 border-amber-200 rounded-xl text-sm font-bold outline-none text-slate-800 focus:border-amber-400 focus:bg-white transition-all"
-                value={selectedExtraType}
-                onChange={(e) => setSelectedExtraType(e.target.value)}
-                disabled={isReadOnly}
-                required
-              >
-                <option value="">Sélectionner frais divers...</option>
-                {extraFeeTypes.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({Number(t.default_amount).toLocaleString()} F)
-                  </option>
-                ))}
-              </select>
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="Montant perçu..."
-                className="w-full p-3.5 bg-amber-50 border-2 border-amber-200 rounded-xl text-sm font-bold outline-none text-slate-800 focus:border-amber-400 focus:bg-white transition-all"
-                value={formatInputDisplay(extraAmount)}
-                onChange={(e) => setExtraAmount(e.target.value)}
-                disabled={isReadOnly}
-                required
-              />
-              <button
-                type="submit"
-                disabled={isReadOnly}
-                className="w-full bg-gradient-to-r from-amber-500 to-orange-600 text-white p-3.5 rounded-xl font-black text-sm hover:shadow-lg active:scale-95 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Valider l'encaissement
-              </button>
-            </form>
-          </div>
+        {/* 4. MODULES DE CONTENU */}
 
-          {/* DISCIPLINE */}
-          <div className={`${mobileSectionClass("discipline")} bg-gradient-to-br from-white to-rose-50 p-6 rounded-3xl border-2 border-rose-200 shadow-lg space-y-4`}>
-            {sectionHeader(
-              <ShieldAlert size={18} />,
-              "Dossier discipline",
-              "Suivi comportemental",
-              "rose",
-            )}
-            <form onSubmit={handleAddIncident} className="space-y-3">
-              <textarea
-                placeholder="Rédiger le motif du rapport..."
-                className="w-full p-3.5 bg-rose-50 border-2 border-rose-200 rounded-xl text-sm h-16 resize-none outline-none font-medium text-slate-800 focus:border-rose-400 focus:bg-white transition-all"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                disabled={isReadOnly}
-                required
-              />
-              <div className="flex gap-2">
-                {["Bas", "Moyen", "Grave"].map((l) => (
-                  <button
-                    key={l}
-                    type="button"
-                    onClick={() => setSeverity(l)}
-                    disabled={isReadOnly}
-                    className={`flex-1 py-2.5 rounded-lg text-[11px] font-black transition-all ${
-                      severity === l
-                        ? "bg-gradient-to-r from-rose-500 to-red-600 text-white shadow-lg"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200 border-2 border-slate-200"
-                    }`}
-                  >
-                    {l}
-                  </button>
-                ))}
-              </div>
-              <button
-                type="submit"
-                disabled={isReadOnly}
-                className="w-full bg-gradient-to-r from-rose-500 to-red-600 text-white p-3.5 rounded-xl font-black text-sm hover:shadow-lg active:scale-95 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Enregistrer l'incident
-              </button>
-            </form>
+        {/* MODULE 1 : FINANCES */}
+        {activeTab === "finance" && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            {/* Formulaires d'encaissement (5 cols) */}
+            <div className="lg:col-span-5 space-y-6">
+              
+              <div className="border border-slate-200/80 rounded-2xl p-5 bg-white space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Encaisser la scolarité</h3>
+                  <p className="text-xs text-slate-500 font-medium">Ajoutez un paiement pour ce dossier</p>
+                </div>
 
-            {/* Historique interne de l'étudiant */}
-            <div className="pt-4 border-t-2 border-rose-200 space-y-2">
-              <p className="text-[10px] font-black uppercase tracking-wide text-rose-600">
-                Registre disciplinaire
-              </p>
-              {incidents.length === 0 ? (
-                <p className="text-xs text-slate-500 font-bold italic py-2">
-                  Aucun incident à signaler.
-                </p>
-              ) : (
-                <div className="space-y-2 max-h-64 overflow-y-auto no-scrollbar">
-                  {incidents.map((inc) => (
-                    <div
-                      key={inc.id}
-                      className="p-3 bg-white border-2 border-rose-100 rounded-xl text-xs flex justify-between items-start gap-2 shadow-sm hover:shadow-md transition-all"
+                <form onSubmit={handleBasePayment} className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Montant reçu (FCFA)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="Ex: 50 000"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-blue-600 transition"
+                      value={formatInputDisplay(amount)}
+                      onChange={(e) => setAmount(e.target.value)}
+                      disabled={isReadOnly}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Désignation / Échéance
+                    </label>
+                    <select
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-blue-600 transition"
+                      value={month}
+                      onChange={(e) => setMonth(e.target.value)}
+                      disabled={isReadOnly}
+                      required
                     >
-                      <div className="min-w-0">
-                        <p className="font-black text-slate-900 leading-tight">
-                          {inc.reason}
-                        </p>
-                        <span className="text-[10px] text-slate-500 font-bold">
-                          {new Date(
-                            inc.incident_date || inc.created_at,
-                          ).toLocaleDateString("fr-FR")}
-                        </span>
-                      </div>
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-[9px] font-black shrink-0 ${
-                          inc.severity === "Grave"
-                            ? "bg-rose-200 text-rose-800"
-                            : inc.severity === "Moyen"
-                              ? "bg-amber-200 text-amber-800"
-                              : "bg-slate-200 text-slate-700"
+                      <option value="">Sélectionner...</option>
+                      {["Tranche 1", "Tranche 2", "Tranche 3", "Mensualité", "Solde global"].map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isReadOnly}
+                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition disabled:opacity-40"
+                  >
+                    Valider l'encaissement
+                  </button>
+                </form>
+              </div>
+
+              {/* Frais annexes */}
+              <div className="border border-slate-200/80 rounded-2xl p-5 bg-white space-y-4">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Frais divers & annexes</h3>
+                  <p className="text-xs text-slate-500 font-medium">Tenues, cantine, activités périscolaires</p>
+                </div>
+
+                <form onSubmit={handleExtraPayment} className="space-y-3">
+                  <select
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-blue-600 transition"
+                    value={selectedExtraType}
+                    onChange={(e) => setSelectedExtraType(e.target.value)}
+                    disabled={isReadOnly}
+                    required
+                  >
+                    <option value="">Rubrique...</option>
+                    {extraFeeTypes.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({fmt(Number(t.default_amount))} F)
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Montant perçu..."
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none focus:bg-white focus:border-blue-600 transition"
+                    value={formatInputDisplay(extraAmount)}
+                    onChange={(e) => setExtraAmount(e.target.value)}
+                    disabled={isReadOnly}
+                    required
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={isReadOnly}
+                    className="w-full py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-800 rounded-xl text-xs font-bold transition disabled:opacity-40"
+                  >
+                    Enregistrer le reçu annexe
+                  </button>
+                </form>
+              </div>
+
+            </div>
+
+            {/* Suivi des Tranches & Journal (7 cols) */}
+            <div className="lg:col-span-7 space-y-6">
+
+              {/* Barre de progression des versements */}
+              <div className="border border-slate-200/80 rounded-2xl p-5 bg-white space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Échéancier de scolarité ({numTranches} tranches)
+                    </h3>
+                    <span className="text-xs text-slate-600 font-bold">
+                      {fmt(amountPerTranche)} FCFA par versement
+                    </span>
+                  </div>
+                  <span className="text-xs font-extrabold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">
+                    {paidPct}% couvert
+                  </span>
+                </div>
+
+                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-300 ${isSolded ? "bg-emerald-600" : "bg-blue-600"}`}
+                    style={{ width: `${paidPct}%` }}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
+                  {Array.from({ length: numTranches }).map((_, i) => {
+                    const trancheTarget = (i + 1) * amountPerTranche;
+                    const isTranchePaid = totalPaid >= trancheTarget;
+                    return (
+                      <div
+                        key={i}
+                        className={`p-3 rounded-xl border text-xs transition ${
+                          isTranchePaid
+                            ? "border-emerald-200 bg-emerald-50/30 text-emerald-950 font-bold"
+                            : "border-slate-200 bg-slate-50/50 text-slate-600 font-bold"
                         }`}
                       >
-                        {inc.severity || "Bas"}
-                      </span>
-                    </div>
-                  ))}
+                        <span className="text-[11px] block font-extrabold">Tranche {i + 1}</span>
+                        <div className="flex items-center gap-1.5 mt-1 font-bold">
+                          {isTranchePaid ? (
+                            <>
+                              <CheckCircle2 size={13} className="text-emerald-600" />
+                              <span>Réglée</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="w-2 h-2 rounded-full border border-slate-400" />
+                              <span>En attente</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* COLONNE DROITE */}
-        <div className="lg:col-span-8 space-y-5 lg:order-2 order-1">
-          {/* BARRES DE PROGRESSION SOLDE */}
-          <div className={`${mobileSectionClass("overview")} grid grid-cols-1 sm:grid-cols-2 gap-4`}>
-            <div className="bg-gradient-to-br from-white to-blue-50 p-6 rounded-3xl border-2 border-blue-200 shadow-lg">
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-blue-600 text-[10px] font-black uppercase tracking-wide">
-                  Scolarité payée
-                </p>
-                <span className="text-[11px] font-black text-blue-700 bg-blue-100 px-3 py-1 rounded-full">
-                  {paidPct}%
-                </span>
               </div>
-              <h4 className="text-2xl sm:text-3xl font-black text-slate-900">
-                {fmt(currentYearCoverage)}{" "}
-                <span className="text-xs font-bold text-slate-500">
-                  F CFA
-                </span>
-              </h4>
-              <div className="w-full bg-slate-200 h-3 rounded-full mt-4 overflow-hidden border-2 border-blue-200">
-                <div
-                  className={`h-full rounded-full transition-all duration-700 ${isSolded ? "bg-gradient-to-r from-emerald-500 to-green-600" : "bg-gradient-to-r from-indigo-600 to-blue-500"}`}
-                  style={{ width: `${paidPct}%` }}
-                />
-              </div>
-              <p className="text-[11px] text-slate-600 font-bold mt-3">
-                sur {fmt(annualFee)} F CFA prévus
-              </p>
-            </div>
 
-            {isSolded ? (
-              <div className="relative overflow-hidden bg-gradient-to-br from-emerald-500 to-green-600 p-6 rounded-3xl text-white shadow-xl border-2 border-emerald-400">
-                <Sparkles
-                  size={70}
-                  className="absolute -right-5 -top-5 text-white/20"
-                />
-                <p className="text-emerald-100 text-[10px] font-black uppercase tracking-wide mb-2">
-                  Avance année suivante
-                </p>
-                <h4 className="text-2xl sm:text-3xl font-black">
-                  {fmt(nextYearAdvance)}{" "}
-                  <span className="text-xs font-bold text-emerald-100">
-                    F CFA
+              {/* Historique des paiements */}
+              <div className="border border-slate-200/80 rounded-2xl bg-white overflow-hidden">
+                <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-900">Historique des transactions</h3>
+                  <span className="text-xs text-slate-500 font-bold">
+                    {payments.length + extraPayments.length} écritures
                   </span>
-                </h4>
-                <p className="text-[11px] text-emerald-100/90 mt-3 font-bold">
-                  Scolarité entièrement soldée ✓
-                </p>
-              </div>
-            ) : (
-              <div className="bg-gradient-to-br from-white to-red-50 p-6 rounded-3xl border-2 border-red-200 shadow-lg">
-                <p className="text-red-600 text-[10px] font-black uppercase tracking-wide mb-2">
-                  Reliquat dû
-                </p>
-                <h4 className="text-2xl sm:text-3xl font-black text-red-700">
-                  {fmt(remaining)}{" "}
-                  <span className="text-xs font-bold text-red-500">
-                    F CFA
-                  </span>
-                </h4>
-                <p className="text-[11px] text-slate-600 font-bold mt-3">
-                  à percevoir avant fin d'échéancier
-                </p>
-              </div>
-            )}
-          </div>
+                </div>
 
-          {/* RÉSUMÉ DES TRANCHES */}
-          <div className="bg-gradient-to-br from-white to-indigo-50 p-6 sm:p-7 rounded-3xl border-2 border-indigo-200 shadow-lg">
-            <div className="flex flex-wrap justify-between items-center gap-3 mb-5">
-              <h3 className="text-xs font-black text-slate-900">
-                Échéancier de scolarité{" "}
-                <span className="text-indigo-600 font-bold">
-                  ({numTranches})
-                </span>
-              </h3>
-              <div className="text-right">
-                <p className="text-[10px] font-black text-slate-500 uppercase">
-                  Montant unitaire
-                </p>
-                <p className="text-sm font-black text-indigo-700">
-                  {fmt(amountPerTranche)} F CFA
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory no-scrollbar sm:grid sm:grid-cols-4 sm:overflow-visible">
-              {Array.from({ length: numTranches }).map((_, i) => {
-                const trancheTarget = (i + 1) * amountPerTranche;
-                const isTranchePaid = totalPaid >= trancheTarget;
-                return (
-                  <div
-                    key={i}
-                    className={`snap-start shrink-0 w-[42%] sm:w-auto p-4 rounded-2xl border-2 transition-all font-bold ${isTranchePaid ? "bg-gradient-to-br from-emerald-100 to-green-100 border-emerald-300 shadow-md" : "bg-white border-slate-300 shadow-sm hover:shadow-md"}`}
-                  >
-                    <p
-                      className={`text-[9px] font-black uppercase mb-2 ${isTranchePaid ? "text-emerald-700" : "text-slate-600"}`}
-                    >
-                      Échéance {i + 1}
+                <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                  {[...payments, ...extraPayments].length === 0 ? (
+                    <p className="p-6 text-center text-xs text-slate-400 font-medium">
+                      Aucun versement n'a encore été enregistré.
                     </p>
-                    <div className="flex items-center gap-2">
-                      {isTranchePaid ? (
-                        <CheckCircle2 size={14} className="text-emerald-600 font-bold" />
-                      ) : (
-                        <div className="h-3 w-3 rounded-full border-2 border-slate-400" />
-                      )}
-                      <span
-                        className={`text-xs font-black ${isTranchePaid ? "text-emerald-800" : "text-slate-600"}`}
-                      >
-                        {isTranchePaid ? "Réglée" : "En attente"}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+                  ) : (
+                    [...payments, ...extraPayments]
+                      .sort(
+                        (a, b) =>
+                          new Date(b.payment_date || b.created_at).getTime() -
+                          new Date(a.payment_date || a.created_at).getTime(),
+                      )
+                      .map((p, idx) => (
+                        <div
+                          key={idx}
+                          className="px-4 py-3 flex items-center justify-between text-xs hover:bg-slate-50 transition"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span
+                              className={`w-2 h-2 rounded-full shrink-0 ${
+                                p.extra_fee_types ? "bg-amber-500" : "bg-blue-600"
+                              }`}
+                            />
+                            <div>
+                              <span className="font-bold text-slate-900">
+                                {p.extra_fee_types ? p.extra_fee_types.name : p.month}
+                              </span>
+                              <span className="block text-[11px] text-slate-500 font-medium mt-0.5">
+                                {new Date(p.payment_date || p.created_at).toLocaleDateString("fr-FR")}
+                              </span>
+                            </div>
+                          </div>
 
-          {/* FORMULAIRE ENCAISSEMENT BRUT PAIEMENT */}
-          <div className={`${mobileSectionClass("payments")} bg-gradient-to-br from-white to-indigo-50 p-6 sm:p-7 rounded-3xl border-2 border-indigo-200 shadow-lg`}>
-            {sectionHeader(
-              <Wallet size={18} />,
-              "Encaisser un paiement scolaire",
-            )}
-            <form
-              onSubmit={handleBasePayment}
-              className="flex flex-col sm:grid sm:grid-cols-3 gap-3"
-            >
-              <input
-                type="text"
-                inputMode="numeric"
-                placeholder="Montant en francs..."
-                className="p-3.5 bg-indigo-50 border-2 border-indigo-200 rounded-xl font-bold outline-none text-sm text-slate-800 focus:border-indigo-400 focus:bg-white transition-all"
-                value={formatInputDisplay(amount)}
-                onChange={(e) => setAmount(e.target.value)}
-                disabled={isReadOnly}
-                required
-              />
-              <select
-                className="p-3.5 bg-indigo-50 border-2 border-indigo-200 rounded-xl outline-none font-bold text-sm text-slate-800 focus:border-indigo-400 focus:bg-white transition-all"
-                value={month}
-                onChange={(e) => setMonth(e.target.value)}
-                disabled={isReadOnly}
-                required
-              >
-                <option value="">Sélectionner période...</option>
-                {["Tranche 1", "Tranche 2", "Tranche 3", "Mensualité"].map(
-                  (m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ),
-                )}
-              </select>
-              <button
-                disabled={isReadOnly}
-                className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white p-3.5 rounded-xl font-black text-sm hover:shadow-lg active:scale-95 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Valider & générer reçu
-              </button>
-            </form>
-          </div>
-
-          {/* JOURNAL DES MUTATIONS FINANCIÈRES */}
-          <div className={`${mobileSectionClass("payments")} bg-gradient-to-br from-white to-indigo-50 rounded-3xl border-2 border-indigo-200 shadow-lg overflow-hidden`}>
-            <div className="p-6 pb-4 flex items-center gap-3 border-b-2 border-indigo-200">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white font-bold">
-                <ReceiptText size={18} />
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-slate-900">
-                  Journal comptable individuel
-                </h3>
-                <p className="text-[11px] text-slate-600 font-bold">
-                  Historique de tous les encaissements
-                </p>
-              </div>
-            </div>
-            <div className="divide-y-2 divide-indigo-100 max-h-[420px] overflow-y-auto no-scrollbar">
-              {[...payments, ...extraPayments].length === 0 ? (
-                <p className="p-6 text-center text-sm text-slate-500 font-bold">
-                  Aucun mouvement enregistré.
-                </p>
-              ) : (
-                [...payments, ...extraPayments]
-                  .sort(
-                    (a, b) =>
-                      new Date(b.payment_date || b.created_at).getTime() -
-                      new Date(a.payment_date || a.created_at).getTime(),
-                  )
-                  .map((p, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center justify-between gap-3 px-6 py-4 hover:bg-indigo-100/40 transition-colors"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span
-                          className={`h-3 w-3 rounded-full shrink-0 font-bold ${p.extra_fee_types ? "bg-amber-500" : "bg-indigo-600"}`}
-                        />
-                        <div className="min-w-0">
-                          <span
-                            className={`text-[11px] font-black ${p.extra_fee_types ? "text-amber-700" : "text-indigo-700"}`}
-                          >
-                            {p.extra_fee_types
-                              ? p.extra_fee_types.name
-                              : p.month}
+                          <span className="font-extrabold text-slate-900">
+                            {fmt(p.amount || p.amount_paid)} FCFA
                           </span>
-                          <p className="text-[10px] text-slate-600 font-bold">
-                            {new Date(
-                              p.payment_date || p.created_at,
-                            ).toLocaleDateString("fr-FR")}
-                          </p>
                         </div>
-                      </div>
-                      <span className="font-black text-slate-900 text-sm whitespace-nowrap">
-                        {fmt(p.amount || p.amount_paid)} F
-                      </span>
-                    </div>
-                  ))
-              )}
-            </div>
-          </div>
-
-          {/* ENSEIGNEMENTS ET ASSIDUITE */}
-          <div className={`${mobileSectionClass("overview")} grid grid-cols-1 xl:grid-cols-2 gap-5`}>
-            <div className="bg-gradient-to-br from-white to-emerald-50 p-6 sm:p-7 rounded-3xl border-2 border-emerald-200 shadow-lg">
-              {sectionHeader(
-                <BookOpen size={18} />,
-                "Emploi du temps",
-                "Vue par jour pour la classe de l'élève",
-                "emerald",
-              )}
-              {studentTimetable.length === 0 ? (
-                <div className="rounded-2xl bg-emerald-50 p-6 text-center text-slate-600 text-sm font-bold">
-                  Aucun créneau disponible pour cette année.
+                      ))
+                  )}
                 </div>
+              </div>
+
+            </div>
+
+          </div>
+        )}
+
+        {/* MODULE 2 : PÉDAGOGIE */}
+        {activeTab === "pedagogy" && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            {/* Emploi du temps (7 cols) */}
+            <div className="lg:col-span-7 border border-slate-200/80 rounded-2xl p-5 bg-white space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">Planning des cours</h3>
+                <span className="text-xs font-bold text-slate-700">{student.classes?.name || "Classe"}</span>
+              </div>
+
+              {studentTimetable.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-8 font-medium">
+                  Aucun créneau configuré pour cette classe.
+                </p>
               ) : (
-                <div className="space-y-4 max-h-[420px] overflow-y-auto no-scrollbar pr-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {groupedTimetable.map((group) => (
-                    <div key={group.day} className="space-y-2">
-                      <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-emerald-700 font-black">
+                    <div key={group.day} className="p-3 bg-slate-50 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between text-xs font-bold text-slate-800 pb-1 border-b border-slate-200/60">
                         <span>{group.day}</span>
-                        <span className="bg-emerald-200 px-2.5 py-1 rounded-full">{group.slots.length} cours</span>
+                        <span className="text-[11px] text-slate-500 font-bold">{group.slots.length} cours</span>
                       </div>
+
                       {group.slots.length === 0 ? (
-                        <div className="rounded-2xl bg-emerald-100 p-3.5 text-slate-600 text-xs font-bold">
-                          Aucun cours.
-                        </div>
+                        <p className="text-[11px] text-slate-400 italic">Pas de cours.</p>
                       ) : (
-                        <div className="grid gap-2">
+                        <div className="space-y-1.5">
                           {group.slots.map((slot) => (
-                            <div
-                              key={
-                                slot.id ??
-                                `${group.day}-${slot.start_time}-${slot.subject_name}`
-                              }
-                              className="p-3.5 rounded-2xl border-2 border-emerald-200 bg-white flex items-center gap-3 hover:shadow-md transition-all"
-                            >
-                              <div className="w-1.5 self-stretch rounded-full bg-emerald-600 shrink-0" />
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center justify-between gap-2 text-xs font-black text-slate-900 mb-1">
-                                  <span className="truncate">
-                                    {slot.subject_name}
-                                  </span>
-                                  <span className="text-slate-600 font-bold shrink-0">
-                                    {slot.start_time.substring(0, 5)}-
-                                    {slot.end_time.substring(0, 5)}
-                                  </span>
-                                </div>
-                                <div className="text-[11px] text-slate-600 flex flex-wrap gap-x-2 font-bold">
-                                  <span>
-                                    {slot.teacher_name ||
-                                      "Professeur non défini"}
-                                  </span>
-                                  <span className="text-slate-400">•</span>
-                                  <span>
-                                    Salle {slot.classroom_number || "N/A"}
-                                  </span>
-                                </div>
+                            <div key={slot.id ?? `${group.day}-${slot.start_time}`} className="p-2 bg-white rounded-lg border border-slate-200/60 text-xs">
+                              <span className="font-bold text-slate-900 block truncate">{slot.subject_name}</span>
+                              <div className="flex justify-between text-[11px] text-slate-600 font-medium mt-1">
+                                <span>{slot.start_time?.substring(0, 5)} - {slot.end_time?.substring(0, 5)}</span>
+                                <span>Salle {slot.classroom_number || "—"}</span>
                               </div>
                             </div>
                           ))}
@@ -1337,504 +1171,451 @@ export default function StudentDetails() {
               )}
             </div>
 
-            <div className="bg-gradient-to-br from-white to-purple-50 p-6 sm:p-7 rounded-3xl border-2 border-purple-200 shadow-lg">
-              {sectionHeader(
-                <Clock size={18} />,
-                "Assiduité",
-                "Historique récent des absences et retards",
-                "purple",
-              )}
-              {latestAttendance.length === 0 ? (
-                <div className="rounded-2xl bg-purple-50 p-6 text-center text-slate-600 text-sm font-bold">
-                  Aucun enregistrement d'assiduité pour cet élève.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {latestAttendance.map((log) => (
-                    <div
-                      key={
-                        log.id ||
-                        `${log.date_checked}-${log.student_id}-${log.attendance_status}`
-                      }
-                      className="rounded-2xl border-2 border-purple-200 bg-white p-4 hover:shadow-md transition-all"
-                    >
-                      <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-wide text-slate-600 font-black mb-2">
-                        <span>
-                          {new Date(log.date_checked).toLocaleDateString(
-                            "fr-FR",
-                          )}
-                        </span>
-                        <span
-                          className={`px-3 py-1 rounded-full text-[10px] font-black ${log.attendance_status === "retard" ? "bg-amber-200 text-amber-800" : "bg-rose-200 text-rose-800"}`}
-                        >
-                          {log.attendance_status === "retard"
-                            ? "Retard"
-                            : "Absence"}
-                        </span>
-                      </div>
-                      <p className="text-sm font-black text-slate-900">
-                        {log.description ||
-                          (log.attendance_status === "retard"
-                            ? "Retard signalé"
-                            : "Absence signalée")}
-                      </p>
-                      <p className="text-[11px] text-slate-600 font-bold mt-2">
-                        Durée estimée : {log.duration_hours ?? 1} heure(s)
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+            {/* Assiduité & Annonces (5 cols) */}
+            <div className="lg:col-span-5 space-y-6">
 
-          {/* COMMUNICATIONS & ANNONCES */}
-          <div className={`${mobileSectionClass("overview")} bg-gradient-to-br from-white to-cyan-50 p-6 sm:p-7 rounded-3xl border-2 border-cyan-200 shadow-lg`}>
-            {sectionHeader(
-              <Bell size={18} />,
-              "Annonces & Infos",
-              "Messages ciblés pour les parents et la classe",
-            )}
+              <div className="border border-slate-200/80 rounded-2xl p-5 bg-white space-y-4">
+                <h3 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-3">
+                  Assiduité récente
+                </h3>
 
-            {announcementsToShow.length === 0 ? (
-              <div className="rounded-2xl bg-cyan-50 p-6 text-center text-slate-600 text-sm font-bold">
-                Aucune annonce disponible pour le moment.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {announcementsToShow.map((announce) => (
-                  <div
-                    key={announce.id}
-                    className={`rounded-2xl border-2 p-4 transition relative font-bold ${
-                      announce.is_pinned
-                        ? "border-amber-300 bg-gradient-to-br from-amber-100 to-yellow-50 shadow-md"
-                        : "border-cyan-200 bg-white hover:shadow-md"
-                    }`}
-                  >
-                    {/* Tags de Catégories & Badge Audience */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-black text-slate-700">
-                          <span
-                            className={`h-2 w-2 rounded-full ${
-                              announce.type === "event"
-                                ? "bg-emerald-600"
-                                : announce.type === "holiday"
-                                  ? "bg-amber-600"
-                                  : "bg-indigo-600"
-                            }`}
-                          />
-                          {announce.type === "event"
-                            ? "Événement"
-                            : announce.type === "holiday"
-                              ? "Congés"
-                              : "Annonce"}
-                        </span>
-
-                        {announce.is_pinned && (
-                          <span className="text-[9px] bg-amber-300 text-amber-900 font-black px-2 py-0.5 rounded uppercase tracking-wider">
-                            Important
+                {latestAttendance.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-6 font-medium">
+                    Aucune absence ou retard répertorié.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {latestAttendance.map((log) => (
+                      <div key={log.id || `${log.date_checked}-${log.student_id}`} className="p-2.5 bg-slate-50 rounded-xl flex items-center justify-between text-xs">
+                        <div>
+                          <span className="font-bold text-slate-800 block">
+                            {log.description || (log.attendance_status === "retard" ? "Retard" : "Absence")}
                           </span>
-                        )}
-                      </div>
-
-                      {/* Label de l'audience dynamique */}
-                      <span className="text-[10px] text-slate-700 font-black uppercase tracking-wide bg-white px-2.5 py-1 rounded-lg border-2 border-slate-300 shadow-sm">
-                        🎯 {announce.target_audience === "Tous" ? "Général" : "Votre Classe"}
-                      </span>
-                    </div>
-
-                    {/* Titre */}
-                    <h4 className="font-black text-slate-900 text-sm mb-2 uppercase tracking-wide">
-                      {announce.title}
-                    </h4>
-
-                    {/* Contenu */}
-                    <p className="text-[12px] text-slate-700 mb-3 font-bold whitespace-pre-line leading-relaxed">
-                      {announce.content}
-                    </p>
-
-                    {/* Pied d'infos de la carte */}
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-600 font-bold border-t-2 border-slate-200 pt-2">
-                      {announce.event_date && (
-                        <span className="text-slate-700 font-black">
-                          📅 Date prévue :{" "}
-                          {new Date(announce.event_date).toLocaleDateString("fr-FR", {
-                            day: "numeric",
-                            month: "short",
-                            year: "numeric"
-                          })}
+                          <span className="text-[11px] text-slate-500 font-medium">
+                            {new Date(log.date_checked).toLocaleDateString("fr-FR")}
+                          </span>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          log.attendance_status === "retard"
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-slate-200 text-slate-700"
+                        }`}>
+                          {log.attendance_status === "retard" ? "Retard" : "Absence"}
                         </span>
-                      )}
-                      <span>
-                        🕒 Publiée le{" "}
-                        {new Date(announce.created_at).toLocaleDateString("fr-FR", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric"
-                        })}
-                      </span>
-                    </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            )}
-          </div>
 
-          {/* SECTION BULLETIN DE L'ÉLÈVE */}
-          <div className={`${mobileSectionClass("bulletin")} bg-gradient-to-br from-white to-violet-50 p-6 sm:p-7 rounded-3xl border-2 border-violet-200 shadow-lg`}>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">
-              {sectionHeader(
-                <GraduationCap size={18} />,
-                "Bulletin",
-                "Accès direct aux notes et génération PDF",
-              )}
-              <div className="flex flex-col sm:flex-row items-stretch gap-2 w-full sm:w-auto">
+              <div className="border border-slate-200/80 rounded-2xl p-5 bg-white space-y-4">
+                <h3 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-3">
+                  Circulaires de l'école
+                </h3>
+
+                {announcementsToShow.length === 0 ? (
+                  <p className="text-xs text-slate-400 text-center py-6 font-medium">
+                    Aucun avis en cours.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {announcementsToShow.map((ann) => (
+                      <div key={ann.id} className="p-3 bg-slate-50 rounded-xl space-y-1">
+                        <span className="text-[10px] font-extrabold text-blue-600 block uppercase">
+                          {ann.type || "Info"}
+                        </span>
+                        <h4 className="text-xs font-bold text-slate-900">{ann.title}</h4>
+                        <p className="text-xs text-slate-700 font-medium line-clamp-2">{ann.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+            </div>
+
+          </div>
+        )}
+
+        {/* MODULE 3 : RELEVÉ DE NOTES */}
+        {activeTab === "bulletin" && (
+          <div className="border border-slate-200/80 rounded-2xl p-6 bg-white space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Relevé d'évaluations</h3>
+                <p className="text-xs text-slate-500 font-medium">Moyennes et délibérations trimestrielles</p>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
                 <select
                   value={bulletinPeriod}
                   onChange={(e) => setBulletinPeriod(e.target.value)}
-                  className="w-full sm:w-auto p-3 bg-violet-50 border-2 border-violet-200 rounded-xl text-xs font-black outline-none text-slate-800 focus:border-violet-400 focus:bg-white transition-all"
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-blue-600"
                 >
-                  {["1er Trimestre", "2ème Trimestre", "3ème Trimestre"].map(
-                    (period) => (
-                      <option key={period} value={period}>
-                        {period}
-                      </option>
-                    ),
-                  )}
+                  {["1er Trimestre", "2ème Trimestre", "3ème Trimestre"].map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
                 </select>
+
                 <button
                   onClick={downloadBulletinPDF}
                   disabled={!bulletinSummary || bulletinLoading}
-                  className="bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl px-4 py-3 text-xs font-black hover:shadow-lg active:scale-95 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition disabled:opacity-40"
                 >
-                  <Download size={15} /> PDF
+                  <Download size={13} />
+                  <span>PDF</span>
                 </button>
+
                 <button
                   onClick={sendBulletinWhatsApp}
                   disabled={!student?.parent_phone || bulletinLoading}
-                  className="bg-gradient-to-r from-emerald-600 to-green-600 text-white rounded-xl px-4 py-3 text-xs font-black hover:shadow-lg active:scale-95 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded-xl text-xs font-bold transition disabled:opacity-40"
                 >
-                  <MessageSquare size={15} /> WhatsApp
+                  <MessageSquare size={13} />
+                  <span>WhatsApp</span>
                 </button>
               </div>
             </div>
 
             {bulletinLoading ? (
-              <div className="text-center py-10 text-slate-600 font-bold flex flex-col items-center gap-2">
-                <Loader2 className="animate-spin text-indigo-600" size={22} />
-                Chargement du bulletin…
+              <div className="py-12 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                <Loader2 className="animate-spin text-blue-600" size={16} />
+                Calcul des résultats en cours...
               </div>
             ) : bulletinSummary ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="bg-gradient-to-br from-indigo-100 to-blue-100 p-5 rounded-2xl border-2 border-indigo-200 text-center shadow-md">
-                    <p className="text-[9px] uppercase tracking-wide text-indigo-700 mb-2 font-black">
-                      Moyenne
-                    </p>
-                    <p className="text-2xl sm:text-3xl font-black text-indigo-900">
+              <div className="space-y-6">
+                
+                <div className="grid grid-cols-3 gap-4 p-4 bg-slate-50 rounded-xl text-center">
+                  <div>
+                    <span className="text-[11px] text-slate-500 block font-bold">Moyenne</span>
+                    <span className="text-2xl font-black text-blue-600 mt-0.5 block">
                       {bulletinSummary.moyenne}
-                    </p>
+                    </span>
                   </div>
-                  <div className="bg-gradient-to-br from-purple-100 to-violet-100 p-5 rounded-2xl border-2 border-purple-200 text-center shadow-md">
-                    <p className="text-[9px] uppercase tracking-wide text-purple-700 mb-2 font-black">
-                      Mention
-                    </p>
-                    <p className="text-sm sm:text-lg font-black text-purple-900 leading-tight">
+                  <div>
+                    <span className="text-[11px] text-slate-500 block font-bold">Mention</span>
+                    <span className="text-sm font-black text-slate-800 mt-2 block">
                       {bulletinSummary.mention}
-                    </p>
+                    </span>
                   </div>
-                  <div className="bg-gradient-to-br from-pink-100 to-rose-100 p-5 rounded-2xl border-2 border-pink-200 text-center shadow-md">
-                    <p className="text-[9px] uppercase tracking-wide text-pink-700 mb-2 font-black">
-                      Coefficients
-                    </p>
-                    <p className="text-lg sm:text-lg font-black text-pink-900">
+                  <div>
+                    <span className="text-[11px] text-slate-500 block font-bold">Total coeff.</span>
+                    <span className="text-2xl font-black text-slate-800 mt-0.5 block">
                       {bulletinSummary.totalCoeffs}
-                    </p>
+                    </span>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  {bulletinSummary.notes.map((note) => (
-                    <div
-                      key={note.name}
-                      className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 p-3.5 rounded-2xl bg-white border-2 border-slate-200 text-xs font-bold hover:shadow-md transition-all"
-                    >
-                      <div className="font-black text-slate-900 min-w-0 truncate flex-1">
-                        {note.name}
-                      </div>
-                      <div className="text-slate-700 font-black bg-slate-100 px-2.5 py-1 rounded-lg">
-                        Classe {note.gradeClasse}
-                      </div>
-                      <div className="text-slate-700 font-black bg-slate-100 px-2.5 py-1 rounded-lg">
-                        Compo {note.gradeCompo}
-                      </div>
-                      <div className="font-black text-indigo-700 bg-indigo-100 px-2.5 py-1 rounded-lg">
-                        {note.moyenne}/20
-                      </div>
-                    </div>
-                  ))}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-slate-500 font-bold">
+                        <th className="py-2.5">Matière</th>
+                        <th className="py-2.5 text-center">Coeff</th>
+                        <th className="py-2.5 text-center">Classe</th>
+                        <th className="py-2.5 text-center">Compo</th>
+                        <th className="py-2.5 text-right">Moyenne</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {bulletinSummary.notes.map((note) => (
+                        <tr key={note.name} className="hover:bg-slate-50/50">
+                          <td className="py-3 font-bold text-slate-900">{note.name}</td>
+                          <td className="py-3 text-center text-slate-600 font-bold">{note.coeff}</td>
+                          <td className="py-3 text-center text-slate-700 font-bold">{note.gradeClasse}</td>
+                          <td className="py-3 text-center text-slate-700 font-bold">{note.gradeCompo}</td>
+                          <td className="py-3 text-right font-black text-blue-600">
+                            {note.moyenne}/20
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
+
               </div>
             ) : (
-              <div className="text-center py-10 text-slate-600 font-bold">
-                Aucun bulletin disponible pour cette période.
-              </div>
+              <p className="text-xs text-slate-400 text-center py-8 font-medium">
+                Aucun relevé disponible pour cette période.
+              </p>
             )}
+          </div>
+        )}
 
-            <div
-              id="student-bulletin-pdf"
-              style={{
-                position: "fixed",
-                left: "-9999px",
-                top: 0,
-                width: "210mm",
-                padding: "32px",
-                background: "#ffffff",
-                color: "#0f172a",
-                fontFamily: "Inter, Arial, Helvetica, sans-serif",
-                boxSizing: "border-box",
-              }}
-            >
-              <div style={{ marginBottom: "24px" }}>
-                <h1 style={{ fontSize: "28px", fontWeight: 900, margin: 0 }}>
-                  {student.first_name} {student.last_name}
-                </h1>
-                <p
-                  style={{
-                    margin: "8px 0 0",
-                    fontSize: "14px",
-                    color: "#475569",
-                  }}
-                >
-                  Bulletin - {bulletinPeriod}
-                </p>
-                <p
-                  style={{
-                    margin: "4px 0 0",
-                    fontSize: "12px",
-                    color: "#6b7280",
-                  }}
-                >
-                  Classe : {student.classes?.name || "Non renseignée"}
-                </p>
+        {/* MODULE 4 : DISCIPLINE */}
+        {activeTab === "discipline" && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            <div className="lg:col-span-5 border border-slate-200/80 rounded-2xl p-5 bg-white space-y-4">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Signaler un incident</h3>
+                <p className="text-xs text-slate-500 font-medium">Ajouter une note au dossier de vie scolaire</p>
               </div>
-              <div style={{ marginBottom: "20px" }}>
-                <p
-                  style={{
-                    fontSize: "12px",
-                    margin: "0 0 8px",
-                    fontWeight: 700,
-                  }}
+
+              <form onSubmit={handleAddIncident} className="space-y-3.5">
+                <textarea
+                  placeholder="Motif de l'avertissement ou observation..."
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-blue-600 resize-none h-24"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  disabled={isReadOnly}
+                  required
+                />
+
+                <div className="grid grid-cols-3 gap-2">
+                  {["Bas", "Moyen", "Grave"].map((lvl) => (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => setSeverity(lvl)}
+                      disabled={isReadOnly}
+                      className={`py-2 rounded-xl text-xs font-bold transition ${
+                        severity === lvl
+                          ? "bg-slate-900 text-white"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      {lvl}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isReadOnly}
+                  className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition disabled:opacity-40"
                 >
-                  Moyenne générale
-                </p>
-                <p style={{ fontSize: "32px", margin: 0, fontWeight: 900 }}>
-                  {bulletinSummary?.moyenne ?? "0.00"}
-                </p>
-                <p
-                  style={{
-                    fontSize: "12px",
-                    margin: "4px 0 0",
-                    color: "#6b7280",
-                  }}
-                >
-                  Mention : {bulletinSummary?.mention ?? "N/A"}
-                </p>
+                  Enregistrer l'incident
+                </button>
+              </form>
+            </div>
+
+            <div className="lg:col-span-7 border border-slate-200/80 rounded-2xl bg-white overflow-hidden">
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                <h3 className="text-sm font-bold text-slate-900">Dossier disciplinaire</h3>
+                <span className="text-xs text-slate-500 font-bold">{incidents.length} rapports</span>
               </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                  gap: "12px",
-                }}
-              >
-                {bulletinSummary?.notes.map((note) => (
-                  <div
-                    key={note.name}
-                    style={{
-                      padding: "14px",
-                      borderRadius: "24px",
-                      background: "#f8fafc",
-                      border: "1px solid #e2e8f0",
-                    }}
-                  >
-                    <p
-                      style={{
-                        margin: 0,
-                        fontSize: "12px",
-                        color: "#475569",
-                        fontWeight: 800,
-                      }}
-                    >
-                      {note.name}
-                    </p>
-                    <p
-                      style={{
-                        margin: "10px 0 0",
-                        fontSize: "12px",
-                        color: "#0f172a",
-                      }}
-                    >
-                      Classe: {note.gradeClasse}
-                    </p>
-                    <p
-                      style={{
-                        margin: "4px 0 0",
-                        fontSize: "12px",
-                        color: "#0f172a",
-                      }}
-                    >
-                      Compo: {note.gradeCompo}
-                    </p>
-                    <p
-                      style={{
-                        margin: "8px 0 0",
-                        fontSize: "14px",
-                        color: "#111827",
-                        fontWeight: 800,
-                      }}
-                    >
-                      Moyenne: {note.moyenne}
-                    </p>
-                  </div>
-                ))}
+
+              <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                {incidents.length === 0 ? (
+                  <p className="p-6 text-center text-xs text-slate-400 font-medium">
+                    Aucun incident enregistré.
+                  </p>
+                ) : (
+                  incidents.map((inc) => (
+                    <div key={inc.id} className="p-4 flex items-start justify-between gap-3 text-xs">
+                      <div>
+                        <p className="font-bold text-slate-900">{inc.reason}</p>
+                        <span className="text-[11px] text-slate-500 font-medium block mt-0.5">
+                          {new Date(inc.incident_date || inc.created_at).toLocaleDateString("fr-FR")}
+                        </span>
+                      </div>
+                      <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                        inc.severity === "Grave"
+                          ? "bg-rose-50 text-rose-700"
+                          : inc.severity === "Moyen"
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-slate-100 text-slate-700"
+                      }`}>
+                        {inc.severity || "Bas"}
+                      </span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
-          </div>
 
-        </div>
+          </div>
+        )}
+
       </div>
 
-      {/* PARAMÈTRES ET MODAL DE CONFIGURATION */}
+      {/* 5. MODAL CONFIGURATION */}
       {isEditModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-md z-[100] flex items-end sm:items-center justify-center">
-          <div className="bg-gradient-to-br from-white to-blue-50 w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-7 shadow-2xl overflow-y-auto max-h-[88vh] no-scrollbar animate-in slide-in-from-bottom sm:zoom-in-95 duration-200 border-2 border-indigo-200">
-            <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-indigo-300 sm:hidden" />
-            <div className="flex justify-between items-center mb-6">
+        <div className="fixed inset-0 z-50 bg-slate-900/30 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-md p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <h2 className="text-lg font-black text-slate-900">
-                  Fiche de configuration
-                </h2>
-                <p className="text-[11px] text-slate-600 font-bold">
-                  Informations et échéancier de l'élève
-                </p>
+                <h3 className="text-sm font-bold text-slate-900">Modifier la fiche</h3>
+                <p className="text-xs text-slate-500 font-medium">Mise à jour des coordonnées et scolarité</p>
               </div>
-              <button
-                onClick={() => setIsEditModalOpen(false)}
-                className="p-2.5 bg-indigo-200 rounded-full text-indigo-700 hover:bg-indigo-300 active:scale-90 transition-all font-bold"
-              >
-                <X size={15} />
+              <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                <X size={16} />
               </button>
             </div>
 
-            <form onSubmit={handleUpdateProfile} className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-indigo-700 ml-1">
-                  Planification échéances
-                </label>
-                <select
-                  className="w-full p-3.5 bg-indigo-50 border-2 border-indigo-200 rounded-xl font-bold text-sm text-slate-800 outline-none focus:border-indigo-400 focus:bg-white transition-all"
-                  value={editForm.payment_plan_tranches}
-                  onChange={(e) =>
-                    setEditForm({
-                      ...editForm,
-                      payment_plan_tranches: parseInt(e.target.value),
-                    })
-                  }
-                >
-                  <option value={1}>1 versement unique</option>
-                  <option value={3}>3 tranches (Trimestriel)</option>
-                  <option value={9}>9 tranches (Mensuel)</option>
-                </select>
-              </div>
-
+            <form onSubmit={handleUpdateProfile} className="space-y-3.5 text-xs">
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-indigo-700 ml-1">
-                    Prénom
-                  </label>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Prénom</label>
                   <input
                     type="text"
-                    className="w-full p-3.5 bg-indigo-50 border-2 border-indigo-200 rounded-xl font-bold text-sm text-slate-800 outline-none focus:border-indigo-400 focus:bg-white transition-all"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:bg-white focus:border-blue-600"
                     value={editForm.first_name}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, first_name: e.target.value })
-                    }
+                    onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
+                    required
                   />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase text-indigo-700 ml-1">
-                    Nom
-                  </label>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Nom</label>
                   <input
                     type="text"
-                    className="w-full p-3.5 bg-indigo-50 border-2 border-indigo-200 rounded-xl font-bold text-sm text-slate-800 outline-none focus:border-indigo-400 focus:bg-white transition-all"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:bg-white focus:border-blue-600"
                     value={editForm.last_name}
-                    onChange={(e) =>
-                      setEditForm({ ...editForm, last_name: e.target.value })
-                    }
+                    onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
+                    required
                   />
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-indigo-700 ml-1">
-                  Contact parent
-                </label>
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Téléphone parent</label>
                 <input
                   type="text"
-                  className="w-full p-3.5 bg-indigo-50 border-2 border-indigo-200 rounded-xl font-bold text-sm text-slate-800 outline-none focus:border-indigo-400 focus:bg-white transition-all"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:bg-white focus:border-blue-600"
                   value={editForm.parent_phone}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, parent_phone: e.target.value })
-                  }
+                  onChange={(e) => setEditForm({ ...editForm, parent_phone: e.target.value })}
                 />
               </div>
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-indigo-700 ml-1">
-                  Adresse habitation
-                </label>
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Adresse</label>
                 <input
                   type="text"
-                  className="w-full p-3.5 bg-indigo-50 border-2 border-indigo-200 rounded-xl font-bold text-sm text-slate-800 outline-none focus:border-indigo-400 focus:bg-white transition-all"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:bg-white focus:border-blue-600"
                   value={editForm.address}
-                  onChange={(e) =>
-                    setEditForm({ ...editForm, address: e.target.value })
-                  }
+                  onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
                 />
               </div>
 
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase text-indigo-700 ml-1">
-                  Montant scolarité annuelle requis
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  className="w-full p-3.5 bg-indigo-50 border-2 border-indigo-200 rounded-xl font-black text-sm text-indigo-700 outline-none focus:border-indigo-400 focus:bg-white transition-all"
-                  value={formatInputDisplay(String(editForm.annual_fee ?? 0))}
-                  onChange={(e) => {
-                    const clean = e.target.value.replace(/\s/g, "");
-                    setEditForm({
-                      ...editForm,
-                      annual_fee: clean ? parseInt(clean, 10) : 0,
-                    });
-                  }}
-                />
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Scolarité annuelle</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-black outline-none focus:bg-white focus:border-blue-600 text-blue-600"
+                    value={formatInputDisplay(String(editForm.annual_fee ?? 0))}
+                    onChange={(e) => {
+                      const clean = e.target.value.replace(/\s/g, "");
+                      setEditForm({
+                        ...editForm,
+                        annual_fee: clean ? parseInt(clean, 10) : 0,
+                      });
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Tranches</label>
+                  <select
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:bg-white focus:border-blue-600"
+                    value={editForm.payment_plan_tranches}
+                    onChange={(e) =>
+                      setEditForm({
+                        ...editForm,
+                        payment_plan_tranches: parseInt(e.target.value),
+                      })
+                    }
+                  >
+                    <option value={1}>1 versement</option>
+                    <option value={3}>3 tranches</option>
+                    <option value={9}>9 tranches</option>
+                  </select>
+                </div>
               </div>
 
-              <button
-                type="submit"
-                className="w-full bg-gradient-to-r from-indigo-600 to-blue-600 text-white p-3.5 rounded-xl font-black text-sm hover:shadow-lg active:scale-95 transition-all shadow-md flex items-center justify-center gap-2"
-              >
-                <Save size={16} /> Enregistrer les modifications
-              </button>
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-3.5 py-2 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 font-bold"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700"
+                >
+                  Enregistrer
+                </button>
+              </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* 6. CONTENEUR CACHÉ POUR L'EXPORT PDF */}
+      <div
+        id="student-bulletin-pdf"
+        style={{
+          position: "fixed",
+          left: "-9999px",
+          top: 0,
+          width: "210mm",
+          padding: "32px",
+          background: "#ffffff",
+          color: "#0f172a",
+          fontFamily: "Inter, Arial, Helvetica, sans-serif",
+          boxSizing: "border-box",
+        }}
+      >
+        <div style={{ marginBottom: "24px" }}>
+          <h1 style={{ fontSize: "24px", fontWeight: 900, margin: 0 }}>
+            {student.first_name} {student.last_name}
+          </h1>
+          <p style={{ margin: "6px 0 0", fontSize: "13px", color: "#475569" }}>
+            Bulletin - {bulletinPeriod}
+          </p>
+          <p style={{ margin: "2px 0 0", fontSize: "11px", color: "#6b7280" }}>
+            Classe : {student.classes?.name || "Non renseignée"}
+          </p>
+        </div>
+        <div style={{ marginBottom: "16px" }}>
+          <p style={{ fontSize: "11px", margin: "0 0 4px", fontWeight: 700 }}>
+            Moyenne générale
+          </p>
+          <p style={{ fontSize: "28px", margin: 0, fontWeight: 900 }}>
+            {bulletinSummary?.moyenne ?? "0.00"}
+          </p>
+          <p style={{ fontSize: "11px", margin: "2px 0 0", color: "#6b7280" }}>
+            Mention : {bulletinSummary?.mention ?? "N/A"}
+          </p>
+        </div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+            gap: "8px",
+          }}
+        >
+          {bulletinSummary?.notes.map((note) => (
+            <div
+              key={note.name}
+              style={{
+                padding: "10px",
+                background: "#f8fafc",
+                border: "1px solid #cbd5e1",
+              }}
+            >
+              <p style={{ margin: 0, fontSize: "11px", color: "#334155", fontWeight: 800 }}>
+                {note.name}
+              </p>
+              <p style={{ margin: "6px 0 0", fontSize: "10px", color: "#0f172a" }}>
+                Classe : {note.gradeClasse}
+              </p>
+              <p style={{ margin: "2px 0 0", fontSize: "10px", color: "#0f172a" }}>
+                Compo : {note.gradeCompo}
+              </p>
+              <p style={{ margin: "6px 0 0", fontSize: "12px", color: "#0284c7", fontWeight: 800 }}>
+                Moyenne : {note.moyenne}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
     </div>
   );
 }
