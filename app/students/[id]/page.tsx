@@ -11,6 +11,8 @@ import {
   ArrowLeft,
   Loader2,
   Phone,
+  PhoneCall,
+  Contact2,
   MapPin,
   Edit3,
   X,
@@ -18,15 +20,7 @@ import {
   Settings2,
   Download,
   MessageSquare,
-  Bell,
-  BookOpen,
-  Clock,
-  ReceiptText,
-  GraduationCap,
-  Calendar,
   AlertCircle,
-  Wallet,
-  ShieldAlert,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -81,6 +75,11 @@ export default function StudentDetails() {
     annual_fee: 0,
     payment_plan_tranches: 1,
   });
+
+  // Gestion du contact parent
+  const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
+  const [manualPhoneInput, setManualPhoneInput] = useState("");
+  const [isSavingPhone, setIsSavingPhone] = useState(false);
 
   const fetchData = useCallback(
     async (silent = false) => {
@@ -305,6 +304,74 @@ export default function StudentDetails() {
         `Paiement bien validé.`,
     );
     window.open(`https://wa.me/${cleanNumber}?text=${message}`, "_blank");
+  };
+
+  const saveParentPhone = async (phoneNumber: string) => {
+    const cleanPhone = phoneNumber.trim();
+    if (!cleanPhone) return;
+    setIsSavingPhone(true);
+
+    const backupPhone = student?.parent_phone;
+    setStudent((prev: any) => (prev ? { ...prev, parent_phone: cleanPhone } : null));
+
+    const { error } = await offlineWrite({
+      table: "students",
+      action: "UPDATE",
+      payload: { parent_phone: cleanPhone },
+      options: { keyColumn: "id", keyValue: Array.isArray(id) ? id[0] : id },
+      cacheKey: `student:${id}`,
+      optimisticUpdate: () => {},
+    });
+
+    setIsSavingPhone(false);
+    if (!error) {
+      setIsPhoneModalOpen(false);
+      setManualPhoneInput("");
+      fetchData(true);
+    } else {
+      setStudent((prev: any) => (prev ? { ...prev, parent_phone: backupPhone } : null));
+      alert("Erreur lors de l'enregistrement du numéro.");
+    }
+  };
+
+  // Sélection directe avec gestion robuste de Chrome Android et contexte HTTPS
+  const pickPhoneFromContacts = async () => {
+    const nav = typeof navigator !== "undefined" ? (navigator as any) : null;
+
+    if (typeof window !== "undefined" && !window.isSecureContext) {
+      alert(
+        "Google Chrome exige une connexion HTTPS sécurisée (ou localhost) pour ouvrir le répertoire de contacts.\n\nSi vous êtes sur votre réseau local (ex: http://192.168.x.x), Chrome désactive l'accès au répertoire par sécurité. Saisissez le numéro dans le champ manuel ci-dessous."
+      );
+      return;
+    }
+
+    if (nav && "contacts" in nav && typeof nav.contacts?.select === "function") {
+      try {
+        const availableProps = typeof nav.contacts.getProperties === "function"
+          ? await nav.contacts.getProperties()
+          : ["tel"];
+
+        const propsToRequest = availableProps.includes("tel") ? ["tel"] : availableProps;
+        const contacts = await nav.contacts.select(propsToRequest, { multiple: false });
+
+        if (contacts && contacts.length > 0 && contacts[0].tel && contacts[0].tel.length > 0) {
+          let selectedNumber = contacts[0].tel[0];
+          selectedNumber = selectedNumber.replace(/[\u202F\u00A0]/g, " ").trim();
+          await saveParentPhone(selectedNumber);
+        }
+      } catch (err: any) {
+        if (err?.name === "AbortError") {
+          console.log("Sélection de contact fermée par l'utilisateur.");
+        } else {
+          console.error("Erreur Contact Picker :", err);
+          alert(`Erreur d'accès au répertoire : ${err?.message || "Action interrompue"}`);
+        }
+      }
+    } else {
+      alert(
+        "La fonctionnalité de sélection directe n'est pas accessible sur ce navigateur.\n\nVeuillez renseigner le numéro dans le champ manuel ci-dessous."
+      );
+    }
   };
 
   const bulletinSummary = useMemo(() => {
@@ -736,6 +803,11 @@ export default function StudentDetails() {
   const amountPerTranche = annualFee / numTranches;
   const fmt = (n: number) => new Intl.NumberFormat("fr-FR").format(n);
 
+  const hasParentPhone =
+    student.parent_phone &&
+    String(student.parent_phone).trim() !== "" &&
+    String(student.parent_phone).trim() !== "-";
+
   return (
     <div className="min-h-screen bg-white text-slate-900 font-sans antialiased pb-24">
       
@@ -767,7 +839,7 @@ export default function StudentDetails() {
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-8 space-y-8">
 
-        {/* 2. PROFIL ÉLÈVE : TEXTES EN GRAS, GRANDES POLICES, BANDEAU ÉPURÉ */}
+        {/* 2. PROFIL ÉLÈVE */}
         <section className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-8 border-b border-slate-200">
           
           <div className="flex items-start sm:items-center gap-5 sm:gap-6">
@@ -785,12 +857,39 @@ export default function StudentDetails() {
                 </span>
               </div>
 
-              <div className="flex flex-wrap items-center gap-y-1.5 gap-x-6 text-sm sm:text-base text-slate-700 font-bold">
-                <span className="inline-flex items-center gap-2">
-                  <Phone size={16} className="text-blue-600 shrink-0" />
-                  <span>{student.parent_phone || "Aucun contact"}</span>
-                </span>
-                <span className="inline-flex items-center gap-2">
+              {/* Ligne Coordonnées avec Bouton d'Action Répertoire / Manuel */}
+              <div className="flex flex-wrap items-center gap-y-2 gap-x-6 text-sm sm:text-base text-slate-700 font-bold">
+                {hasParentPhone ? (
+                  <div className="inline-flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+                    <Phone size={15} className="text-blue-600 shrink-0" />
+                    <span className="text-slate-900">{student.parent_phone}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManualPhoneInput(student.parent_phone);
+                        setIsPhoneModalOpen(true);
+                      }}
+                      className="ml-1 text-slate-400 hover:text-blue-600 transition p-0.5"
+                      title="Modifier le contact parent"
+                    >
+                      <Edit3 size={13} />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualPhoneInput("");
+                      setIsPhoneModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-xl text-xs font-extrabold transition shadow-xs active:scale-95"
+                  >
+                    <PhoneCall size={14} className="text-blue-600" />
+                    <span>+ Ajouter contact parent</span>
+                  </button>
+                )}
+
+                <span className="inline-flex items-center gap-2 text-slate-600">
                   <MapPin size={16} className="text-blue-600 shrink-0" />
                   <span>{student.address || "Adresse non renseignée"}</span>
                 </span>
@@ -1432,7 +1531,7 @@ export default function StudentDetails() {
 
       </div>
 
-      {/* 5. MODAL CONFIGURATION */}
+      {/* 5. MODAL CONFIGURATION PROFIL */}
       {isEditModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/30 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-md p-6 space-y-4 shadow-xl">
@@ -1546,7 +1645,91 @@ export default function StudentDetails() {
         </div>
       )}
 
-      {/* 6. CONTENEUR CACHÉ POUR L'EXPORT PDF */}
+      {/* 6. MODAL D'AJOUT RAPIDE DU CONTACT PARENT */}
+      {isPhoneModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-sm p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Contact du parent</h3>
+                <p className="text-xs text-slate-500 font-medium">Ajouter le numéro pour {student.first_name}</p>
+              </div>
+              <button 
+                onClick={() => {
+                  setIsPhoneModalOpen(false);
+                  setManualPhoneInput("");
+                }} 
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              {/* Option 1 : Répertoire du téléphone */}
+              <button
+                type="button"
+                onClick={pickPhoneFromContacts}
+                disabled={isSavingPhone}
+                className="w-full py-3 px-4 bg-blue-50 border border-blue-200 hover:bg-blue-100 text-blue-700 font-bold rounded-xl flex items-center justify-center gap-2 transition shadow-xs"
+              >
+                <Contact2 size={16} />
+                <span>Choisir dans le répertoire</span>
+              </button>
+
+              <div className="relative flex items-center justify-center">
+                <div className="border-t border-slate-200 w-full" />
+                <span className="bg-white px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest absolute">ou</span>
+              </div>
+
+              {/* Option 2 : Saisie manuelle */}
+              <form 
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  saveParentPhone(manualPhoneInput);
+                }} 
+                className="space-y-3"
+              >
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Numéro manuel</label>
+                  <input
+                    type="tel"
+                    placeholder="Ex: 70 00 00 00"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold outline-none focus:bg-white focus:border-blue-600 text-slate-900"
+                    value={manualPhoneInput}
+                    onChange={(e) => setManualPhoneInput(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPhoneModalOpen(false);
+                      setManualPhoneInput("");
+                    }}
+                    className="px-3.5 py-2 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 font-bold"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingPhone}
+                    className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 flex items-center gap-1.5 disabled:opacity-40"
+                  >
+                    {isSavingPhone && <Loader2 size={13} className="animate-spin" />}
+                    <span>Enregistrer</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. CONTENEUR CACHÉ POUR L'EXPORT PDF */}
       <div
         id="student-bulletin-pdf"
         style={{
