@@ -15,6 +15,7 @@ import {
   Contact2,
   MapPin,
   Edit3,
+  Trash2,
   X,
   CheckCircle2,
   Settings2,
@@ -31,6 +32,21 @@ const PROFILE_DAYS = [
   "Jeudi",
   "Vendredi",
   "Samedi",
+];
+
+const SCHOOL_MONTHS = [
+  "Octobre",
+  "Novembre",
+  "Décembre",
+  "Janvier",
+  "Février",
+  "Mars",
+  "Avril",
+  "Mai",
+  "Juin",
+  "Juillet",
+  "Août",
+  "Septembre",
 ];
 
 export default function StudentDetails() {
@@ -54,9 +70,18 @@ export default function StudentDetails() {
   // Navigation par modules
   const [activeTab, setActiveTab] = useState<"finance" | "pedagogy" | "bulletin" | "discipline">("finance");
 
-  // Formulaires
+  // Formulaires d'encaissement
   const [amount, setAmount] = useState("");
   const [month, setMonth] = useState("");
+  const [paymentMode, setPaymentMode] = useState<"tranche" | "mensualite">("tranche");
+
+  // Modification & Suppression d'un paiement existant
+  const [editingPayment, setEditingPayment] = useState<any | null>(null);
+  const [editPaymentAmount, setEditPaymentAmount] = useState("");
+  const [isUpdatingPayment, setIsUpdatingPayment] = useState(false);
+  const [confirmDeletePaymentId, setConfirmDeletePaymentId] = useState<string | null>(null);
+  const [isDeletingPayment, setIsDeletingPayment] = useState(false);
+
   const [reason, setReason] = useState("");
   const [severity, setSeverity] = useState("Bas");
 
@@ -334,7 +359,6 @@ export default function StudentDetails() {
     }
   };
 
-  // Sélection directe avec gestion robuste de Chrome Android et contexte HTTPS
   const pickPhoneFromContacts = async () => {
     const nav = typeof navigator !== "undefined" ? (navigator as any) : null;
 
@@ -598,14 +622,26 @@ export default function StudentDetails() {
     }
   };
 
-  const handleBasePayment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isReadOnly) return;
+  // Fonction centrale d'enregistrement d'un paiement scolaire (Tranche ou Mois)
+  const recordTuitionPayment = async (designation: string, customAmount?: number) => {
+    if (isReadOnly || !designation) return;
 
-    const payAmount = parseFloat(amount.replace(/\s/g, ""));
-    if (isNaN(payAmount)) return;
+    const annualFeeVal = Number(student?.scolarite_totale || student?.annual_fee || 0);
+    const numTranchesVal = student?.payment_plan_tranches || 1;
+    const defaultInstallment = numTranchesVal > 0 ? Math.round(annualFeeVal / numTranchesVal) : 0;
 
-    const currentMonth = month;
+    const rawNumeric = customAmount !== undefined
+      ? customAmount
+      : parseFloat(amount.replace(/\s/g, ""));
+
+    const payAmount = !isNaN(rawNumeric) && rawNumeric > 0 ? rawNumeric : defaultInstallment;
+
+    if (!payAmount || payAmount <= 0) {
+      alert("Veuillez saisir un montant valide avant de sélectionner le paiement.");
+      return;
+    }
+
+    const currentDesignation = designation;
     const newCollectedTotal = Number(student?.scolarite_payee || 0) + payAmount;
     const todayStr = new Date().toISOString().split("T")[0];
 
@@ -626,7 +662,7 @@ export default function StudentDetails() {
         id: `temp-${Date.now()}`,
         student_id: id,
         amount: payAmount,
-        month: currentMonth,
+        month: currentDesignation,
         created_at: new Date().toISOString(),
       },
       ...prev,
@@ -641,7 +677,7 @@ export default function StudentDetails() {
       payload: {
         student_id: id,
         amount: payAmount,
-        month: currentMonth,
+        month: currentDesignation,
         academic_year_id: student?.academic_year_id,
         school_id: student?.school_id,
       },
@@ -662,12 +698,212 @@ export default function StudentDetails() {
         optimisticUpdate: () => {},
       });
 
-      sendReceiptWhatsApp(payAmount, currentMonth, "SCOLAIRE");
+      sendReceiptWhatsApp(payAmount, currentDesignation, "SCOLAIRE");
       fetchData(true);
     } else {
       setStudent(backupStudent);
       setPayments(backupPayments);
     }
+  };
+
+  const handleBasePayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await recordTuitionPayment(month);
+  };
+
+  // Modification d'une somme déjà enregistrée avec historique de l'ancien et du nouveau montant
+  const handleUpdatePaymentRecord = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPayment || isReadOnly) return;
+
+    const newNumericAmount = parseFloat(editPaymentAmount.replace(/\s/g, ""));
+    if (isNaN(newNumericAmount) || newNumericAmount < 0) return;
+
+    const isExtra = Boolean(editingPayment.extra_fee_types || editingPayment.fee_type_id);
+    const oldAmount = Number(isExtra ? editingPayment.amount_paid : editingPayment.amount);
+
+    if (newNumericAmount === oldAmount) {
+      setEditingPayment(null);
+      return;
+    }
+
+    setIsUpdatingPayment(true);
+    const fmtNum = (n: number) => new Intl.NumberFormat("fr-FR").format(n);
+
+    if (!isExtra) {
+      const diff = newNumericAmount - oldAmount;
+      const updatedTotalPaid = Math.max(0, Number(student?.scolarite_payee || 0) + diff);
+
+      const baseLabel = String(editingPayment.month || "Paiement").split(" (Modifié")[0];
+      const updatedMonthLabel = `${baseLabel} (Modifié : ${fmtNum(oldAmount)} F → ${fmtNum(newNumericAmount)} F)`;
+
+      const backupStudent = { ...student };
+      const backupPayments = [...payments];
+
+      setStudent((prev: any) => (prev ? { ...prev, scolarite_payee: updatedTotalPaid } : null));
+      setPayments((prev) =>
+        prev.map((p) =>
+          p.id === editingPayment.id
+            ? { ...p, amount: newNumericAmount, month: updatedMonthLabel }
+            : p
+        )
+      );
+
+      const { error: payUpdateErr } = await offlineWrite({
+        table: "payments",
+        action: "UPDATE",
+        payload: {
+          amount: newNumericAmount,
+          month: updatedMonthLabel,
+        },
+        options: { keyColumn: "id", keyValue: editingPayment.id },
+        cacheKey: `payments:${id}`,
+        optimisticUpdate: () => {},
+      });
+
+      if (!payUpdateErr) {
+        await offlineWrite({
+          table: "students",
+          action: "UPDATE",
+          payload: { scolarite_payee: updatedTotalPaid },
+          options: { keyColumn: "id", keyValue: Array.isArray(id) ? id[0] : id },
+          cacheKey: `student:${id}`,
+          optimisticUpdate: () => {},
+        });
+        setEditingPayment(null);
+        fetchData(true);
+      } else {
+        setStudent(backupStudent);
+        setPayments(backupPayments);
+        alert("Erreur lors de la modification du paiement.");
+      }
+    } else {
+      const backupExtra = [...extraPayments];
+      setExtraPayments((prev) =>
+        prev.map((p) =>
+          p.id === editingPayment.id
+            ? {
+                ...p,
+                amount_paid: newNumericAmount,
+                extra_fee_types: {
+                  name: `${String(p.extra_fee_types?.name || "Frais").split(" (Modifié")[0]} (Modifié : ${fmtNum(oldAmount)} F → ${fmtNum(newNumericAmount)} F)`,
+                },
+              }
+            : p
+        )
+      );
+
+      const { error: exUpdateErr } = await offlineWrite({
+        table: "student_extra_payments",
+        action: "UPDATE",
+        payload: { amount_paid: newNumericAmount },
+        options: { keyColumn: "id", keyValue: editingPayment.id },
+        cacheKey: `extra_payments:${id}`,
+        optimisticUpdate: () => {},
+      });
+
+      if (!exUpdateErr) {
+        setEditingPayment(null);
+        fetchData(true);
+      } else {
+        setExtraPayments(backupExtra);
+        alert("Erreur lors de la modification du reçu annexe.");
+      }
+    }
+
+    setIsUpdatingPayment(false);
+  };
+
+  // Suppression d'un paiement tout en conservant sa trace en rouge dans l'historique
+  const handleSoftDeletePayment = async (paymentRecord: any) => {
+    if (isReadOnly || !paymentRecord) return;
+    setIsDeletingPayment(true);
+
+    const isExtra = Boolean(paymentRecord.extra_fee_types || paymentRecord.fee_type_id);
+    const oldAmount = Number(isExtra ? paymentRecord.amount_paid : paymentRecord.amount);
+    const fmtNum = (n: number) => new Intl.NumberFormat("fr-FR").format(n);
+
+    if (!isExtra) {
+      const updatedTotalPaid = Math.max(0, Number(student?.scolarite_payee || 0) - oldAmount);
+      const baseLabel = String(paymentRecord.month || "Paiement").split(" (Modifié")[0].split(" [SUPPRIMÉ")[0];
+      const deletedLabel = `${baseLabel} [SUPPRIMÉ - Ancien montant : ${fmtNum(oldAmount)} FCFA]`;
+
+      const backupStudent = { ...student };
+      const backupPayments = [...payments];
+
+      setStudent((prev: any) => (prev ? { ...prev, scolarite_payee: updatedTotalPaid } : null));
+      setPayments((prev) =>
+        prev.map((p) =>
+          p.id === paymentRecord.id
+            ? { ...p, amount: 0, month: deletedLabel }
+            : p
+        )
+      );
+
+      const { error } = await offlineWrite({
+        table: "payments",
+        action: "UPDATE",
+        payload: {
+          amount: 0,
+          month: deletedLabel,
+        },
+        options: { keyColumn: "id", keyValue: paymentRecord.id },
+        cacheKey: `payments:${id}`,
+        optimisticUpdate: () => {},
+      });
+
+      if (!error) {
+        await offlineWrite({
+          table: "students",
+          action: "UPDATE",
+          payload: { scolarite_payee: updatedTotalPaid },
+          options: { keyColumn: "id", keyValue: Array.isArray(id) ? id[0] : id },
+          cacheKey: `student:${id}`,
+          optimisticUpdate: () => {},
+        });
+        setConfirmDeletePaymentId(null);
+        fetchData(true);
+      } else {
+        setStudent(backupStudent);
+        setPayments(backupPayments);
+        alert("Erreur lors de l'annulation du paiement.");
+      }
+    } else {
+      const backupExtra = [...extraPayments];
+      const baseExtraName = String(paymentRecord.extra_fee_types?.name || "Frais").split(" [SUPPRIMÉ")[0];
+      const deletedExtraLabel = `${baseExtraName} [SUPPRIMÉ - Ancien montant : ${fmtNum(oldAmount)} FCFA]`;
+
+      setExtraPayments((prev) =>
+        prev.map((p) =>
+          p.id === paymentRecord.id
+            ? {
+                ...p,
+                amount_paid: 0,
+                extra_fee_types: { name: deletedExtraLabel },
+              }
+            : p
+        )
+      );
+
+      const { error } = await offlineWrite({
+        table: "student_extra_payments",
+        action: "UPDATE",
+        payload: { amount_paid: 0 },
+        options: { keyColumn: "id", keyValue: paymentRecord.id },
+        cacheKey: `extra_payments:${id}`,
+        optimisticUpdate: () => {},
+      });
+
+      if (!error) {
+        setConfirmDeletePaymentId(null);
+        fetchData(true);
+      } else {
+        setExtraPayments(backupExtra);
+        alert("Erreur lors de l'annulation du reçu annexe.");
+      }
+    }
+
+    setIsDeletingPayment(false);
   };
 
   const handleExtraPayment = async (e: React.FormEvent) => {
@@ -764,6 +1000,41 @@ export default function StudentDetails() {
     }
   };
 
+  // Séparation stricte entre les paiements actifs par Tranche et les paiements actifs par Mois
+  const activePayments = useMemo(() => {
+    return payments.filter(
+      (p) => !String(p.month || "").includes("[SUPPRIMÉ") && Number(p.amount || 0) > 0
+    );
+  }, [payments]);
+
+  const paidMonthsSet = useMemo(() => {
+    const set = new Set<string>();
+    activePayments.forEach((p) => {
+      const cleanLabel = String(p.month || "").split(" (Modifié")[0].trim();
+      if (SCHOOL_MONTHS.includes(cleanLabel)) {
+        set.add(cleanLabel);
+      }
+    });
+    return set;
+  }, [activePayments]);
+
+  const paidTranchesSet = useMemo(() => {
+    const set = new Set<string>();
+    activePayments.forEach((p) => {
+      const cleanLabel = String(p.month || "").split(" (Modifié")[0].trim();
+      if (!SCHOOL_MONTHS.includes(cleanLabel)) {
+        set.add(cleanLabel);
+      }
+    });
+    return set;
+  }, [activePayments]);
+
+  const totalPaidInTranchesOnly = useMemo(() => {
+    return activePayments
+      .filter((p) => !SCHOOL_MONTHS.includes(String(p.month || "").split(" (Modifié")[0].trim()))
+      .reduce((acc, p) => acc + Number(p.amount || 0), 0);
+  }, [activePayments]);
+
   if (loading && !student)
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-white text-slate-400 font-sans">
@@ -802,6 +1073,13 @@ export default function StudentDetails() {
   const numTranches = student.payment_plan_tranches || 1;
   const amountPerTranche = annualFee / numTranches;
   const fmt = (n: number) => new Intl.NumberFormat("fr-FR").format(n);
+
+  const dynamicTrancheOptions = Array.from({ length: numTranches }, (_, idx) =>
+    idx === 0 ? "1ère Tranche" : `${idx + 1}ème Tranche`
+  );
+
+  // Détermine si l'échéancier doit afficher les mois ou les tranches
+  const isMonthlySchedule = numTranches === 9 || paidMonthsSet.size > 0;
 
   const hasParentPhone =
     student.parent_phone &&
@@ -1014,7 +1292,39 @@ export default function StudentDetails() {
               <div className="border border-slate-200/80 rounded-2xl p-5 bg-white space-y-4">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">Encaisser la scolarité</h3>
-                  <p className="text-xs text-slate-500 font-medium">Ajoutez un paiement pour ce dossier</p>
+                  <p className="text-xs text-slate-500 font-medium">Choisissez de régler par tranche ou par mensualité</p>
+                </div>
+
+                {/* Sélecteur entre Payer une Tranche ou la Mensualité */}
+                <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentMode("tranche");
+                      setMonth("");
+                    }}
+                    className={`py-2 rounded-lg text-xs font-bold transition ${
+                      paymentMode === "tranche"
+                        ? "bg-white text-blue-600 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Par Tranche ({numTranches})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPaymentMode("mensualite");
+                      setMonth("");
+                    }}
+                    className={`py-2 rounded-lg text-xs font-bold transition ${
+                      paymentMode === "mensualite"
+                        ? "bg-white text-blue-600 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Mensualité (Mois)
+                  </button>
                 </div>
 
                 <form onSubmit={handleBasePayment} className="space-y-3">
@@ -1025,42 +1335,77 @@ export default function StudentDetails() {
                     <input
                       type="text"
                       inputMode="numeric"
-                      placeholder="Ex: 50 000"
+                      placeholder={`Ex: ${fmt(Math.round(amountPerTranche))}`}
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-blue-600 transition"
                       value={formatInputDisplay(amount)}
                       onChange={(e) => setAmount(e.target.value)}
                       disabled={isReadOnly}
-                      required
+                      required={paymentMode === "tranche"}
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Désignation / Échéance
-                    </label>
-                    <select
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-blue-600 transition"
-                      value={month}
-                      onChange={(e) => setMonth(e.target.value)}
-                      disabled={isReadOnly}
-                      required
-                    >
-                      <option value="">Sélectionner...</option>
-                      {["Tranche 1", "Tranche 2", "Tranche 3", "Mensualité", "Solde global"].map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {paymentMode === "tranche" ? (
+                    <>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          Choisir la tranche de l'élève
+                        </label>
+                        <select
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-blue-600 transition cursor-pointer"
+                          value={month}
+                          onChange={(e) => setMonth(e.target.value)}
+                          disabled={isReadOnly}
+                          required
+                        >
+                          <option value="">Sélectionner la tranche...</option>
+                          {dynamicTrancheOptions.map((trLabel) => (
+                            <option key={trLabel} value={trLabel}>
+                              {trLabel} ({fmt(Math.round(amountPerTranche))} F)
+                            </option>
+                          ))}
+                          <option value="Solde global">Solde global</option>
+                        </select>
+                      </div>
 
-                  <button
-                    type="submit"
-                    disabled={isReadOnly}
-                    className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition disabled:opacity-40"
-                  >
-                    Valider l'encaissement
-                  </button>
+                      <button
+                        type="submit"
+                        disabled={isReadOnly}
+                        className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition disabled:opacity-40"
+                      >
+                        Valider l'encaissement
+                      </button>
+                    </>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold text-slate-700">
+                        Cliquez sur un mois pour l'enregistrer automatiquement :
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {SCHOOL_MONTHS.map((mName) => {
+                          const isAlreadyPaid = paidMonthsSet.has(mName);
+                          return (
+                            <button
+                              key={mName}
+                              type="button"
+                              disabled={isReadOnly}
+                              onClick={() => recordTuitionPayment(mName)}
+                              className={`py-2 px-2 rounded-xl border text-xs font-bold transition flex items-center justify-center gap-1 ${
+                                isAlreadyPaid
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                  : "border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 text-slate-800"
+                              }`}
+                            >
+                              {isAlreadyPaid && <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />}
+                              <span className="truncate">{mName}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[11px] text-slate-400 font-medium">
+                        Astuce : Si aucun montant n'est saisi ci-dessus, le tarif par échéance ({fmt(Math.round(amountPerTranche))} F) est appliqué automatiquement.
+                      </p>
+                    </div>
+                  )}
                 </form>
               </div>
 
@@ -1113,15 +1458,15 @@ export default function StudentDetails() {
             {/* Suivi des Tranches & Journal (7 cols) */}
             <div className="lg:col-span-7 space-y-6">
 
-              {/* Barre de progression des versements */}
+              {/* Barre de progression & Échéancier sans conflit entre Tranches et Mois */}
               <div className="border border-slate-200/80 rounded-2xl p-5 bg-white space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-sm font-bold text-slate-900">
-                      Échéancier de scolarité ({numTranches} tranches)
+                      Échéancier de scolarité ({isMonthlySchedule ? "Suivi Mensuel" : `${numTranches} ${numTranches > 1 ? "tranches" : "tranche"}`})
                     </h3>
                     <span className="text-xs text-slate-600 font-bold">
-                      {fmt(amountPerTranche)} FCFA par versement
+                      {fmt(Math.round(amountPerTranche))} FCFA par versement
                     </span>
                   </div>
                   <span className="text-xs font-extrabold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">
@@ -1136,40 +1481,80 @@ export default function StudentDetails() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
-                  {Array.from({ length: numTranches }).map((_, i) => {
-                    const trancheTarget = (i + 1) * amountPerTranche;
-                    const isTranchePaid = totalPaid >= trancheTarget;
-                    return (
-                      <div
-                        key={i}
-                        className={`p-3 rounded-xl border text-xs transition ${
-                          isTranchePaid
-                            ? "border-emerald-200 bg-emerald-50/30 text-emerald-950 font-bold"
-                            : "border-slate-200 bg-slate-50/50 text-slate-600 font-bold"
-                        }`}
-                      >
-                        <span className="text-[11px] block font-extrabold">Tranche {i + 1}</span>
-                        <div className="flex items-center gap-1.5 mt-1 font-bold">
-                          {isTranchePaid ? (
-                            <>
-                              <CheckCircle2 size={13} className="text-emerald-600" />
-                              <span>Réglée</span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="w-2 h-2 rounded-full border border-slate-400" />
-                              <span>En attente</span>
-                            </>
-                          )}
+                {isMonthlySchedule ? (
+                  /* Affichage dédié aux mois sans interférer avec les tranches */
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 pt-2">
+                    {SCHOOL_MONTHS.slice(0, 9).map((mName) => {
+                      const isMonthPaid = paidMonthsSet.has(mName) || isSolded;
+                      return (
+                        <div
+                          key={mName}
+                          className={`p-3 rounded-xl border text-xs transition ${
+                            isMonthPaid
+                              ? "border-emerald-200 bg-emerald-50/30 text-emerald-950 font-bold"
+                              : "border-slate-200 bg-slate-50/50 text-slate-600 font-bold"
+                          }`}
+                        >
+                          <span className="text-[11px] block font-extrabold truncate">{mName}</span>
+                          <div className="flex items-center gap-1.5 mt-1 font-bold">
+                            {isMonthPaid ? (
+                              <>
+                                <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                                <span>Réglé</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="w-2 h-2 rounded-full border border-slate-400 shrink-0" />
+                                <span>En attente</span>
+                              </>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* Affichage strict par Tranche : uniquement validé par les paiements de type Tranche */
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-2">
+                    {Array.from({ length: numTranches }).map((_, i) => {
+                      const trancheLabel = i === 0 ? "1ère Tranche" : `${i + 1}ème Tranche`;
+                      const trancheTarget = (i + 1) * amountPerTranche;
+                      const isTranchePaid =
+                        paidTranchesSet.has(trancheLabel) ||
+                        paidTranchesSet.has("Solde global") ||
+                        totalPaidInTranchesOnly >= trancheTarget;
+
+                      return (
+                        <div
+                          key={i}
+                          className={`p-3 rounded-xl border text-xs transition ${
+                            isTranchePaid
+                              ? "border-emerald-200 bg-emerald-50/30 text-emerald-950 font-bold"
+                              : "border-slate-200 bg-slate-50/50 text-slate-600 font-bold"
+                          }`}
+                        >
+                          <span className="text-[11px] block font-extrabold truncate">{trancheLabel}</span>
+                          <div className="flex items-center gap-1.5 mt-1 font-bold">
+                            {isTranchePaid ? (
+                              <>
+                                <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                                <span>Réglée</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="w-2 h-2 rounded-full border border-slate-400 shrink-0" />
+                                <span>En attente</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
-              {/* Historique des paiements */}
+              {/* Historique des paiements avec modification & suppression traçable en rouge */}
               <div className="border border-slate-200/80 rounded-2xl bg-white overflow-hidden">
                 <div className="p-4 border-b border-slate-100 flex items-center justify-between">
                   <h3 className="text-sm font-bold text-slate-900">Historique des transactions</h3>
@@ -1190,32 +1575,108 @@ export default function StudentDetails() {
                           new Date(b.payment_date || b.created_at).getTime() -
                           new Date(a.payment_date || a.created_at).getTime(),
                       )
-                      .map((p, idx) => (
-                        <div
-                          key={idx}
-                          className="px-4 py-3 flex items-center justify-between text-xs hover:bg-slate-50 transition"
-                        >
-                          <div className="flex items-center gap-3">
-                            <span
-                              className={`w-2 h-2 rounded-full shrink-0 ${
-                                p.extra_fee_types ? "bg-amber-500" : "bg-blue-600"
-                              }`}
-                            />
-                            <div>
-                              <span className="font-bold text-slate-900">
-                                {p.extra_fee_types ? p.extra_fee_types.name : p.month}
+                      .map((p, idx) => {
+                        const currentAmt = p.amount ?? p.amount_paid ?? 0;
+                        const labelDisplay = p.extra_fee_types ? p.extra_fee_types.name : p.month;
+                        const isDeleted = String(labelDisplay || "").includes("[SUPPRIMÉ");
+                        const isConfirmingDel = confirmDeletePaymentId === String(p.id);
+
+                        return (
+                          <div
+                            key={p.id || idx}
+                            className={`px-4 py-3 flex items-center justify-between gap-3 text-xs transition ${
+                              isDeleted
+                                ? "bg-rose-50/40 text-rose-700"
+                                : "hover:bg-slate-50"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <span
+                                className={`w-2 h-2 rounded-full shrink-0 ${
+                                  isDeleted
+                                    ? "bg-rose-600"
+                                    : p.extra_fee_types
+                                      ? "bg-amber-500"
+                                      : "bg-blue-600"
+                                }`}
+                              />
+                              <div className="min-w-0">
+                                <span
+                                  className={`font-bold block truncate ${
+                                    isDeleted ? "text-rose-700 line-through" : "text-slate-900"
+                                  }`}
+                                >
+                                  {labelDisplay}
+                                </span>
+                                <span
+                                  className={`block text-[11px] font-medium mt-0.5 ${
+                                    isDeleted ? "text-rose-500" : "text-slate-500"
+                                  }`}
+                                >
+                                  {new Date(p.payment_date || p.created_at).toLocaleDateString("fr-FR")}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span
+                                className={`font-extrabold ${
+                                  isDeleted ? "text-rose-600" : "text-slate-900"
+                                }`}
+                              >
+                                {isDeleted ? "Supprimé (0 F)" : `${fmt(Number(currentAmt))} FCFA`}
                               </span>
-                              <span className="block text-[11px] text-slate-500 font-medium mt-0.5">
-                                {new Date(p.payment_date || p.created_at).toLocaleDateString("fr-FR")}
-                              </span>
+
+                              {!isReadOnly && !isDeleted && (
+                                <>
+                                  {isConfirmingDel ? (
+                                    <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 px-2 py-1 rounded-lg">
+                                      <button
+                                        type="button"
+                                        disabled={isDeletingPayment}
+                                        onClick={() => handleSoftDeletePayment(p)}
+                                        className="text-[10px] font-black text-rose-700 hover:underline px-1"
+                                      >
+                                        {isDeletingPayment ? "..." : "Confirmer"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={isDeletingPayment}
+                                        onClick={() => setConfirmDeletePaymentId(null)}
+                                        className="text-[10px] font-bold text-slate-500 hover:text-slate-800 px-1"
+                                      >
+                                        Non
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingPayment(p);
+                                          setEditPaymentAmount(String(currentAmt));
+                                        }}
+                                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                                        title="Modifier cette somme"
+                                      >
+                                        <Edit3 size={13} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmDeletePaymentId(String(p.id))}
+                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                                        title="Supprimer ce paiement (avec trace en rouge)"
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
+                                  )}
+                                </>
+                              )}
                             </div>
                           </div>
-
-                          <span className="font-extrabold text-slate-900">
-                            {fmt(p.amount || p.amount_paid)} FCFA
-                          </span>
-                        </div>
-                      ))
+                        );
+                      })
                   )}
                 </div>
               </div>
@@ -1531,7 +1992,74 @@ export default function StudentDetails() {
 
       </div>
 
-      {/* 5. MODAL CONFIGURATION PROFIL */}
+      {/* 5. MODAL DE MODIFICATION D'UNE SOMME ENREGISTRÉE */}
+      {editingPayment && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-sm p-6 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Corriger le montant</h3>
+                <p className="text-xs text-slate-500 font-medium">
+                  {editingPayment.extra_fee_types
+                    ? editingPayment.extra_fee_types.name
+                    : editingPayment.month}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingPayment(null)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdatePaymentRecord} className="space-y-4 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between">
+                <span className="font-bold text-slate-500">Montant initial :</span>
+                <span className="font-black text-slate-900">
+                  {fmt(Number(editingPayment.amount ?? editingPayment.amount_paid ?? 0))} FCFA
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">
+                  Nouveau montant corrigé (FCFA)
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-blue-600 outline-none focus:bg-white focus:border-blue-600"
+                  value={formatInputDisplay(editPaymentAmount)}
+                  onChange={(e) => setEditPaymentAmount(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingPayment(null)}
+                  className="px-3.5 py-2 border border-slate-200 text-slate-700 rounded-xl hover:bg-slate-50 font-bold"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingPayment}
+                  className="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 flex items-center gap-1.5 disabled:opacity-40"
+                >
+                  {isUpdatingPayment && <Loader2 size={13} className="animate-spin" />}
+                  <span>Enregistrer la correction</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6. MODAL CONFIGURATION PROFIL */}
       {isEditModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/30 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-md p-6 space-y-4 shadow-xl">
@@ -1619,8 +2147,10 @@ export default function StudentDetails() {
                     }
                   >
                     <option value={1}>1 versement</option>
+                    <option value={2}>2 tranches</option>
                     <option value={3}>3 tranches</option>
-                    <option value={9}>9 tranches</option>
+                    <option value={4}>4 tranches</option>
+                    <option value={9}>9 tranches (Mensuel)</option>
                   </select>
                 </div>
               </div>
@@ -1645,7 +2175,7 @@ export default function StudentDetails() {
         </div>
       )}
 
-      {/* 6. MODAL D'AJOUT RAPIDE DU CONTACT PARENT */}
+      {/* 7. MODAL D'AJOUT RAPIDE DU CONTACT PARENT */}
       {isPhoneModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-sm p-6 space-y-5 shadow-2xl">
@@ -1666,7 +2196,6 @@ export default function StudentDetails() {
             </div>
 
             <div className="space-y-4 text-xs">
-              {/* Option 1 : Répertoire du téléphone */}
               <button
                 type="button"
                 onClick={pickPhoneFromContacts}
@@ -1682,7 +2211,6 @@ export default function StudentDetails() {
                 <span className="bg-white px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest absolute">ou</span>
               </div>
 
-              {/* Option 2 : Saisie manuelle */}
               <form 
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -1729,7 +2257,7 @@ export default function StudentDetails() {
         </div>
       )}
 
-      {/* 7. CONTENEUR CACHÉ POUR L'EXPORT PDF */}
+      {/* 8. CONTENEUR CACHÉ POUR L'EXPORT PDF */}
       <div
         id="student-bulletin-pdf"
         style={{

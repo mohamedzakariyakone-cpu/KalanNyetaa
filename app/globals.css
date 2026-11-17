@@ -127,3 +127,26 @@ button, a, input, select, textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ========================================== */
+/* BLOCAGE SÉLECTION APPUI LONG (SMARTPHONE)  */
+/* ========================================== */
+@media (hover: none) and (pointer: coarse) {
+  body,
+  body * {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+    -webkit-touch-callout: none !important;
+  }
+
+  /* Conserver la sélection et le copier-coller dans les champs de formulaire */
+  input,
+  textarea,
+  select,
+  [contenteditable="true"],
+  .allow-select {
+    -webkit-user-select: text !important;
+    user-select: text !important;
+    -webkit-touch-callout: default !important;
+  }
+}

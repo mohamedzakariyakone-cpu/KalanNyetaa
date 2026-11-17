@@ -79,25 +79,31 @@ function StudentsPageContent() {
 
   const { selectedYearId, selectedYear, years, isReadOnly, isLoading: yearLoading } = useYear();
 
+  // Restauration du scroll précis sur l'élève cliqué après le chargement des données
   useEffect(() => {
-    const scrollKey = `scroll_position_${classFilter || 'all'}`;
-    const savedPosition = sessionStorage.getItem(scrollKey);
-    if (savedPosition && !loading) {
-      setTimeout(() => {
-        window.scrollTo(0, parseInt(savedPosition));
-      }, 100);
+    if (loading || students.length === 0) return;
+
+    const lastClickedId = sessionStorage.getItem('last_viewed_student_id');
+    const scrollY = sessionStorage.getItem('last_students_scroll_y');
+
+    if (lastClickedId) {
+      const timer = setTimeout(() => {
+        const el = document.getElementById(`student-item-${lastClickedId}`);
+        if (el) {
+          el.scrollIntoView({ block: 'center', behavior: 'auto' });
+          // Ajout d'une discrète mise en surbrillance pour confirmer visuellement l'emplacement
+          el.classList.add('bg-blue-50/80');
+          setTimeout(() => el.classList.remove('bg-blue-50/80'), 1500);
+        } else if (scrollY) {
+          window.scrollTo(0, parseInt(scrollY, 10));
+        }
+        sessionStorage.removeItem('last_viewed_student_id');
+        sessionStorage.removeItem('last_students_scroll_y');
+      }, 80);
+
+      return () => clearTimeout(timer);
     }
-  }, [loading, classFilter]);
-
-  const saveScrollPosition = useCallback(() => {
-    const scrollKey = `scroll_position_${classFilter || 'all'}`;
-    sessionStorage.setItem(scrollKey, String(window.scrollY));
-  }, [classFilter]);
-
-  useEffect(() => {
-    window.addEventListener('scroll', saveScrollPosition);
-    return () => window.removeEventListener('scroll', saveScrollPosition);
-  }, [saveScrollPosition]);
+  }, [loading, students]);
 
   useEffect(() => {
     if (classFilter) {
@@ -597,8 +603,10 @@ function StudentsPageContent() {
     }
   };
 
+  // Mémorisation de l'élève précis et de la hauteur de scroll avant navigation
   const goToStudentDetail = (studentId: string | number) => {
-    saveScrollPosition();
+    sessionStorage.setItem('last_viewed_student_id', String(studentId));
+    sessionStorage.setItem('last_students_scroll_y', String(window.scrollY));
     router.push(`/students/${studentId}`);
   };
 
@@ -672,7 +680,7 @@ function StudentsPageContent() {
         </div>
       )}
 
-      {/* STATISTIQUES PLATES EN BLOC BLANC / BORDURE NETTE */}
+      {/* STATISTIQUES PLATES */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
         <div className="border border-slate-200/80 rounded-2xl p-4 sm:p-5 bg-white space-y-1">
           <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Effectif total</span>
@@ -791,7 +799,7 @@ function StudentsPageContent() {
         </div>
       )}
 
-      {/* FORMULAIRE NOUVELLE INSCRIPTION PLAT */}
+      {/* FORMULAIRE NOUVELLE INSCRIPTION */}
       <div className={`${showMobileForm ? 'block' : 'hidden md:block'} bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 space-y-4 print:hidden`}>
         <div className="border-b border-slate-100 pb-3">
           <h2 className="text-sm font-bold text-slate-900">Nouvelle inscription</h2>
@@ -894,7 +902,7 @@ function StudentsPageContent() {
         </form>
       </div>
 
-      {/* BARRE DE RECHERCHE ET FILTRES PLATS */}
+      {/* BARRE DE RECHERCHE ET FILTRES */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200/80 space-y-3 print:hidden">
         <div className="flex flex-col lg:flex-row gap-3">
           <div className="relative flex-1">
@@ -943,7 +951,7 @@ function StudentsPageContent() {
         </div>
       </div>
 
-      {/* TABLEAU DES ÉLÈVES (DESKTOP) */}
+      {/* TABLEAU DES ÉLÈVES (DESKTOP) AVEC ID D'ANCRE ET TRANSITION FLUIDE */}
       <div className="hidden md:block bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs print:border-0 print:shadow-none">
         <div className="w-full overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -982,8 +990,9 @@ function StudentsPageContent() {
                 return (
                   <tr 
                     key={s.id} 
+                    id={`student-item-${s.id}`}
                     onClick={() => goToStudentDetail(s.id)}
-                    className="hover:bg-slate-50/70 transition-colors cursor-pointer"
+                    className="hover:bg-slate-50/70 transition-colors duration-300 cursor-pointer"
                   >
                     {classFilter && isSelectionMode && (
                       <td 
@@ -1050,7 +1059,7 @@ function StudentsPageContent() {
         </div>
       </div>
 
-      {/* AFFICHAGE CARTES MOBILES PLATES */}
+      {/* AFFICHAGE CARTES MOBILES AVEC ID D'ANCRE */}
       <div className="md:hidden space-y-3">
         {loading ? (
           <div className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" size={24} /></div>
@@ -1065,8 +1074,9 @@ function StudentsPageContent() {
           return (
             <div 
               key={s.id} 
+              id={`student-item-${s.id}`}
               onClick={() => goToStudentDetail(s.id)}
-              className="bg-white p-4 rounded-2xl border border-slate-200/80 space-y-3.5 cursor-pointer active:bg-slate-50 transition"
+              className="bg-white p-4 rounded-2xl border border-slate-200/80 space-y-3.5 cursor-pointer active:bg-slate-50 transition-colors duration-300"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0 flex-1">

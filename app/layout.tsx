@@ -45,8 +45,24 @@ export default function RootLayout({
       style={{ colorScheme: 'light' }}
       data-theme="light"
     >
-      <body className="!bg-[#F8FAFC] !text-slate-900 bg-[#F8FAFC] text-slate-900 antialiased min-h-screen">
+      <body className="!bg-[#F8FAFC] !text-slate-900 bg-[#F8FAFC] text-slate-900 antialiased min-h-screen select-none md:select-auto">
         
+        {/* Script léger bloquant le menu contextuel d'appui long uniquement sur mobile/tactile */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              document.addEventListener('contextmenu', function(e) {
+                if (window.matchMedia('(hover: none) and (pointer: coarse)').matches) {
+                  const tag = e.target && e.target.tagName;
+                  if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+                    e.preventDefault();
+                  }
+                }
+              }, { passive: false });
+            `,
+          }}
+        />
+
         {/* ⚙️ Initialisation discrète de la PWA (Enregistrement du service worker en arrière-plan) */}
         <ServiceWorkerRegister />
 
