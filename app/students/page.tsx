@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect, useCallback, useMemo, type ChangeEvent } from 'react';
+import { Suspense, useState, useEffect, useCallback, useMemo, useRef, type ChangeEvent } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabase';
 import { offlineWrite } from '@/utils/offlineApi';
@@ -9,7 +9,7 @@ import { useYear } from '@/context/YearContext';
 import { useCacheRefresh } from '@/hooks/useCacheRefresh';
 import {
   Search, Loader2, Phone, X, Trash2, Plus, Lock,
-  AlertCircle, DollarSign, Award, GraduationCap, ArrowLeft, FileDown
+  AlertCircle, DollarSign, ArrowLeft, FileDown
 } from 'lucide-react';
 import NumericInput from '@/components/NumericInput';
 
@@ -57,6 +57,7 @@ function StudentsPageContent() {
   const [classes, setClasses] = useState<ClassRecord[]>([]);
   const [currentClassInfo, setCurrentClassInfo] = useState<ClassRecord | null>(null);
   const [loading, setLoading] = useState(true);
+  const [navigatingStudentId, setNavigatingStudentId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [financialFilter, setFinancialFilter] = useState<'all' | 'paid' | 'debtor'>('all');
   const [academicFilter, setAcademicFilter] = useState<'all' | 'passed' | 'failed'>('all');
@@ -77,33 +78,62 @@ function StudentsPageContent() {
     parentPhone: '', address: '', birthDate: '', lastExamAvg: '0'
   });
 
+  const hasRestoredScrollRef = useRef(false);
   const { selectedYearId, selectedYear, years, isReadOnly, isLoading: yearLoading } = useYear();
 
-  // Restauration du scroll précis sur l'élève cliqué après le chargement des données
+  const scrollStoragePrefix = `students_scroll:${selectedYearId || 'default'}:${classFilter || 'all'}`;
+
+  // Réinitialiser le verrou de restauration si le filtre de classe ou l'année change
   useEffect(() => {
-    if (loading || students.length === 0) return;
+    hasRestoredScrollRef.current = false;
+  }, [scrollStoragePrefix]);
 
-    const lastClickedId = sessionStorage.getItem('last_viewed_student_id');
-    const scrollY = sessionStorage.getItem('last_students_scroll_y');
+  // Restauration précise de la position de scroll au retour de la fiche élève
+  useEffect(() => {
+    if (loading || students.length === 0 || hasRestoredScrollRef.current) return;
 
-    if (lastClickedId) {
-      const timer = setTimeout(() => {
-        const el = document.getElementById(`student-item-${lastClickedId}`);
-        if (el) {
-          el.scrollIntoView({ block: 'center', behavior: 'auto' });
-          // Ajout d'une discrète mise en surbrillance pour confirmer visuellement l'emplacement
-          el.classList.add('bg-blue-50/80');
-          setTimeout(() => el.classList.remove('bg-blue-50/80'), 1500);
-        } else if (scrollY) {
-          window.scrollTo(0, parseInt(scrollY, 10));
+    const lastClickedId = sessionStorage.getItem(`${scrollStoragePrefix}:id`);
+    const savedScrollY = sessionStorage.getItem(`${scrollStoragePrefix}:y`);
+
+    if (!lastClickedId && !savedScrollY) return;
+
+    hasRestoredScrollRef.current = true;
+
+    const restorePosition = () => {
+      if (savedScrollY) {
+        window.scrollTo({ top: parseInt(savedScrollY, 10), behavior: 'auto' });
+      }
+
+      if (lastClickedId) {
+        const candidates = Array.from(
+          document.querySelectorAll(`[data-student-item="${lastClickedId}"]`)
+        ) as HTMLElement[];
+        const visibleEl = candidates.find((el) => el.offsetParent !== null) || candidates[0];
+
+        if (visibleEl) {
+          visibleEl.scrollIntoView({ block: 'center', behavior: 'auto' });
+          visibleEl.classList.add('bg-blue-50/80');
+          setTimeout(() => visibleEl.classList.remove('bg-blue-50/80'), 1600);
         }
-        sessionStorage.removeItem('last_viewed_student_id');
-        sessionStorage.removeItem('last_students_scroll_y');
-      }, 80);
+      }
 
-      return () => clearTimeout(timer);
-    }
-  }, [loading, students]);
+      sessionStorage.removeItem(`${scrollStoragePrefix}:id`);
+      sessionStorage.removeItem(`${scrollStoragePrefix}:y`);
+    };
+
+    const raf = requestAnimationFrame(() => {
+      setTimeout(restorePosition, 60);
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [loading, students, scrollStoragePrefix]);
+
+  // Réinitialiser l'état de navigation si l'utilisateur revient via le bouton retour du navigateur (bfcache)
+  useEffect(() => {
+    const handlePageShow = () => setNavigatingStudentId(null);
+    window.addEventListener('pageshow', handlePageShow);
+    return () => window.removeEventListener('pageshow', handlePageShow);
+  }, []);
 
   useEffect(() => {
     if (classFilter) {
@@ -603,11 +633,15 @@ function StudentsPageContent() {
     }
   };
 
-  // Mémorisation de l'élève précis et de la hauteur de scroll avant navigation
+  // Navigation sécurisée anti double-clic + sauvegarde précise de l'URL de provenance, du scroll et de l'élève
   const goToStudentDetail = (studentId: string | number) => {
-    sessionStorage.setItem('last_viewed_student_id', String(studentId));
-    sessionStorage.setItem('last_students_scroll_y', String(window.scrollY));
-    router.push(`/students/${studentId}`);
+    if (navigatingStudentId !== null) return;
+    const idStr = String(studentId);
+    setNavigatingStudentId(idStr);
+    sessionStorage.setItem('students_return_url', `${window.location.pathname}${window.location.search}`);
+    sessionStorage.setItem(`${scrollStoragePrefix}:id`, idStr);
+    sessionStorage.setItem(`${scrollStoragePrefix}:y`, String(window.scrollY));
+    router.push(`/students/${idStr}`);
   };
 
   if (yearLoading) {
@@ -629,9 +663,23 @@ function StudentsPageContent() {
     );
   }
 
+  const navigatingStudent = navigatingStudentId
+    ? students.find((s) => String(s.id) === navigatingStudentId)
+    : null;
+
   return (
     <div className="space-y-6 pb-12 max-w-6xl mx-auto px-4 sm:px-6 w-full overflow-x-hidden text-slate-900 font-sans antialiased">
       
+      {/* BANDEAU DE CHARGEMENT LORS DE L'OUVERTURE D'UNE FICHE ÉLÈVE */}
+      {navigatingStudentId && (
+        <div className="fixed inset-x-0 top-0 z-50 bg-blue-600 text-white px-4 py-2.5 shadow-md flex items-center justify-center gap-2.5 text-xs font-bold animate-in fade-in duration-150">
+          <Loader2 className="animate-spin shrink-0" size={16} />
+          <span className="truncate">
+            Ouverture du dossier{navigatingStudent ? ` de ${navigatingStudent.first_name} ${navigatingStudent.last_name}` : ''}...
+          </span>
+        </div>
+      )}
+
       {/* HEADER DE PAGE PLAT SANS FOND BLANC FORCÉ */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-b border-slate-200/80 pb-6 print:mb-6">
         <div>
@@ -951,7 +999,7 @@ function StudentsPageContent() {
         </div>
       </div>
 
-      {/* TABLEAU DES ÉLÈVES (DESKTOP) AVEC ID D'ANCRE ET TRANSITION FLUIDE */}
+      {/* TABLEAU DES ÉLÈVES (DESKTOP) AVEC ANTI DOUBLE-CLIC ET ANCRE SCROLL */}
       <div className="hidden md:block bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs print:border-0 print:shadow-none">
         <div className="w-full overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -986,13 +1034,21 @@ function StudentsPageContent() {
                 const paidFee = Number(s.scolarite_payee || 0);
                 const examAvg = Number(s.last_exam_avg ?? 0);
                 const isSettled = paidFee >= totalFee && totalFee > 0;
+                const isOpening = navigatingStudentId === String(s.id);
+                const isLockedByOther = navigatingStudentId !== null && !isOpening;
 
                 return (
                   <tr 
                     key={s.id} 
-                    id={`student-item-${s.id}`}
+                    data-student-item={String(s.id)}
                     onClick={() => goToStudentDetail(s.id)}
-                    className="hover:bg-slate-50/70 transition-colors duration-300 cursor-pointer"
+                    className={`transition-colors duration-300 ${
+                      isOpening
+                        ? 'bg-blue-50/70 cursor-wait'
+                        : isLockedByOther
+                          ? 'opacity-50 pointer-events-none'
+                          : 'hover:bg-slate-50/70 cursor-pointer'
+                    }`}
                   >
                     {classFilter && isSelectionMode && (
                       <td 
@@ -1010,11 +1066,17 @@ function StudentsPageContent() {
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
                         <div className="h-9 w-9 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0">
-                          {s.first_name?.[0]}{s.last_name?.[0]}
+                          {isOpening ? (
+                            <Loader2 className="animate-spin" size={16} />
+                          ) : (
+                            <>{s.first_name?.[0]}{s.last_name?.[0]}</>
+                          )}
                         </div>
                         <div className="min-w-0">
                           <p className="font-bold text-slate-900 text-sm truncate capitalize">{s.first_name} {s.last_name}</p>
-                          <span className="text-[10px] font-medium text-slate-400 block">{s.classes?.name || 'Inconnu'}</span>
+                          <span className="text-[10px] font-medium text-slate-400 block">
+                            {isOpening ? 'Chargement du dossier...' : (s.classes?.name || 'Inconnu')}
+                          </span>
                         </div>
                       </div>
                     </td>
@@ -1059,7 +1121,7 @@ function StudentsPageContent() {
         </div>
       </div>
 
-      {/* AFFICHAGE CARTES MOBILES AVEC ID D'ANCRE */}
+      {/* AFFICHAGE CARTES MOBILES AVEC ANTI DOUBLE-CLIC ET ANCRE SCROLL */}
       <div className="md:hidden space-y-3">
         {loading ? (
           <div className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" size={24} /></div>
@@ -1070,13 +1132,21 @@ function StudentsPageContent() {
           const paidFee = Number(s.scolarite_payee || 0);
           const examAvg = Number(s.last_exam_avg ?? 0);
           const isSettled = paidFee >= totalFee && totalFee > 0;
+          const isOpening = navigatingStudentId === String(s.id);
+          const isLockedByOther = navigatingStudentId !== null && !isOpening;
 
           return (
             <div 
               key={s.id} 
-              id={`student-item-${s.id}`}
+              data-student-item={String(s.id)}
               onClick={() => goToStudentDetail(s.id)}
-              className="bg-white p-4 rounded-2xl border border-slate-200/80 space-y-3.5 cursor-pointer active:bg-slate-50 transition-colors duration-300"
+              className={`bg-white p-4 rounded-2xl border space-y-3.5 transition-all duration-300 ${
+                isOpening
+                  ? 'border-blue-400 bg-blue-50/40 cursor-wait'
+                  : isLockedByOther
+                    ? 'border-slate-200/80 opacity-50 pointer-events-none'
+                    : 'border-slate-200/80 cursor-pointer active:bg-slate-50'
+              }`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -1090,11 +1160,17 @@ function StudentsPageContent() {
                     />
                   )}
                   <div className="h-10 w-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0">
-                    {s.first_name?.[0]}{s.last_name?.[0]}
+                    {isOpening ? (
+                      <Loader2 className="animate-spin" size={16} />
+                    ) : (
+                      <>{s.first_name?.[0]}{s.last_name?.[0]}</>
+                    )}
                   </div>
                   <div className="min-w-0">
                     <p className="font-bold text-slate-900 text-sm truncate capitalize">{s.first_name} {s.last_name}</p>
-                    <p className="text-xs font-semibold text-slate-400 mt-0.5">{s.classes?.name || 'Inconnu'}</p>
+                    <p className="text-xs font-semibold text-slate-400 mt-0.5">
+                      {isOpening ? 'Ouverture du dossier...' : (s.classes?.name || 'Inconnu')}
+                    </p>
                   </div>
                 </div>
 

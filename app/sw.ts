@@ -17,10 +17,9 @@ const manifest = self.__SW_MANIFEST;
 // 2. Configuration des stratégies de cache avec Serwist
 const serwist = new Serwist({
   precacheEntries: manifest,
-  skipWaiting: true,
+  skipWaiting: false, // Attend obligatoirement le clic sur "Mettre à jour maintenant"
   clientsClaim: true,
-  // 🪄 Correction 1 : Désactivé ou géré proprement si non requis explicitement en dev local
-  navigationPreload: false, 
+  navigationPreload: false,
 
   runtimeCaching: [
     // API Supabase - Network-first pour les GET, avec fallback cache hors-ligne
@@ -139,9 +138,9 @@ self.addEventListener("message", (event) => {
   }
 });
 
-// 4. Nettoyage et enregistrement chaîné
+// 4. Nettoyage des anciens caches lors de l'activation de la nouvelle version
 self.addEventListener("activate", (event) => {
-  console.log("Service Worker activating & cleaning custom caches...");
+  console.log("Service Worker activating & cleaning outdated caches...");
   event.waitUntil(
     (async () => {
       const cacheNames = await caches.keys();
@@ -149,24 +148,15 @@ self.addEventListener("activate", (event) => {
         (name) =>
           !name.includes("supabase-api-cache") &&
           !name.includes("external-images-cache") &&
-          !name.includes("static-assets-cache") &&
-          !name.includes("html-pages-cache") &&
           !name.includes("serwist") &&
           !name.includes("workbox")
       );
 
       await Promise.all(cachesToDelete.map((name) => caches.delete(name)));
+      await self.clients.claim();
     })()
   );
 });
 
-// 5. Initialisation des écouteurs Serwist (gère l'activation en arrière-plan de manière sûre)
+// 5. Initialisation des écouteurs Serwist
 serwist.addEventListeners();
-
-self.addEventListener("install", (event) => {
-  event.waitUntil(self.skipWaiting());
-});
-
-self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
-});

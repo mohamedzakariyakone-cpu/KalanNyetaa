@@ -67,6 +67,9 @@ export default function StudentDetails() {
   const [studentAttendance, setStudentAttendance] = useState<any[]>([]);
   const [studentAnnouncements, setStudentAnnouncements] = useState<any[]>([]);
 
+  // URL de retour intelligente (mémorise si l'utilisateur venait de /students ou /students?class=...)
+  const [backToStudentsHref, setBackToStudentsHref] = useState("/students");
+
   // Navigation par modules
   const [activeTab, setActiveTab] = useState<"finance" | "pedagogy" | "bulletin" | "discipline">("finance");
 
@@ -105,6 +108,13 @@ export default function StudentDetails() {
   const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
   const [manualPhoneInput, setManualPhoneInput] = useState("");
   const [isSavingPhone, setIsSavingPhone] = useState(false);
+
+  useEffect(() => {
+    const savedReturnUrl = sessionStorage.getItem("students_return_url");
+    if (savedReturnUrl) {
+      setBackToStudentsHref(savedReturnUrl);
+    }
+  }, []);
 
   const fetchData = useCallback(
     async (silent = false) => {
@@ -1051,7 +1061,7 @@ export default function StudentDetails() {
         </div>
         <p className="text-lg font-bold text-slate-900">Élève non trouvé</p>
         <Link
-          href="/students"
+          href={backToStudentsHref}
           className="mt-3 text-base font-bold text-blue-600 hover:text-blue-700"
         >
           Retourner au registre
@@ -1093,7 +1103,7 @@ export default function StudentDetails() {
       <nav className="border-b border-slate-200/80 bg-white sticky top-0 z-30">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <Link
-            href="/students"
+            href={backToStudentsHref}
             className="inline-flex items-center gap-2 text-sm font-bold text-slate-700 hover:text-blue-600 transition"
           >
             <ArrowLeft size={16} />

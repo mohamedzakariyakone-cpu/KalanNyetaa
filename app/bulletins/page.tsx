@@ -8,7 +8,8 @@ import { useYear } from '@/context/YearContext';
 import { 
   Settings, PenTool, BarChart3, FileText, Plus, Trash2, 
   Download, Trophy, Search, ChevronLeft, ChevronRight,
-  Filter, ArrowRight, Maximize2, Minimize2
+  Filter, ArrowRight, Maximize2, Minimize2,
+  ArrowUp, ArrowDown, ArrowUpDown, Edit3, Check, X, Loader2
 } from 'lucide-react';
 
 export default function EngineScolaire() {
@@ -16,6 +17,7 @@ export default function EngineScolaire() {
 
   const [tab, setTab] = useState<'saisie' | 'resultats' | 'config'>('saisie');
   const [loading, setLoading] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
   const [period, setPeriod] = useState('1er Trimestre');
@@ -32,14 +34,27 @@ export default function EngineScolaire() {
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>('all');
   const [isExpanded, setIsExpanded] = useState(false);
   const inputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
+  const loadRequestIdRef = useRef(0);
   const [school, setSchool] = useState<any>(null);
   const [loadingSchool, setLoadingSchool] = useState(true);
+
+  // États pour le réordonnancement et la modification des matières
+  const [isReorderMode, setIsReorderMode] = useState(false);
+  const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
+  const [editSubName, setEditSubName] = useState('');
+  const [editSubCoeff, setEditSubCoeff] = useState('1');
+
+  useEffect(() => {
+    if (selectedYear?.label) {
+      setYear(selectedYear.label);
+    }
+  }, [selectedYear?.label]);
 
   useCacheRefresh({
     cachePattern: /^(class_subjects:|student_grades:)/,
     onInvalidate: () => {
       if (selectedClassId) {
-        loadClassData();
+        loadClassData(true);
       }
     },
     debounceMs: 150,
@@ -54,6 +69,8 @@ export default function EngineScolaire() {
     const name = currentClass.name.toLowerCase();
     return name.includes('7') || name.includes('8') || name.includes('9') || name.includes('10') || name.includes('11') || name.includes('12');
   }, [selectedClassId, classes]);
+
+  const baseScale = isSecondCycle ? 20 : 10;
 
   useEffect(() => {
     async function getClasses() {
@@ -104,40 +121,168 @@ export default function EngineScolaire() {
   }, []);
 
   useEffect(() => {
-    if (selectedClassId) loadClassData();
-  }, [selectedClassId, period, year]);
+    if (selectedClassId) {
+      loadClassData(false);
+    } else {
+      setSubjects([]);
+      setStudents([]);
+      setRawGrades([]);
+    }
+  }, [selectedClassId, period, year, selectedYearId]);
 
-  async function loadClassData() {
-    if (!selectedYearId) return;
-    setLoading(true);
+  const applySavedSubjectOrder = (subList: any[], classId: string, yearId: string) => {
+    if (typeof window === 'undefined') return subList;
+    const orderKey = `subject_order:${classId}:${yearId}`;
+    const savedOrderRaw = localStorage.getItem(orderKey);
+    if (!savedOrderRaw) return subList;
+    try {
+      const orderIds: string[] = JSON.parse(savedOrderRaw);
+      return [...subList].sort((a, b) => {
+        const idxA = orderIds.indexOf(String(a.id));
+        const idxB = orderIds.indexOf(String(b.id));
+        if (idxA === -1 && idxB === -1) return 0;
+        if (idxA === -1) return 1;
+        if (idxB === -1) return -1;
+        return idxA - idxB;
+      });
+    } catch {
+      return subList;
+    }
+  };
 
-    const { data: sub, error: subError } = await offlineFetch<any[]>(`bulletins_subjects:${selectedClassId}:${selectedYearId}`, async () => {
-      return await supabase.from('class_subjects').select('*').eq('class_id', selectedClassId).eq('academic_year_id', selectedYearId);
-    });
+  async function loadClassData(silent = false) {
+    if (!selectedYearId || !selectedClassId) return;
 
-    const { data: stu, error: stuError } = await offlineFetch<any[]>(`bulletins_students:${selectedClassId}:${selectedYearId}`, async () => {
-      return await supabase.from('students').select('*').eq('class_id', selectedClassId).eq('academic_year_id', selectedYearId);
-    });
+    const currentRequestId = ++loadRequestIdRef.current;
 
-    const { data: grd, error: grdError } = await offlineFetch<any[]>(`bulletins_grades:${selectedClassId}:${period}:${year}`, async () => {
-      return await supabase.from('student_grades')
-        .select('*')
-        .eq('class_id', selectedClassId)
-        .eq('period', period)
-        .eq('academic_year', year);
-    });
+    if (!silent) {
+      setLoading(true);
+      setRawGrades([]);
+      setSavedGrades(new Set());
+    }
 
-    if (subError) console.error('Erreur récupération matières hors ligne :', subError);
-    if (stuError) console.error('Erreur récupération élèves hors ligne :', stuError);
-    if (grdError) console.error('Erreur récupération notes hors ligne :', grdError);
+    try {
+      const [subRes, stuRes, grdRes] = await Promise.all([
+        offlineFetch<any[]>(`bulletins_subjects:${selectedClassId}:${selectedYearId}`, async () => {
+          return await supabase
+            .from('class_subjects')
+            .select('*')
+            .eq('class_id', selectedClassId)
+            .eq('academic_year_id', selectedYearId);
+        }),
+        offlineFetch<any[]>(`bulletins_students:${selectedClassId}:${selectedYearId}`, async () => {
+          return await supabase
+            .from('students')
+            .select('*')
+            .eq('class_id', selectedClassId)
+            .eq('academic_year_id', selectedYearId);
+        }),
+        offlineFetch<any[]>(`bulletins_grades:${selectedClassId}:${period}:${year}`, async () => {
+          return await supabase
+            .from('student_grades')
+            .select('*')
+            .eq('class_id', selectedClassId)
+            .eq('period', period)
+            .eq('academic_year', year);
+        })
+      ]);
 
-    setSubjects(sub || []);
-    setStudents(stu || []);
-    setRawGrades(grd || []);
-    setCurrentStudentIndex(0);
-    setSavedGrades(new Set());
-    setLoading(false);
+      if (currentRequestId !== loadRequestIdRef.current) return;
+
+      if (subRes.error) console.error('Erreur récupération matières hors ligne :', subRes.error);
+      if (stuRes.error) console.error('Erreur récupération élèves hors ligne :', stuRes.error);
+      if (grdRes.error) console.error('Erreur récupération notes hors ligne :', grdRes.error);
+
+      const orderedSubjects = applySavedSubjectOrder(subRes.data || [], selectedClassId, String(selectedYearId));
+
+      setSubjects(orderedSubjects);
+      setStudents(stuRes.data || []);
+      setRawGrades(grdRes.data || []);
+      if (!silent) {
+        setCurrentStudentIndex(0);
+      }
+    } finally {
+      if (currentRequestId === loadRequestIdRef.current) {
+        setLoading(false);
+      }
+    }
   }
+
+  const moveSubject = (index: number, direction: 'up' | 'down') => {
+    if (isReadOnly) return;
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= subjects.length) return;
+
+    const updated = [...subjects];
+    const [moved] = updated.splice(index, 1);
+    updated.splice(targetIndex, 0, moved);
+
+    setSubjects(updated);
+
+    if (typeof window !== 'undefined' && selectedClassId && selectedYearId) {
+      const orderKey = `subject_order:${selectedClassId}:${selectedYearId}`;
+      localStorage.setItem(orderKey, JSON.stringify(updated.map((s) => String(s.id))));
+    }
+  };
+
+  const startEditSubject = (subject: any) => {
+    if (isReadOnly) return;
+    setEditingSubjectId(String(subject.id));
+    setEditSubName(subject.subject_name);
+    setEditSubCoeff(String(subject.coefficient));
+  };
+
+  const saveEditSubject = async (subject: any) => {
+    if (isReadOnly || !editSubName.trim() || !selectedClassId || !selectedYearId) return;
+
+    const trimmedName = editSubName.trim();
+    const parsedCoeff = parseFloat(editSubCoeff);
+    if (isNaN(parsedCoeff) || parsedCoeff <= 0) return;
+
+    const oldName = subject.subject_name;
+    const subId = String(subject.id);
+
+    const { error } = await offlineWrite({
+      table: 'class_subjects',
+      action: 'UPDATE',
+      payload: {
+        subject_name: trimmedName,
+        coefficient: parsedCoeff,
+      },
+      options: { keyColumn: 'id', keyValue: subId },
+      cacheKey: `bulletins_subjects:${selectedClassId}:${selectedYearId}`,
+      optimisticUpdate: () => {
+        setSubjects((prev) =>
+          prev.map((s) =>
+            String(s.id) === subId
+              ? { ...s, subject_name: trimmedName, coefficient: parsedCoeff }
+              : s
+          )
+        );
+      },
+    });
+
+    if (!error) {
+      if (oldName !== trimmedName) {
+        setRawGrades((prev) =>
+          prev.map((g) =>
+            g.subject_name === oldName ? { ...g, subject_name: trimmedName } : g
+          )
+        );
+        try {
+          await supabase
+            .from('student_grades')
+            .update({ subject_name: trimmedName })
+            .eq('class_id', selectedClassId)
+            .eq('subject_name', oldName);
+        } catch (err) {
+          console.error('Erreur mise à jour nom matière dans les notes :', err);
+        }
+      }
+      setEditingSubjectId(null);
+      loadClassData(true);
+    }
+  };
 
   const addSubject = async () => {
     if (!selectedClassId || !newSubName || isReadOnly || !selectedYearId) return;
@@ -153,15 +298,15 @@ export default function EngineScolaire() {
       cacheKey: `bulletins_subjects:${selectedClassId}:${selectedYearId}`,
       optimisticUpdate: () => {
         setSubjects((prev) => [
-          { id: `offline-${Date.now()}`, class_id: selectedClassId, subject_name: newSubName, coefficient: parseFloat(newSubCoeff), academic_year_id: selectedYearId },
           ...prev,
+          { id: `offline-${Date.now()}`, class_id: selectedClassId, subject_name: newSubName, coefficient: parseFloat(newSubCoeff), academic_year_id: selectedYearId },
         ]);
       }
     });
 
     if (!error) {
       setNewSubName('');
-      loadClassData();
+      loadClassData(true);
     }
   };
 
@@ -177,7 +322,7 @@ export default function EngineScolaire() {
         setSubjects((prev) => prev.filter((s) => String(s.id) !== id));
       }
     });
-    if (!error) loadClassData();
+    if (!error) loadClassData(true);
   };
 
   const filteredStudentsSaisie = useMemo(() => {
@@ -189,30 +334,61 @@ export default function EngineScolaire() {
     return subjects.filter(s => s.id === selectedSubjectFilter);
   }, [subjects, selectedSubjectFilter]);
 
+  // Une matière est dispensée/exemptée lorsqu'une ligne existe avec grade_value === null ET compo_value === null (ou -1 hérité)
+  const isGradeRecordExempt = (gradeRecord: any) => {
+    if (!gradeRecord) return false;
+    const gVal = gradeRecord.grade_value;
+    const cVal = gradeRecord.compo_value;
+    if (Number(gVal) === -1 || Number(cVal) === -1) return true;
+    return (gVal === null || gVal === undefined) && (cVal === null || cVal === undefined);
+  };
+
   const bulletinData = useMemo(() => {
     const data = students
       .map(student => {
         let totalPondere = 0;
         let totalCoeffs = 0;
         const detailNotes = subjects.map(sub => {
+          const coeff = Number(sub.coefficient) || 1;
           const matchingGrade = rawGrades.find(g => g.student_id === student.id && g.subject_name === sub.subject_name);
-          const noteClasse = matchingGrade ? parseFloat(matchingGrade.grade_value) || 0 : 0;
-          const noteCompo = matchingGrade ? parseFloat(matchingGrade.compo_value) || 0 : 0;
+
+          if (isGradeRecordExempt(matchingGrade)) {
+            return {
+              name: sub.subject_name,
+              noteClasse: null,
+              noteCompo: null,
+              moyenneMatiere: null,
+              coeff,
+              points: 0,
+              isExempt: true
+            };
+          }
+
+          const noteClasse = matchingGrade && matchingGrade.grade_value !== null ? parseFloat(matchingGrade.grade_value) || 0 : 0;
+          const noteCompo = matchingGrade && matchingGrade.compo_value !== null ? parseFloat(matchingGrade.compo_value) || 0 : 0;
+
+          const normClasse = noteClasse / coeff;
+          const normCompo = noteCompo / coeff;
+
           let moyenneMatiere = 0;
           if (isSecondCycle) {
-            moyenneMatiere = (noteClasse + (noteCompo * 2)) / 3;
+            moyenneMatiere = (normClasse + (normCompo * 2)) / 3;
           } else {
-            moyenneMatiere = noteCompo;
+            moyenneMatiere = normCompo;
           }
-          totalPondere += (moyenneMatiere * sub.coefficient);
-          totalCoeffs += sub.coefficient;
+
+          const points = moyenneMatiere * coeff;
+          totalPondere += points;
+          totalCoeffs += coeff;
+
           return {
             name: sub.subject_name,
             noteClasse,
             noteCompo,
             moyenneMatiere: parseFloat(moyenneMatiere.toFixed(2)),
-            coeff: sub.coefficient,
-            points: moyenneMatiere * sub.coefficient
+            coeff,
+            points,
+            isExempt: false
           };
         });
         const moyenne = totalCoeffs > 0 ? totalPondere / totalCoeffs : 0;
@@ -230,7 +406,7 @@ export default function EngineScolaire() {
   }, [students, subjects, rawGrades, isSecondCycle, searchBulletins]);
 
   const getMention = (m: number) => {
-    const ratio = m / (isSecondCycle ? 20 : 10);
+    const ratio = m / baseScale;
     if (ratio >= 0.8) return "Très Bien";
     if (ratio >= 0.7) return "Bien";
     if (ratio >= 0.6) return "Assez Bien";
@@ -238,8 +414,9 @@ export default function EngineScolaire() {
     return "Insuffisant";
   };
 
-  const getAppreciation = (note: number) => {
-    const ratio = note / (isSecondCycle ? 20 : 10);
+  const getAppreciation = (note: number | null, isExempt?: boolean) => {
+    if (isExempt || note === null) return "Non évalué (Justifié)";
+    const ratio = note / baseScale;
     if (ratio >= 0.9) return "Excellent travail";
     if (ratio >= 0.8) return "Très bien";
     if (ratio >= 0.7) return "Bien";
@@ -248,6 +425,14 @@ export default function EngineScolaire() {
     if (ratio >= 0.4) return "Insuffisant, doit travailler plus";
     if (ratio >= 0.25) return "Faible, attention";
     return "Très faible";
+  };
+
+  const formatInputDisplayValue = (gradeRecord: any, field: 'grade_value' | 'compo_value') => {
+    if (!gradeRecord) return '';
+    if (isGradeRecordExempt(gradeRecord)) return '—';
+    const rawVal = gradeRecord[field];
+    if (rawVal === null || rawVal === undefined || rawVal === '') return '';
+    return String(rawVal);
   };
 
   const applyScaleToFit = (el: HTMLElement) => {
@@ -323,14 +508,13 @@ export default function EngineScolaire() {
 
   const downloadAllInOnePDF = async () => {
     if (bulletinData.length === 0) return;
-    setLoading(true);
+    setIsExportingPdf(true);
     try {
       const [{ jsPDF }, html2canvas] = await Promise.all([
         import('jspdf').then(m => ({ jsPDF: (m as any).jsPDF || (m as any).default?.jsPDF || (m as any).default })),
         import('html2canvas').then(m => (m as any).default || m)
       ]);
       const pdf = new (jsPDF as any)({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-      const mmToPx = (mm: number) => mm * (96 / 25.4);
       const pageWidthMM = pdf.internal.pageSize.getWidth();
       for (let i = 0; i < bulletinData.length; i++) {
         const student = bulletinData[i];
@@ -382,20 +566,36 @@ export default function EngineScolaire() {
     } catch (error) {
       console.error("Erreur lors de la génération du PDF groupé", error);
     }
-    setLoading(false);
+    setIsExportingPdf(false);
   };
 
   const saveGrade = async (
     studentId: string,
     subjectName: string,
     field: 'grade_value' | 'compo_value',
-    value: string
+    value: string,
+    inputEl?: HTMLInputElement | null
   ) => {
-    if (value.trim() === '') return;
+    const trimmed = value.trim();
+    if (trimmed === '' || trimmed === '—') return;
 
-    const val = parseFloat(value);
-    const maxGrade = isSecondCycle ? 20 : 10;
-    if (isNaN(val) || val < 0 || val > maxGrade) return;
+    // Détection du code "000" ou "0000" pour neutraliser la matière (null sur les deux notes)
+    const isExemptionCode = /^0{3,}$/.test(trimmed);
+    let valToSave: number | null = null;
+
+    if (isExemptionCode) {
+      if (inputEl) {
+        inputEl.value = '—';
+      }
+    } else {
+      const val = parseFloat(trimmed);
+      const subjectObj = subjects.find((s) => s.subject_name === subjectName);
+      const coeff = Number(subjectObj?.coefficient) || 1;
+      const maxGrade = baseScale * coeff;
+
+      if (isNaN(val) || val < 0 || val > maxGrade) return;
+      valToSave = val;
+    }
 
     const existingGrade = rawGrades.find(
       (g) =>
@@ -408,16 +608,20 @@ export default function EngineScolaire() {
     const gradeKey = `${studentId}-${subjectName}-${field}`;
     const cacheKey = `bulletins_grades:${selectedClassId}:${period}:${year}`;
 
+    const updatePayload = isExemptionCode
+      ? { grade_value: null, compo_value: null }
+      : { [field]: valToSave };
+
     if (existingGrade?.id && !String(existingGrade.id).startsWith('temp-')) {
       const { error } = await offlineWrite({
         table: 'student_grades',
         action: 'UPDATE',
-        payload: { [field]: val },
+        payload: updatePayload,
         options: { keyColumn: 'id', keyValue: existingGrade.id },
         cacheKey: cacheKey,
         optimisticUpdate: () => {
           setRawGrades((prev) =>
-            prev.map((g) => (g.id === existingGrade.id ? { ...g, [field]: val } : g))
+            prev.map((g) => (g.id === existingGrade.id ? { ...g, ...updatePayload } : g))
           );
         },
       });
@@ -432,7 +636,7 @@ export default function EngineScolaire() {
           });
         }, 800);
       } else {
-        console.error('Erreur UPDATE note :', error);
+        console.error('Erreur UPDATE note :', JSON.stringify(error, Object.getOwnPropertyNames(error)));
       }
     } else {
       const newGradePayload: any = {
@@ -442,7 +646,7 @@ export default function EngineScolaire() {
         period: period,
         academic_year: year,
         academic_year_id: selectedYearId,
-        [field]: val,
+        ...updatePayload,
       };
 
       if (school?.id) {
@@ -470,9 +674,9 @@ export default function EngineScolaire() {
             return next;
           });
         }, 800);
-        loadClassData();
+        loadClassData(true);
       } else {
-        console.error('Erreur INSERT note :', error);
+        console.error('Erreur INSERT note :', JSON.stringify(error, Object.getOwnPropertyNames(error)));
       }
     }
   };
@@ -659,6 +863,10 @@ export default function EngineScolaire() {
               </div>
 
               <div className="flex items-center gap-2">
+                <span className="hidden lg:inline-block text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1.5 rounded-lg">
+                  Astuce : Tapez <strong className="text-slate-800">000</strong> pour dispenser une matière (—)
+                </span>
+
                 <Filter size={14} className="text-slate-400 shrink-0 hidden sm:block" />
                 <select
                   value={selectedSubjectFilter}
@@ -683,216 +891,269 @@ export default function EngineScolaire() {
               </div>
             </div>
 
-            {/* VUE TABLETTE & PC : MATRICE SPREADSHEET PRO AVEC NAVIGATION FLÈCHES/ENTRÉE */}
-            <div className={`hidden md:block bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs ${isExpanded ? 'border-2 border-blue-600/40' : ''}`}>
-              {filteredStudentsSaisie.length === 0 ? (
-                <div className="p-12 text-center text-xs font-bold text-slate-400">
-                  Aucun élève trouvé dans cette classe.
+            {loading ? (
+              <div className="bg-white rounded-2xl border border-slate-200/80 p-16 shadow-xs flex flex-col items-center justify-center gap-3 text-center">
+                <Loader2 className="animate-spin text-blue-600" size={32} />
+                <div>
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                    Chargement des notes...
+                  </p>
+                  <p className="text-[11px] font-medium text-slate-400 mt-1">
+                    Récupération des évaluations pour « {period} »
+                  </p>
                 </div>
-              ) : (
-                <div className={`overflow-x-auto relative ${isExpanded ? 'max-h-[calc(100vh-160px)]' : 'max-h-[600px]'}`}>
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="sticky top-0 z-20 bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
-                      <tr>
-                        <th className="py-3 px-4 sticky left-0 bg-slate-50 z-30 min-w-[200px] border-r border-slate-200">
-                          Élève
-                        </th>
-                        {displayedSubjects.map(sub => (
-                          <th key={sub.id} className="py-2.5 px-3 text-center border-r border-slate-200 min-w-[130px]" colSpan={isSecondCycle ? 2 : 1}>
-                            <div className="font-extrabold text-slate-900 truncate">{sub.subject_name}</div>
-                            <span className="text-[9px] font-semibold text-blue-600">Coeff. {sub.coefficient}</span>
-                          </th>
-                        ))}
-                      </tr>
-                      {isSecondCycle && (
-                        <tr className="bg-slate-100/60 text-[9px] text-slate-500 border-b border-slate-200">
-                          <th className="py-1 px-4 sticky left-0 bg-slate-100 z-30 border-r border-slate-200"></th>
-                          {displayedSubjects.map(sub => (
-                            <Fragment key={`sub-cols-${sub.id}`}>
-                              <th className="py-1 text-center font-bold">Classe</th>
-                              <th className="py-1 text-center font-bold border-r border-slate-200 text-blue-700">Compo</th>
-                            </Fragment>
+              </div>
+            ) : (
+              <>
+                {/* VUE TABLETTE & PC : MATRICE SPREADSHEET PRO AVEC NAVIGATION FLÈCHES/ENTRÉE */}
+                <div
+                  key={`matrix-${selectedClassId}-${period}-${year}`}
+                  className={`hidden md:block bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-xs ${isExpanded ? 'border-2 border-blue-600/40' : ''}`}
+                >
+                  {filteredStudentsSaisie.length === 0 ? (
+                    <div className="p-12 text-center text-xs font-bold text-slate-400">
+                      Aucun élève trouvé dans cette classe.
+                    </div>
+                  ) : (
+                    <div className={`overflow-x-auto relative ${isExpanded ? 'max-h-[calc(100vh-160px)]' : 'max-h-[600px]'}`}>
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="sticky top-0 z-20 bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200">
+                          <tr>
+                            <th className="py-3 px-4 sticky left-0 bg-slate-50 z-30 min-w-[200px] border-r border-slate-200">
+                              Élève
+                            </th>
+                            {displayedSubjects.map(sub => {
+                              const coeff = Number(sub.coefficient) || 1;
+                              const maxSubjectGrade = baseScale * coeff;
+                              return (
+                                <th key={sub.id} className="py-2.5 px-3 text-center border-r border-slate-200 min-w-[130px]" colSpan={isSecondCycle ? 2 : 1}>
+                                  <div className="font-extrabold text-slate-900 truncate">{sub.subject_name}</div>
+                                  <span className="text-[9px] font-semibold text-blue-600">
+                                    Coeff. {coeff} • /{maxSubjectGrade}
+                                  </span>
+                                </th>
+                              );
+                            })}
+                          </tr>
+                          {isSecondCycle && (
+                            <tr className="bg-slate-100/60 text-[9px] text-slate-500 border-b border-slate-200">
+                              <th className="py-1 px-4 sticky left-0 bg-slate-100 z-30 border-r border-slate-200"></th>
+                              {displayedSubjects.map(sub => (
+                                <Fragment key={`sub-cols-${sub.id}`}>
+                                  <th className="py-1 text-center font-bold">Classe</th>
+                                  <th className="py-1 text-center font-bold border-r border-slate-200 text-blue-700">Compo</th>
+                                </Fragment>
+                              ))}
+                            </tr>
+                          )}
+                        </thead>
+
+                        <tbody className="divide-y divide-slate-100 font-medium">
+                          {filteredStudentsSaisie.map((student, studentIdx) => (
+                            <tr key={student.id} className="hover:bg-slate-50/70 transition-colors">
+                              
+                              <td className="py-2.5 px-4 font-bold text-slate-900 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-[1px_0_0_rgba(0,0,0,0.05)]">
+                                <span className="capitalize block truncate">{student.last_name} {student.first_name}</span>
+                              </td>
+
+                              {displayedSubjects.map((sub, subIdx) => {
+                                const grade = rawGrades.find(g => g.student_id === student.id && g.subject_name === sub.subject_name);
+                                const keyClasse = `${student.id}-${sub.subject_name}-grade_value`;
+                                const keyCompo = `${student.id}-${sub.subject_name}-compo_value`;
+                                const isExempt = isGradeRecordExempt(grade);
+
+                                return (
+                                  <Fragment key={`${student.id}-${sub.id}-${period}`}>
+                                    {isSecondCycle && (
+                                      <td className="p-1.5 text-center">
+                                        <input
+                                          ref={(el) => {
+                                            if (el) inputRefs.current[`${student.id}-${sub.subject_name}-grade`] = el;
+                                          }}
+                                          type="text"
+                                          inputMode="decimal"
+                                          defaultValue={formatInputDisplayValue(grade, 'grade_value')}
+                                          onFocus={(e) => {
+                                            if (e.target.value === '—') e.target.value = '';
+                                          }}
+                                          onBlur={(e) => saveGrade(student.id, sub.subject_name, 'grade_value', e.target.value, e.target)}
+                                          onKeyDown={(e) => handleMatrixKeyDown(e, studentIdx, subIdx, 'grade')}
+                                          className={`w-14 h-8 text-center font-bold text-xs rounded-lg border outline-none transition ${
+                                            savedGrades.has(keyClasse)
+                                              ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                                              : isExempt
+                                                ? 'border-amber-300 bg-amber-50/70 text-amber-800'
+                                                : 'border-slate-200 bg-slate-50/60 focus:bg-white focus:border-blue-600'
+                                          }`}
+                                          placeholder="—"
+                                        />
+                                      </td>
+                                    )}
+
+                                    <td className="p-1.5 text-center border-r border-slate-200">
+                                      <input
+                                        ref={(el) => {
+                                          if (el) inputRefs.current[`${student.id}-${sub.subject_name}-compo`] = el;
+                                        }}
+                                        type="text"
+                                        inputMode="decimal"
+                                        defaultValue={formatInputDisplayValue(grade, 'compo_value')}
+                                        onFocus={(e) => {
+                                          if (e.target.value === '—') e.target.value = '';
+                                        }}
+                                        onBlur={(e) => saveGrade(student.id, sub.subject_name, 'compo_value', e.target.value, e.target)}
+                                        onKeyDown={(e) => handleMatrixKeyDown(e, studentIdx, subIdx, 'compo')}
+                                        className={`w-14 h-8 text-center font-bold text-xs rounded-lg border outline-none transition ${
+                                          savedGrades.has(keyCompo)
+                                            ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                                            : isExempt
+                                              ? 'border-amber-300 bg-amber-50/70 text-amber-800'
+                                              : 'border-slate-200 bg-blue-50/40 text-blue-900 focus:bg-white focus:border-blue-600'
+                                        }`}
+                                        placeholder="—"
+                                      />
+                                    </td>
+                                  </Fragment>
+                                );
+                              })}
+
+                            </tr>
                           ))}
-                        </tr>
-                      )}
-                    </thead>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
 
-                    <tbody className="divide-y divide-slate-100 font-medium">
-                      {filteredStudentsSaisie.map((student, studentIdx) => (
-                        <tr key={student.id} className="hover:bg-slate-50/70 transition-colors">
-                          
-                          <td className="py-2.5 px-4 font-bold text-slate-900 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-[1px_0_0_rgba(0,0,0,0.05)]">
-                            <span className="capitalize block truncate">{student.last_name} {student.first_name}</span>
-                          </td>
+                {/* VUE MOBILE : FICHE FLUIDE ET CLAVIER OPTIMISÉ */}
+                <div
+                  key={`mobile-${selectedClassId}-${period}-${year}-${activeMobileStudent?.id || 'none'}`}
+                  className="md:hidden space-y-4"
+                >
+                  {filteredStudentsSaisie.length === 0 ? (
+                    <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center text-xs font-bold text-slate-400">
+                      Aucun élève trouvé
+                    </div>
+                  ) : activeMobileStudent && (
+                    <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
+                      
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs uppercase">
+                            {activeMobileStudent.first_name?.[0]}{activeMobileStudent.last_name?.[0]}
+                          </div>
+                          <div>
+                            <h3 className="text-sm font-extrabold text-slate-900 capitalize leading-tight">
+                              {activeMobileStudent.first_name} {activeMobileStudent.last_name}
+                            </h3>
+                            <span className="text-[10px] text-slate-400 font-bold block">
+                              Élève {currentStudentIndex + 1} sur {filteredStudentsSaisie.length}
+                            </span>
+                          </div>
+                        </div>
 
-                          {displayedSubjects.map((sub, subIdx) => {
-                            const grade = rawGrades.find(g => g.student_id === student.id && g.subject_name === sub.subject_name);
-                            const keyClasse = `${student.id}-${sub.subject_name}-grade_value`;
-                            const keyCompo = `${student.id}-${sub.subject_name}-compo_value`;
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setCurrentStudentIndex(Math.max(0, currentStudentIndex - 1))}
+                            disabled={currentStudentIndex === 0}
+                            className="p-2 border border-slate-200 rounded-lg text-slate-600 disabled:opacity-30"
+                          >
+                            <ChevronLeft size={16} />
+                          </button>
+                          <button
+                            onClick={() => setCurrentStudentIndex(Math.min(filteredStudentsSaisie.length - 1, currentStudentIndex + 1))}
+                            disabled={currentStudentIndex === filteredStudentsSaisie.length - 1}
+                            className="p-2 border border-slate-200 rounded-lg text-slate-600 disabled:opacity-30"
+                          >
+                            <ChevronRight size={16} />
+                          </button>
+                        </div>
+                      </div>
 
-                            return (
-                              <Fragment key={`${student.id}-${sub.id}`}>
+                      <p className="text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-200/80 px-3 py-1.5 rounded-lg text-center">
+                        Saisissez <strong className="text-slate-800">000</strong> si l'élève est dispensé (non comptabilisé)
+                      </p>
+
+                      <div className="space-y-3">
+                        {displayedSubjects.map(sub => {
+                          const grade = rawGrades.find(g => g.student_id === activeMobileStudent.id && g.subject_name === sub.subject_name);
+                          const coeff = Number(sub.coefficient) || 1;
+                          const maxSubjectGrade = baseScale * coeff;
+                          const isExempt = isGradeRecordExempt(grade);
+
+                          return (
+                            <div key={`${sub.id}-${period}`} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                              <div className="flex justify-between items-center">
+                                <span className="text-xs font-bold text-slate-800 truncate">{sub.subject_name}</span>
+                                <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                                  Coeff. {coeff} • /{maxSubjectGrade}
+                                </span>
+                              </div>
+
+                              <div className="flex gap-2.5">
                                 {isSecondCycle && (
-                                  <td className="p-1.5 text-center">
+                                  <div className="flex-1">
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                                      Classe /{maxSubjectGrade}
+                                    </label>
                                     <input
-                                      ref={(el) => {
-                                        if (el) inputRefs.current[`${student.id}-${sub.subject_name}-grade`] = el;
-                                      }}
-                                      type="number"
-                                      step="0.25"
-                                      min="0"
-                                      max="20"
+                                      type="text"
                                       inputMode="decimal"
-                                      defaultValue={grade?.grade_value ?? ''}
-                                      onBlur={(e) => saveGrade(student.id, sub.subject_name, 'grade_value', e.target.value)}
-                                      onKeyDown={(e) => handleMatrixKeyDown(e, studentIdx, subIdx, 'grade')}
-                                      className={`w-14 h-8 text-center font-bold text-xs rounded-lg border outline-none transition ${
-                                        savedGrades.has(keyClasse)
-                                          ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
-                                          : 'border-slate-200 bg-slate-50/60 focus:bg-white focus:border-blue-600'
+                                      defaultValue={formatInputDisplayValue(grade, 'grade_value')}
+                                      onFocus={(e) => {
+                                        if (e.target.value === '—') e.target.value = '';
+                                      }}
+                                      onBlur={(e) => saveGrade(activeMobileStudent.id, sub.subject_name, 'grade_value', e.target.value, e.target)}
+                                      className={`w-full h-11 border text-center font-bold text-base rounded-lg outline-none focus:border-blue-600 ${
+                                        isExempt
+                                          ? 'bg-amber-50/70 border-amber-300 text-amber-800'
+                                          : 'bg-white border-slate-300 text-slate-900'
                                       }`}
                                       placeholder="—"
                                     />
-                                  </td>
+                                  </div>
                                 )}
 
-                                <td className="p-1.5 text-center border-r border-slate-200">
+                                <div className="flex-1">
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                                    {isSecondCycle ? `Composition /${maxSubjectGrade}` : `Note d'examen /${maxSubjectGrade}`}
+                                  </label>
                                   <input
-                                    ref={(el) => {
-                                      if (el) inputRefs.current[`${student.id}-${sub.subject_name}-compo`] = el;
-                                    }}
-                                    type="number"
-                                    step="0.25"
-                                    min="0"
-                                    max={isSecondCycle ? "20" : "10"}
+                                    type="text"
                                     inputMode="decimal"
-                                    defaultValue={grade?.compo_value ?? ''}
-                                    onBlur={(e) => saveGrade(student.id, sub.subject_name, 'compo_value', e.target.value)}
-                                    onKeyDown={(e) => handleMatrixKeyDown(e, studentIdx, subIdx, 'compo')}
-                                    className={`w-14 h-8 text-center font-bold text-xs rounded-lg border outline-none transition ${
-                                      savedGrades.has(keyCompo)
-                                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
-                                        : 'border-slate-200 bg-blue-50/40 text-blue-900 focus:bg-white focus:border-blue-600'
+                                    defaultValue={formatInputDisplayValue(grade, 'compo_value')}
+                                    onFocus={(e) => {
+                                      if (e.target.value === '—') e.target.value = '';
+                                    }}
+                                    onBlur={(e) => saveGrade(activeMobileStudent.id, sub.subject_name, 'compo_value', e.target.value, e.target)}
+                                    className={`w-full h-11 border text-center font-bold text-base rounded-lg outline-none focus:border-blue-600 ${
+                                      isExempt
+                                        ? 'bg-amber-50/70 border-amber-300 text-amber-800'
+                                        : 'bg-white border-slate-300 text-blue-600'
                                     }`}
                                     placeholder="—"
                                   />
-                                </td>
-                              </Fragment>
-                            );
-                          })}
-
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* VUE MOBILE : FICHE FLUIDE ET CLAVIER OPTIMISÉ */}
-            <div className="md:hidden space-y-4">
-              {filteredStudentsSaisie.length === 0 ? (
-                <div className="bg-white p-8 rounded-2xl border border-slate-200 text-center text-xs font-bold text-slate-400">
-                  Aucun élève trouvé
-                </div>
-              ) : activeMobileStudent && (
-                <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
-                  
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs uppercase">
-                        {activeMobileStudent.first_name?.[0]}{activeMobileStudent.last_name?.[0]}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                      <div>
-                        <h3 className="text-sm font-extrabold text-slate-900 capitalize leading-tight">
-                          {activeMobileStudent.first_name} {activeMobileStudent.last_name}
-                        </h3>
-                        <span className="text-[10px] text-slate-400 font-bold block">
-                          Élève {currentStudentIndex + 1} sur {filteredStudentsSaisie.length}
-                        </span>
-                      </div>
-                    </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => setCurrentStudentIndex(Math.max(0, currentStudentIndex - 1))}
-                        disabled={currentStudentIndex === 0}
-                        className="p-2 border border-slate-200 rounded-lg text-slate-600 disabled:opacity-30"
-                      >
-                        <ChevronLeft size={16} />
-                      </button>
                       <button
                         onClick={() => setCurrentStudentIndex(Math.min(filteredStudentsSaisie.length - 1, currentStudentIndex + 1))}
                         disabled={currentStudentIndex === filteredStudentsSaisie.length - 1}
-                        className="p-2 border border-slate-200 rounded-lg text-slate-600 disabled:opacity-30"
+                        className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-40"
                       >
-                        <ChevronRight size={16} />
+                        <span>Passer à l'élève suivant</span>
+                        <ArrowRight size={15} />
                       </button>
+
                     </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    {displayedSubjects.map(sub => {
-                      const grade = rawGrades.find(g => g.student_id === activeMobileStudent.id && g.subject_name === sub.subject_name);
-                      return (
-                        <div key={sub.id} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                          <div className="flex justify-between items-center">
-                            <span className="text-xs font-bold text-slate-800 truncate">{sub.subject_name}</span>
-                            <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">Coeff. {sub.coefficient}</span>
-                          </div>
-
-                          <div className="flex gap-2.5">
-                            {isSecondCycle && (
-                              <div className="flex-1">
-                                <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Classe /20</label>
-                                <input
-                                  type="number"
-                                  step="0.25"
-                                  min="0"
-                                  max="20"
-                                  inputMode="decimal"
-                                  defaultValue={grade?.grade_value ?? ''}
-                                  onBlur={(e) => saveGrade(activeMobileStudent.id, sub.subject_name, 'grade_value', e.target.value)}
-                                  className="w-full h-11 bg-white border border-slate-300 text-center font-bold text-base text-slate-900 rounded-lg outline-none focus:border-blue-600"
-                                  placeholder="—"
-                                />
-                              </div>
-                            )}
-
-                            <div className="flex-1">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
-                                {isSecondCycle ? 'Composition /20' : 'Note d\'examen /10'}
-                              </label>
-                              <input
-                                type="number"
-                                step="0.25"
-                                min="0"
-                                max={isSecondCycle ? "20" : "10"}
-                                inputMode="decimal"
-                                defaultValue={grade?.compo_value ?? ''}
-                                onBlur={(e) => saveGrade(activeMobileStudent.id, sub.subject_name, 'compo_value', e.target.value)}
-                                className="w-full h-11 bg-white border border-slate-300 text-center font-bold text-base text-blue-600 rounded-lg outline-none focus:border-blue-600"
-                                placeholder="—"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <button
-                    onClick={() => setCurrentStudentIndex(Math.min(filteredStudentsSaisie.length - 1, currentStudentIndex + 1))}
-                    disabled={currentStudentIndex === filteredStudentsSaisie.length - 1}
-                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 disabled:opacity-40"
-                  >
-                    <span>Passer à l'élève suivant</span>
-                    <ArrowRight size={15} />
-                  </button>
-
+                  )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
 
           </div>
         )}
@@ -902,260 +1163,278 @@ export default function EngineScolaire() {
         {/* ======================================================== */}
         {tab === 'resultats' && selectedClassId && (
           <div className="space-y-6">
-            <div className="flex justify-between items-center border-b border-slate-200/80 pb-4">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                {bulletinData.length} bulletin{bulletinData.length > 1 ? 's' : ''} délibéré{bulletinData.length > 1 ? 's' : ''}
-              </span>
-              <button
-                onClick={downloadAllInOnePDF}
-                disabled={loading || bulletinData.length === 0}
-                className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition disabled:opacity-40 shadow-xs"
-              >
-                <Download size={14} />
-                <span>{loading ? 'Génération du PDF...' : 'Télécharger tous les bulletins'}</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {bulletinData.map((s) => (
-                <div key={s.id} className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
-                  <div className="flex justify-between items-start border-b border-slate-100 pb-3">
-                    <div>
-                      <h3 className="text-base font-extrabold text-slate-900 capitalize">
-                        {s.first_name} {s.last_name}
-                      </h3>
-                    </div>
-                    <span className="text-xs font-black px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-100">
-                      Rang : {s.rang} / {students.length}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-center">
-                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Moyenne Générale</span>
-                      <span className="text-2xl font-black text-blue-600 mt-0.5 block">
-                        {s.moyenne} <span className="text-xs font-normal text-slate-400">/{isSecondCycle ? 20 : 10}</span>
-                      </span>
-                    </div>
-
-                    <div className={`p-3 rounded-xl border flex flex-col justify-center ${
-                      s.moyenne >= (isSecondCycle ? 10 : 5)
-                        ? 'bg-emerald-50/50 border-emerald-200 text-emerald-800'
-                        : 'bg-rose-50/50 border-rose-200 text-rose-800'
-                    }`}>
-                      <span className="text-[10px] font-bold uppercase block opacity-70">Mention</span>
-                      <span className="text-sm font-black mt-0.5 block">{getMention(s.moyenne)}</span>
-                    </div>
-                  </div>
-
-                  <div className="max-h-[140px] overflow-y-auto space-y-1.5 divide-y divide-slate-100">
-                    {s.notes.map((n: any) => (
-                      <div key={n.name} className="flex justify-between items-center pt-1.5 text-xs">
-                        <span className="font-semibold text-slate-700 truncate pr-2">{n.name}</span>
-                        <span className="font-bold text-slate-900">{n.moyenneMatiere}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <button
-                    onClick={() => downloadPDF(s)}
-                    className="w-full py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
-                  >
-                    <FileText size={14} className="text-blue-600" />
-                    <span>Télécharger le bulletin</span>
-                  </button>
-
-                  {/* Template PDF Masqué Strictement Préservé */}
-                  <div style={{ position: 'absolute', top: '-10000px', left: 0 }}>
-                    <div
-                      id={`bulletin-pdf-${s.id}`}
-                      style={{
-                        padding: '40px',
-                        background: 'white',
-                        color: '#0f172a',
-                        fontFamily: '"Inter", "Helvetica Neue", Helvetica, Arial, sans-serif',
-                        width: '210mm',
-                        minHeight: '297mm',
-                        boxSizing: 'border-box',
-                        pageBreakAfter: 'always',
-                        breakAfter: 'page',
-                        pageBreakInside: 'avoid'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '35px' }}>
-                        <div>
-                          <h1 style={{ margin: 0, fontSize: '28px', fontWeight: '900', color: '#4f46e5', letterSpacing: '-0.5px' }}>
-                            {school?.name || 'Ecole'}
-                          </h1>
-                          <h2 style={{ margin: '8px 0 0 0', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '2px', color: '#64748b', fontWeight: 'bold' }}>
-                            {school?.academie ? `${school.academie}` : ''} {school?.rive ? `• ${school.rive}` : ''}
-                          </h2>
-                          <h3 style={{ margin: '4px 0 0 0', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#94a3b8' }}>
-                            {school?.cap ? ` ${school.cap}` : ''}
-                          </h3>
-                          <h3 style={{ margin: '6px 0 0 0', fontSize: '10px', color: '#94a3b8' }}>
-                            {school?.address || ''}{school?.city ? `, ${school.city}` : ''}{school?.phone ? ` • ${school.phone}` : ''}
-                          </h3>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'inline-block', background: '#4f46e5', color: 'white', padding: '8px 16px', borderRadius: '20px', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
-                            Bulletin de Notes
-                          </div>
-                          <p style={{ margin: 0, fontSize: '13px', fontWeight: '600', color: '#334155' }}>
-                            Période : <span style={{ color: '#4f46e5' }}>{period}</span>
-                          </p>
-                          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748b' }}>
-                            Année Scolaire : {year}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', marginBottom: '35px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                          <p style={{ margin: '0 0 4px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: '700', letterSpacing: '1px' }}>
-                            Identité de l'élève
-                          </p>
-                          <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase' }}>
-                            {s.first_name} {s.last_name}
-                          </h2>
-                          <div style={{ display: 'flex', gap: '20px', marginTop: '10px' }}>
-                            <p style={{ margin: 0, fontSize: '13px', color: '#475569' }}>
-                              <strong style={{ color: '#0f172a' }}>Classe :</strong> {classes.find(c => c.id === selectedClassId)?.name}
-                            </p>
-                            <p style={{ margin: 0, fontSize: '13px', color: '#475569' }}>
-                              <strong style={{ color: '#0f172a' }}>Régime :</strong> {isSecondCycle ? "Second Cycle" : "Premier Cycle"}
-                            </p>
-                          </div>
-                        </div>
-                        <div style={{ textAlign: 'right', background: 'white', padding: '12px 20px', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
-                          <p style={{ margin: '0 0 4px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: '700' }}>
-                            Rang de l'élève
-                          </p>
-                          <p style={{ margin: 0, fontSize: '24px', fontWeight: '900', color: '#4f46e5' }}>
-                            {s.rang} <span style={{ fontSize: '14px', color: '#94a3b8', fontWeight: '600' }}>/ {students.length}</span>
-                          </p>
-                        </div>
-                      </div>
-
-                      <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '30px' }}>
-                        <thead>
-                          <tr>
-                            <th style={{ background: '#f1f5f9', color: '#334155', padding: '12px 15px', textAlign: 'left', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', borderBottom: '2px solid #e2e8f0', borderTopLeftRadius: '8px' }}>
-                              Matière
-                            </th>
-                            <th style={{ background: '#f1f5f9', color: '#334155', padding: '12px 15px', textAlign: 'center', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', borderBottom: '2px solid #e2e8f0' }}>
-                              Coeff
-                            </th>
-                            {isSecondCycle && (
-                              <th style={{ background: '#f1f5f9', color: '#334155', padding: '12px 15px', textAlign: 'center', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', borderBottom: '2px solid #e2e8f0' }}>
-                                Classe
-                              </th>
-                            )}
-                            {isSecondCycle && (
-                              <th style={{ background: '#f1f5f9', color: '#334155', padding: '12px 15px', textAlign: 'center', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', borderBottom: '2px solid #e2e8f0' }}>
-                                Compo
-                              </th>
-                            )}
-                            <th style={{ background: '#f1f5f9', color: '#334155', padding: '12px 15px', textAlign: 'center', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', borderBottom: '2px solid #e2e8f0' }}>
-                              Moy/{isSecondCycle ? '20' : '10'}
-                            </th>
-                            <th style={{ background: '#f1f5f9', color: '#334155', padding: '12px 15px', textAlign: 'center', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', borderBottom: '2px solid #e2e8f0' }}>
-                              Pondéré
-                            </th>
-                            <th style={{ background: '#f1f5f9', color: '#334155', padding: '12px 15px', textAlign: 'left', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', borderBottom: '2px solid #e2e8f0', borderTopRightRadius: '8px' }}>
-                              Appréciation
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {s.notes.map((n: any, idx: number) => (
-                            <tr key={n.name} style={{ background: idx % 2 === 0 ? 'white' : '#fafafa' }}>
-                              <td style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>
-                                {n.name}
-                              </td>
-                              <td style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', fontSize: '13px', color: '#64748b' }}>
-                                {n.coeff}
-                              </td>
-                              {isSecondCycle && (
-                                <td style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', fontSize: '13px', color: '#64748b' }}>
-                                  {n.noteClasse}
-                                </td>
-                              )}
-                              {isSecondCycle && (
-                                <td style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', fontSize: '13px', color: '#64748b' }}>
-                                  {n.noteCompo}
-                                </td>
-                              )}
-                              <td style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', fontSize: '13px', fontWeight: '700', color: '#0f172a' }}>
-                                {n.moyenneMatiere}
-                              </td>
-                              <td style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', fontSize: '13px', color: '#64748b' }}>
-                                {n.points.toFixed(2)}
-                              </td>
-                              <td style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', fontSize: '12px', fontStyle: 'italic', color: '#475569' }}>
-                                {getAppreciation(n.moyenneMatiere)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-
-                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '50px' }}>
-                        <div style={{ width: '380px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-                            <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase' }}>
-                              Total Pondéré
-                            </span>
-                            <span style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a' }}>
-                              {s.totalPoints.toFixed(2)}
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                            <span style={{ fontSize: '15px', color: '#0f172a', fontWeight: '800', textTransform: 'uppercase' }}>
-                              Moyenne Générale
-                            </span>
-                            <span style={{ fontSize: '26px', fontWeight: '900', color: '#4f46e5' }}>
-                              {s.moyenne}
-                              <span style={{ fontSize: '14px', color: '#94a3b8' }}>/{isSecondCycle ? '20' : '10'}</span>
-                            </span>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <span
-                              style={{
-                                display: 'inline-block',
-                                background: s.moyenne >= (isSecondCycle ? 10 : 5) ? '#dcfce7' : '#fee2e2',
-                                color: s.moyenne >= (isSecondCycle ? 10 : 5) ? '#166534' : '#991b1b',
-                                padding: '8px 16px',
-                                borderRadius: '8px',
-                                fontSize: '12px',
-                                fontWeight: '800',
-                                textTransform: 'uppercase',
-                                letterSpacing: '1px'
-                              }}
-                            >
-                              Mention : {getMention(s.moyenne)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <div style={{ width: '35%' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                            Signature des parents
-                          </p>
-                        </div>
-                        <div style={{ width: '35%', textAlign: 'right' }}>
-                          <p style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                            Le Directeur des Études
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+            {loading ? (
+              <div className="bg-white rounded-2xl border border-slate-200/80 p-16 shadow-xs flex flex-col items-center justify-center gap-3 text-center">
+                <Loader2 className="animate-spin text-blue-600" size={32} />
+                <div>
+                  <p className="text-xs font-extrabold uppercase tracking-wider text-slate-800">
+                    Calcul des bulletins...
+                  </p>
+                  <p className="text-[11px] font-medium text-slate-400 mt-1">
+                    Délibération en cours pour « {period} »
+                  </p>
                 </div>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex justify-between items-center border-b border-slate-200/80 pb-4">
+                  <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    {bulletinData.length} bulletin{bulletinData.length > 1 ? 's' : ''} délibéré{bulletinData.length > 1 ? 's' : ''}
+                  </span>
+                  <button
+                    onClick={downloadAllInOnePDF}
+                    disabled={isExportingPdf || bulletinData.length === 0}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition disabled:opacity-40 shadow-xs"
+                  >
+                    <Download size={14} />
+                    <span>{isExportingPdf ? 'Génération du PDF...' : 'Télécharger tous les bulletins'}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {bulletinData.map((s) => (
+                    <div key={s.id} className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                      <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+                        <div>
+                          <h3 className="text-base font-extrabold text-slate-900 capitalize">
+                            {s.first_name} {s.last_name}
+                          </h3>
+                        </div>
+                        <span className="text-xs font-black px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 border border-blue-100">
+                          Rang : {s.rang} / {students.length}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 text-center">
+                        <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase block">Moyenne Générale</span>
+                          <span className="text-2xl font-black text-blue-600 mt-0.5 block">
+                            {s.moyenne} <span className="text-xs font-normal text-slate-400">/{baseScale}</span>
+                          </span>
+                        </div>
+
+                        <div className={`p-3 rounded-xl border flex flex-col justify-center ${
+                          s.moyenne >= (isSecondCycle ? 10 : 5)
+                            ? 'bg-emerald-50/50 border-emerald-200 text-emerald-800'
+                            : 'bg-rose-50/50 border-rose-200 text-rose-800'
+                        }`}>
+                          <span className="text-[10px] font-bold uppercase block opacity-70">Mention</span>
+                          <span className="text-sm font-black mt-0.5 block">{getMention(s.moyenne)}</span>
+                        </div>
+                      </div>
+
+                      <div className="max-h-[140px] overflow-y-auto space-y-1.5 divide-y divide-slate-100">
+                        {s.notes.map((n: any) => (
+                          <div key={n.name} className="flex justify-between items-center pt-1.5 text-xs">
+                            <span className="font-semibold text-slate-700 truncate pr-2">{n.name}</span>
+                            <span className={`font-bold ${n.isExempt ? 'text-slate-400' : 'text-slate-900'}`}>
+                              {n.isExempt ? '—' : n.moyenneMatiere}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        onClick={() => downloadPDF(s)}
+                        className="w-full py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-800 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
+                      >
+                        <FileText size={14} className="text-blue-600" />
+                        <span>Télécharger le bulletin</span>
+                      </button>
+
+                      {/* Template PDF Masqué Strictement Préservé */}
+                      <div style={{ position: 'absolute', top: '-10000px', left: 0 }}>
+                        <div
+                          id={`bulletin-pdf-${s.id}`}
+                          style={{
+                            padding: '40px',
+                            background: 'white',
+                            color: '#0f172a',
+                            fontFamily: '"Inter", "Helvetica Neue", Helvetica, Arial, sans-serif',
+                            width: '210mm',
+                            minHeight: '297mm',
+                            boxSizing: 'border-box',
+                            pageBreakAfter: 'always',
+                            breakAfter: 'page',
+                            pageBreakInside: 'avoid'
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '35px' }}>
+                            <div>
+                              <h1 style={{ margin: 0, fontSize: '28px', fontWeight: '900', color: '#4f46e5', letterSpacing: '-0.5px' }}>
+                                {school?.name || 'Ecole'}
+                              </h1>
+                              <h2 style={{ margin: '8px 0 0 0', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '2px', color: '#64748b', fontWeight: 'bold' }}>
+                                {school?.academie ? `${school.academie}` : ''} {school?.rive ? `• ${school.rive}` : ''}
+                              </h2>
+                              <h3 style={{ margin: '4px 0 0 0', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', color: '#94a3b8' }}>
+                                {school?.cap ? ` ${school.cap}` : ''}
+                              </h3>
+                              <h3 style={{ margin: '6px 0 0 0', fontSize: '10px', color: '#94a3b8' }}>
+                                {school?.address || ''}{school?.city ? `, ${school.city}` : ''}{school?.phone ? ` • ${school.phone}` : ''}
+                              </h3>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ display: 'inline-block', background: '#4f46e5', color: 'white', padding: '8px 16px', borderRadius: '20px', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
+                                Bulletin de Notes
+                              </div>
+                              <p style={{ margin: 0, fontSize: '13px', fontWeight: '600', color: '#334155' }}>
+                                Période : <span style={{ color: '#4f46e5' }}>{period}</span>
+                              </p>
+                              <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: '#64748b' }}>
+                                Année Scolaire : {year}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px', marginBottom: '35px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                              <p style={{ margin: '0 0 4px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: '700', letterSpacing: '1px' }}>
+                                Identité de l'élève
+                              </p>
+                              <h2 style={{ margin: 0, fontSize: '22px', fontWeight: '800', color: '#0f172a', textTransform: 'uppercase' }}>
+                                {s.first_name} {s.last_name}
+                              </h2>
+                              <div style={{ display: 'flex', gap: '20px', marginTop: '10px' }}>
+                                <p style={{ margin: 0, fontSize: '13px', color: '#475569' }}>
+                                  <strong style={{ color: '#0f172a' }}>Classe :</strong> {classes.find(c => c.id === selectedClassId)?.name}
+                                </p>
+                                <p style={{ margin: 0, fontSize: '13px', color: '#475569' }}>
+                                  <strong style={{ color: '#0f172a' }}>Régime :</strong> {isSecondCycle ? "Second Cycle" : "Premier Cycle"}
+                                </p>
+                              </div>
+                            </div>
+                            <div style={{ textAlign: 'right', background: 'white', padding: '12px 20px', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                              <p style={{ margin: '0 0 4px 0', fontSize: '11px', textTransform: 'uppercase', color: '#64748b', fontWeight: '700' }}>
+                                Rang de l'élève
+                              </p>
+                              <p style={{ margin: 0, fontSize: '24px', fontWeight: '900', color: '#4f46e5' }}>
+                                {s.rang} <span style={{ fontSize: '14px', color: '#94a3b8', fontWeight: '600' }}>/ {students.length}</span>
+                              </p>
+                            </div>
+                          </div>
+
+                          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '30px' }}>
+                            <thead>
+                              <tr>
+                                <th style={{ background: '#f1f5f9', color: '#334155', padding: '12px 15px', textAlign: 'left', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', borderBottom: '2px solid #e2e8f0', borderTopLeftRadius: '8px' }}>
+                                  Matière
+                                </th>
+                                <th style={{ background: '#f1f5f9', color: '#334155', padding: '12px 15px', textAlign: 'center', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', borderBottom: '2px solid #e2e8f0' }}>
+                                  Coeff
+                                </th>
+                                {isSecondCycle && (
+                                  <th style={{ background: '#f1f5f9', color: '#334155', padding: '12px 15px', textAlign: 'center', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', borderBottom: '2px solid #e2e8f0' }}>
+                                    Classe
+                                  </th>
+                                )}
+                                {isSecondCycle && (
+                                  <th style={{ background: '#f1f5f9', color: '#334155', padding: '12px 15px', textAlign: 'center', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', borderBottom: '2px solid #e2e8f0' }}>
+                                    Compo
+                                  </th>
+                                )}
+                                <th style={{ background: '#f1f5f9', color: '#334155', padding: '12px 15px', textAlign: 'center', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', borderBottom: '2px solid #e2e8f0' }}>
+                                  Moy/{baseScale}
+                                </th>
+                                <th style={{ background: '#f1f5f9', color: '#334155', padding: '12px 15px', textAlign: 'center', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', borderBottom: '2px solid #e2e8f0' }}>
+                                  Pondéré
+                                </th>
+                                <th style={{ background: '#f1f5f9', color: '#334155', padding: '12px 15px', textAlign: 'left', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', borderBottom: '2px solid #e2e8f0', borderTopRightRadius: '8px' }}>
+                                  Appréciation
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {s.notes.map((n: any, idx: number) => (
+                                <tr key={n.name} style={{ background: idx % 2 === 0 ? 'white' : '#fafafa' }}>
+                                  <td style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', fontSize: '13px', fontWeight: '600', color: '#1e293b' }}>
+                                    {n.name}
+                                  </td>
+                                  <td style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', fontSize: '13px', color: '#64748b' }}>
+                                    {n.isExempt ? '—' : n.coeff}
+                                  </td>
+                                  {isSecondCycle && (
+                                    <td style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', fontSize: '13px', color: '#64748b' }}>
+                                      {n.isExempt ? '—' : n.noteClasse}
+                                    </td>
+                                  )}
+                                  {isSecondCycle && (
+                                    <td style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', fontSize: '13px', color: '#64748b' }}>
+                                      {n.isExempt ? '—' : n.noteCompo}
+                                    </td>
+                                  )}
+                                  <td style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', fontSize: '13px', fontWeight: '700', color: n.isExempt ? '#94a3b8' : '#0f172a' }}>
+                                    {n.isExempt ? '—' : n.moyenneMatiere}
+                                  </td>
+                                  <td style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', fontSize: '13px', color: '#64748b' }}>
+                                    {n.isExempt ? '—' : n.points.toFixed(2)}
+                                  </td>
+                                  <td style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', fontSize: '12px', fontStyle: 'italic', color: '#475569' }}>
+                                    {getAppreciation(n.moyenneMatiere, n.isExempt)}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '50px' }}>
+                            <div style={{ width: '380px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+                                <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '600', textTransform: 'uppercase' }}>
+                                  Total Pondéré
+                                </span>
+                                <span style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a' }}>
+                                  {s.totalPoints.toFixed(2)}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                                <span style={{ fontSize: '15px', color: '#0f172a', fontWeight: '800', textTransform: 'uppercase' }}>
+                                  Moyenne Générale
+                                </span>
+                                <span style={{ fontSize: '26px', fontWeight: '900', color: '#4f46e5' }}>
+                                  {s.moyenne}
+                                  <span style={{ fontSize: '14px', color: '#94a3b8' }}>/{baseScale}</span>
+                                </span>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <span
+                                  style={{
+                                    display: 'inline-block',
+                                    background: s.moyenne >= (isSecondCycle ? 10 : 5) ? '#dcfce7' : '#fee2e2',
+                                    color: s.moyenne >= (isSecondCycle ? 10 : 5) ? '#166534' : '#991b1b',
+                                    padding: '8px 16px',
+                                    borderRadius: '8px',
+                                    fontSize: '12px',
+                                    fontWeight: '800',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '1px'
+                                  }}
+                                >
+                                  Mention : {getMention(s.moyenne)}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <div style={{ width: '35%' }}>
+                              <p style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                                Signature des parents
+                              </p>
+                            </div>
+                            <div style={{ width: '35%', textAlign: 'right' }}>
+                              <p style={{ fontSize: '11px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                                Le Directeur des Études
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -1164,9 +1443,26 @@ export default function EngineScolaire() {
         {/* ======================================================== */}
         {tab === 'config' && selectedClassId && (
           <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 space-y-6 shadow-xs">
-            <div className="border-b border-slate-100 pb-3">
-              <h2 className="text-sm font-bold text-slate-900 uppercase">Matières de la classe</h2>
-              <p className="text-xs text-slate-500 font-medium">Définissez les disciplines enseignées et leurs coefficients respectifs</p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 uppercase">Matières de la classe</h2>
+                <p className="text-xs text-slate-500 font-medium">Définissez, modifiez ou réorganisez les disciplines et leurs coefficients</p>
+              </div>
+
+              {!isReadOnly && subjects.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setIsReorderMode(!isReorderMode)}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition self-start sm:self-auto ${
+                    isReorderMode
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  <ArrowUpDown size={14} />
+                  <span>{isReorderMode ? 'Terminer le tri' : 'Changer la place'}</span>
+                </button>
+              )}
             </div>
 
             {!isReadOnly && (
@@ -1208,23 +1504,119 @@ export default function EngineScolaire() {
               {subjects.length === 0 ? (
                 <p className="text-xs font-medium text-slate-400 py-6 text-center">Aucune matière configurée pour le moment.</p>
               ) : (
-                subjects.map(s => (
-                  <div key={s.id} className="flex justify-between items-center p-3.5 bg-slate-50/70 border border-slate-200/80 rounded-xl hover:bg-slate-50 transition">
-                    <div>
-                      <p className="font-bold text-slate-900 text-sm">{s.subject_name}</p>
-                      <span className="text-xs font-bold text-blue-600">Coefficient : {s.coefficient}</span>
+                subjects.map((s, idx) => {
+                  const isEditing = editingSubjectId === String(s.id);
+                  const coeff = Number(s.coefficient) || 1;
+
+                  return (
+                    <div
+                      key={s.id}
+                      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border transition ${
+                        isEditing
+                          ? 'bg-blue-50/40 border-blue-300'
+                          : 'bg-slate-50/70 border-slate-200/80 hover:bg-slate-50'
+                      }`}
+                    >
+                      {isEditing ? (
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
+                          <input
+                            type="text"
+                            value={editSubName}
+                            onChange={(e) => setEditSubName(e.target.value)}
+                            className="flex-1 px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-xs text-slate-900 outline-none focus:border-blue-600"
+                            placeholder="Nom de la matière"
+                            autoFocus
+                          />
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-600 shrink-0">Coeff :</span>
+                            <input
+                              type="number"
+                              step="1"
+                              min="1"
+                              value={editSubCoeff}
+                              onChange={(e) => setEditSubCoeff(e.target.value)}
+                              className="w-20 px-3 py-2 bg-white border border-slate-300 rounded-lg font-bold text-xs text-slate-900 outline-none focus:border-blue-600 text-center"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => saveEditSubject(s)}
+                              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition"
+                              title="Enregistrer"
+                            >
+                              <Check size={14} />
+                              <span>Valider</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingSubjectId(null)}
+                              className="p-2 border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 rounded-lg transition"
+                              title="Annuler"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-3">
+                            {isReorderMode && !isReadOnly && (
+                              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 shadow-2xs">
+                                <button
+                                  type="button"
+                                  onClick={() => moveSubject(idx, 'up')}
+                                  disabled={idx === 0}
+                                  className="p-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded disabled:opacity-30 transition"
+                                  title="Monter"
+                                >
+                                  <ArrowUp size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => moveSubject(idx, 'down')}
+                                  disabled={idx === subjects.length - 1}
+                                  className="p-1 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded disabled:opacity-30 transition"
+                                  title="Descendre"
+                                >
+                                  <ArrowDown size={14} />
+                                </button>
+                              </div>
+                            )}
+
+                            <div>
+                              <p className="font-bold text-slate-900 text-sm">{s.subject_name}</p>
+                              <span className="text-xs font-bold text-blue-600">
+                                Coefficient : {coeff} • Barème : /{baseScale * coeff}
+                              </span>
+                            </div>
+                          </div>
+
+                          {!isReadOnly && (
+                            <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                              <button
+                                type="button"
+                                onClick={() => startEditSubject(s)}
+                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                                title="Modifier la matière ou le coefficient"
+                              >
+                                <Edit3 size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteSubject(s.id)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                                title="Supprimer la matière"
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
-                    {!isReadOnly && (
-                      <button
-                        onClick={() => deleteSubject(s.id)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                        title="Supprimer la matière"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    )}
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
