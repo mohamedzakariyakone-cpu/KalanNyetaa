@@ -1,34 +1,47 @@
 "use client";
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation'; 
-import { LayoutDashboard, School, Users, GraduationCap, Wallet, Settings, LogOut, NotebookTabs, ChartLine, MoreHorizontal, Layers, Clock, Calendar, Bell } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import {
+  LayoutDashboard,
+  School,
+  Users,
+  GraduationCap,
+  Wallet,
+  Settings,
+  LogOut,
+  NotebookTabs,
+  ChartLine,
+  Layers,
+  Clock,
+  Calendar,
+  Bell,
+  Plus,
+  LockKeyhole,
+} from 'lucide-react';
 import { supabase } from '@/utils/supabase';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import YearSelector from '@/components/YearSelector';
 import { ROLES_CONFIG, RoleType } from '@/app/config/roles';
 
 type SidebarProps = { onClose?: () => void };
 
 const Sidebar = ({ onClose }: SidebarProps) => {
-  const pathname = usePathname(); 
+  const pathname = usePathname();
   const router = useRouter();
   const [school, setSchool] = useState<any>(null);
   const [loadingSchool, setLoadingSchool] = useState(true);
   const [userRole, setUserRole] = useState<RoleType | null>(null);
-  
-  // État pour ouvrir/fermer le menu "Plus" sur mobile
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+
+  // État pour ouvrir/fermer le tiroir mobile
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   // Charger le rôle utilisateur depuis le cookie ou localStorage au montage client
   useEffect(() => {
     const getRole = () => {
       if (typeof window !== 'undefined') {
-        // Extraction depuis les cookies
         const match = document.cookie.match(new RegExp('(^| )userRole=([^;]+)'));
         if (match) return match[2] as RoleType;
-        // Fallback localstorage
         return localStorage.getItem('userRole') as RoleType | null;
       }
       return null;
@@ -36,16 +49,10 @@ const Sidebar = ({ onClose }: SidebarProps) => {
     setUserRole(getRole());
   }, [pathname]);
 
-  // Fermer le menu "Plus" si on clique à l'extérieur
+  // Fermer le tiroir lors d'un changement de route
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setShowMoreMenu(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    setIsMenuOpen(false);
+  }, [pathname]);
 
   // Récupérer les données de l'école
   useEffect(() => {
@@ -66,7 +73,7 @@ const Sidebar = ({ onClose }: SidebarProps) => {
             .select('*')
             .eq('id', profile.school_id)
             .maybeSingle();
-          
+
           if (schoolData) {
             setSchool(schoolData);
           }
@@ -80,49 +87,65 @@ const Sidebar = ({ onClose }: SidebarProps) => {
     fetchSchool();
   }, []);
 
-  // 🛡️ SÉCURITÉ ABSOLUE : Si on est sur le sélecteur de rôle ou le login, on ne monte rien du tout.
-  if (pathname === '/' || pathname === '/login') return null;
-
   // Liste complète de tous les éléments de menu possibles
-  const allMenuItems = [
-    { name: 'Tableau de bord', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Classes', href: '/classes', icon: School },
-    { name: 'Élèves', href: '/students', icon: Users },
-    { name: 'Professeurs', href: '/teachers', icon: GraduationCap },
-    { name: 'Comptabilité', href: '/finance', icon: Wallet },
-    { name: 'Recouvrement', href: '/recouvrement', icon: Layers },
-    { name: 'Bulletins', href: '/bulletins', icon: NotebookTabs },
-    { name: 'Performance', href: '/performance', icon: ChartLine },
-    { name: 'Rapport Promoteur', href: '/rapport-promoteur', icon: NotebookTabs },
-    { name: 'Absences & Retards', href: '/attendance', icon: Clock },
-    { name: 'Emplois du Temps', href: '/timetables', icon: Calendar },
-    { name: 'Annonces', href: '/announcements', icon: Bell },
-    { name: 'Paramètres', href: '/admin/settings', icon: Settings },
-    { name: 'Quitter', href: '/', icon: LogOut },
-  ];
+  const allMenuItems = useMemo(
+    () => [
+      { name: 'Tableau de bord', href: '/dashboard', icon: LayoutDashboard },
+      { name: 'Classes', href: '/classes', icon: School },
+      { name: 'Élèves', href: '/students', icon: Users },
+      { name: 'Professeurs', href: '/teachers', icon: GraduationCap },
+      { name: 'Comptabilité', href: '/finance', icon: Wallet },
+      { name: 'Recouvrement', href: '/recouvrement', icon: Layers },
+      { name: 'Bulletins', href: '/bulletins', icon: NotebookTabs },
+      { name: 'Performance', href: '/performance', icon: ChartLine },
+      { name: 'Rapport Promoteur', href: '/rapport-promoteur', icon: NotebookTabs },
+      { name: 'Absences & Retards', href: '/attendance', icon: Clock },
+      { name: 'Emplois du Temps', href: '/timetables', icon: Calendar },
+      { name: 'Annonces', href: '/announcements', icon: Bell },
+      { name: 'Paramètres', href: '/admin/settings', icon: Settings },
+      { name: 'Quitter', href: '/', icon: LogOut },
+    ],
+    []
+  );
 
   // Filtrage dynamique des éléments de menu basés sur config/roles.ts
   const allowedPages = userRole ? ROLES_CONFIG[userRole]?.allowedPages || [] : [];
-  const menuItems = allMenuItems.filter(item => 
-    allowedPages.some(allowedPath => item.href === allowedPath || item.href.startsWith(`${allowedPath}/`))
+  const menuItems = useMemo(
+    () =>
+      allMenuItems.filter((item) =>
+        allowedPages.some(
+          (allowedPath) => item.href === allowedPath || item.href.startsWith(`${allowedPath}/`)
+        )
+      ),
+    [allMenuItems, allowedPages]
   );
 
-  // Découpage dynamique adapté pour le mobile selon les droits du rôle
-  const visibleMobileItems = menuItems.slice(0, 4);
-  const hiddenMobileItems = menuItems.slice(4);
+  // Éléments du tiroir mobile (sans doublonner "Quitter" qui a son bouton dédié en bas)
+  const drawerItems = useMemo(
+    () => menuItems.filter((item) => item.href !== '/'),
+    [menuItems]
+  );
+
+  // 2 éléments fixes à gauche sur mobile
+  const leftItems = useMemo(() => drawerItems.slice(0, 2), [drawerItems]);
+
+  // 2 éléments à droite sur mobile
+  const rightItems = useMemo(() => drawerItems.slice(2, 4), [drawerItems]);
+
+  // 🛡️ SÉCURITÉ ABSOLUE : Si on est sur le sélecteur de rôle ou le login, on ne monte rien du tout.
+  if (pathname === '/' || pathname === '/login') return null;
 
   // Fonction de déconnexion
   const handleLogout = async () => {
     try {
-      // Nettoyer le cookie de session de rôle
       document.cookie = "userRole=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
       localStorage.removeItem('userRole');
 
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
-      
+
       onClose?.();
-      setShowMoreMenu(false);
+      setIsMenuOpen(false);
       router.push('/login');
       router.refresh();
     } catch (error: any) {
@@ -133,102 +156,161 @@ const Sidebar = ({ onClose }: SidebarProps) => {
 
   // Quitter vers la page de sélection de rôle sans déconnecter la session
   const handleQuit = () => {
-    // Nettoyer uniquement le rôle stocké
     document.cookie = "userRole=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax";
     localStorage.removeItem('userRole');
     onClose?.();
-    setShowMoreMenu(false);
+    setIsMenuOpen(false);
     router.push('/');
     router.refresh();
   };
 
   return (
     <>
-      {/* 1. VERSION MOBILE */}
-      <div ref={menuRef} className="md:hidden fixed bottom-0 left-0 right-0 z-50 transition-all duration-300" role="navigation" aria-label="Mobile Navigation">
-        
-        {/* LE MENU DÉROULANT "PLUS" */}
-        {showMoreMenu && hiddenMobileItems.length > 0 && (
-          <div className="absolute bottom-[5.5rem] right-4 left-4 bg-white/95 backdrop-blur-2xl rounded-3xl p-5 shadow-[0_15px_60px_rgba(23,99,255,0.2)] border-2 border-blue-100 flex flex-col gap-1.5 max-h-[60vh] overflow-y-auto animate-pop-in duration-300">
-            <p className="text-[11px] font-black text-gray-400 uppercase tracking-widest px-3 mb-2 italic">Autres fonctionnalités</p>
-            {hiddenMobileItems.map((item) => {
+      {/* 1. VERSION MOBILE (BARRE FIXE + BOUTON CENTRAL + TIROIR) */}
+      <div className="md:hidden" role="navigation" aria-label="Mobile Navigation">
+        {/* BARRE FIXE BAS */}
+        <div className="fixed bottom-0 left-0 right-0 h-20 bg-white/80 backdrop-blur-md border-t border-slate-100 rounded-t-[2.2rem] shadow-[0_-10px_30px_rgba(0,0,0,0.04)] z-[90] flex items-center justify-between px-4 pb-2">
+          {/* Gauche (2 liens fixes) */}
+          <div className="flex flex-1 justify-around items-center">
+            {leftItems.map((item) => {
               const isActive = pathname === item.href;
               return (
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`flex items-center gap-3 px-4 py-3.5 rounded-2xl font-bold text-sm transition-all active:scale-98
-                    ${isActive ? 'bg-[#1763FF] text-white shadow-lg shadow-blue-500/20' : 'text-gray-600 hover:bg-blue-50/70'}`}
-                  onClick={() => setShowMoreMenu(false)}
+                  onClick={() => setIsMenuOpen(false)}
+                  className={`flex flex-col items-center justify-center gap-1 w-14 h-14 active:scale-90 transition-transform duration-150 ${
+                    isActive ? 'text-blue-600' : 'text-slate-400'
+                  }`}
                 >
-                  <item.icon size={19} className={isActive ? 'text-white' : 'text-gray-400'} />
-                  <span>{item.name}</span>
+                  <item.icon size={22} className={isActive ? 'text-blue-600' : 'text-slate-400'} />
+                  <span
+                    className={`text-[10px] font-medium truncate max-w-[65px] ${
+                      isActive ? 'text-blue-600 font-bold' : 'text-slate-400'
+                    }`}
+                  >
+                    {item.name.split(' ')[0]}
+                  </span>
                 </Link>
               );
             })}
-            
-            <button 
-              onClick={handleLogout}
-              className="flex items-center gap-3 px-4 py-3.5 rounded-2xl text-red-500 hover:bg-red-50/80 text-sm font-bold border-t border-gray-100/60 mt-2.5 pt-3.5 active:scale-98 transition-transform"
-            >
-              <LogOut size={19} />
-              <span>Déconnexion</span>
-            </button>
+          </div>
 
-            <button 
-              onClick={handleQuit}
-              className="flex items-center gap-3 px-4 py-3.5 rounded-2xl text-orange-500 hover:bg-orange-50/80 text-sm font-bold active:scale-98 transition-transform"
+          {/* Bouton central surélevé */}
+          <div className="relative w-16 h-16 flex items-center justify-center shrink-0 -translate-y-4">
+            <button
+              type="button"
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              aria-label={isMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
+              className={`w-16 h-16 rounded-full flex items-center justify-center text-white shadow-lg transition-all duration-300 active:scale-95 border-4 border-white cursor-pointer ${
+                isMenuOpen
+                  ? 'bg-rose-500 rotate-45 shadow-rose-300'
+                  : 'bg-[#2B3A67] shadow-slate-400'
+              }`}
             >
-              <LogOut size={19} />
-              <span>Quitter</span>
+              <Plus size={28} className="transition-transform duration-200" />
             </button>
           </div>
-        )}
 
-        {/* LA BARRE PRINCIPALE MOBILE */}
-        <div className="bg-white/95 backdrop-blur-xl rounded-t-[2.2rem] shadow-[0_-10px_40px_rgba(23,99,255,0.12),0_-1px_0px_rgba(0,0,0,0.03)] border-t-2 border-t-blue-100/80 p-3 pb-6 px-6 flex justify-between items-center transition-transform">
-          {visibleMobileItems.map((item) => {
-            const isActive = pathname === item.href;
-            return (
-              <Link 
-                key={item.name} 
-                href={item.href} 
-                className="flex flex-col items-center gap-1.5 min-w-[62px] relative group active:scale-95 transition-transform duration-150"
-                onClick={() => setShowMoreMenu(false)}
-              >
-                <div className={`p-2 rounded-2xl transition-all ${isActive ? 'bg-blue-100/70 text-[#1763FF] shadow-inner animate-bounce-short' : 'text-gray-400'}`}>
-                  <item.icon 
-                    size={23} 
-                    className="transition-transform duration-200 group-active:scale-95" 
-                  />
-                </div>
-                <span className={`text-[10.5px] tracking-tight transition-colors duration-200 ${isActive ? 'text-[#1763FF] font-black' : 'text-gray-500 font-medium'}`}>
-                  {item.name.split(' ')[0]}
-                </span>
-                
-                {isActive && (
-                  <span className="absolute bottom-[-6px] w-1.5 h-1.5 bg-[#1763FF] rounded-full animate-pulse-slow" />
-                )}
-              </Link>
-            );
-          })}
+          {/* Droite (2 liens suivants) */}
+          <div className="flex flex-1 justify-around items-center">
+            {rightItems.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  onClick={() => setIsMenuOpen(false)}
+                  className={`flex flex-col items-center justify-center gap-1 w-14 h-14 active:scale-90 transition-transform duration-150 ${
+                    isActive ? 'text-blue-600' : 'text-slate-400'
+                  }`}
+                >
+                  <item.icon size={22} className={isActive ? 'text-blue-600' : 'text-slate-400'} />
+                  <span
+                    className={`text-[10px] font-medium truncate max-w-[65px] ${
+                      isActive ? 'text-blue-600 font-bold' : 'text-slate-400'
+                    }`}
+                  >
+                    {item.name.split(' ')[0]}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
 
-          {hiddenMobileItems.length > 0 && (
-            <button 
-              onClick={() => setShowMoreMenu(!showMoreMenu)}
-              className="flex flex-col items-center gap-1.5 min-w-[62px] focus:outline-none active:scale-95 transition-transform duration-150 group"
+        {/* FOND FLOU */}
+        <div
+          className={`fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[85] transition-opacity duration-300 ${
+            isMenuOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
+          onClick={() => setIsMenuOpen(false)}
+        />
+
+        {/* TIROIR MOBILE */}
+        <div
+          className={`fixed bottom-0 left-0 right-0 z-[88] bg-white rounded-t-[2.5rem] border-t border-slate-100 shadow-2xl p-6 pb-28 max-h-[75vh] overflow-y-auto transition-transform duration-500 ease-[cubic-bezier(0.32,0.94,0.6,1)] ${
+            isMenuOpen ? 'translate-y-0' : 'translate-y-full'
+          }`}
+        >
+          <div className="w-12 h-1 bg-slate-200 rounded-full mx-auto mb-5" />
+
+          <div className="flex items-center gap-4 mb-6 pb-4 border-b border-slate-100">
+            <div className="w-10 h-10 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-center text-blue-600 font-bold shrink-0">
+              <School size={20} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-black text-slate-800 truncate">
+                {school?.name || 'KalanNyetaa'}
+              </p>
+              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">
+                Toutes les sections
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5">
+            {drawerItems.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  onClick={() => setIsMenuOpen(false)}
+                  className={`flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl border transition-all active:scale-[0.98] ${
+                    isActive
+                      ? 'bg-blue-600 border-blue-600 text-white font-bold shadow-lg'
+                      : 'bg-slate-50/50 border-slate-100 text-slate-600'
+                  }`}
+                >
+                  <item.icon size={19} className={isActive ? 'text-white' : 'text-slate-400'} />
+                  <span className="text-[11px] font-bold tracking-tight text-center truncate w-full">
+                    {item.name}
+                  </span>
+                </Link>
+              );
+            })}
+
+            {/* Bouton de changement de profil (Quitter) */}
+            <button
+              type="button"
+              onClick={handleQuit}
+              className="flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl bg-blue-50 text-blue-700 border border-blue-100 col-span-2 active:scale-[0.98] transition-transform cursor-pointer"
             >
-              <div className={`p-2 rounded-2xl transition-all ${showMoreMenu || hiddenMobileItems.some(item => pathname === item.href) ? 'bg-blue-100/70 text-[#1763FF] shadow-inner' : 'text-gray-400'}`}>
-                <MoreHorizontal 
-                  size={23} 
-                  className={`transition-transform duration-300 ${showMoreMenu ? 'rotate-90' : ''}`}
-                />
-              </div>
-              <span className={`text-[10.5px] tracking-tight transition-colors duration-200 ${showMoreMenu || hiddenMobileItems.some(item => pathname === item.href) ? 'text-[#1763FF] font-black' : 'text-gray-500 font-medium'}`}>
-                Plus
-              </span>
+              <LockKeyhole size={19} />
+              <span className="text-[11px] font-black uppercase tracking-wider">Quitter</span>
             </button>
-          )}
+
+            {/* Bouton de déconnexion */}
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl bg-rose-50 text-rose-600 border border-rose-100 col-span-2 mt-2 active:scale-[0.98] transition-transform cursor-pointer"
+            >
+              <LogOut size={19} />
+              <span className="text-[11px] font-black uppercase tracking-wider">Déconnexion</span>
+            </button>
+          </div>
         </div>
       </div>
 

@@ -1,15 +1,16 @@
 "use client";
 
 import { useState, useEffect, cloneElement, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/utils/supabase';
 import { offlineFetch } from '@/utils/offlineApi';
 import { getLocalCache, setLocalCache } from '@/utils/offlineStorage';
 import { useYear } from '@/context/YearContext';
 import { 
   Users, TrendingUp, Clock, 
-  ArrowDownRight, 
+  ArrowDownRight, ArrowUpRight, ArrowLeftRight,
   AlertTriangle, Calendar, UserCheck, ShieldAlert, Activity,
-  Bell, DollarSign, BookOpen, ChevronDown, Lock
+  Bell, BookOpen, ChevronDown, Lock
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -238,11 +239,36 @@ export default function Dashboard() {
   }, [selectedYearId, fetchDashboardData]);
 
   const remaining = stats.totalExpected - stats.totalCollected;
-  const recoveryRate = stats.totalExpected > 0 ? Math.round((stats.totalCollected / stats.totalExpected) * 100) : 0;
+  const recoveryRate = stats.totalExpected > 0 ? Math.min(100, Math.round((stats.totalCollected / stats.totalExpected) * 100)) : 0;
   const netCaisse = stats.totalCollected - stats.totalExpenses;
-  const mobileRadius = 50;
+
+  // Géométrie du cercle de progression mobile (style segmenté à bord intérieur aligné)
+  const remainingRate = Math.max(0, 100 - recoveryRate);
+  const blueSegmentRate = remainingRate * 0.69;
+  const redSegmentRate = remainingRate * 0.31;
+
+  const mobileThinRadius = 52;
+  const mobileThinCircumference = 2 * Math.PI * mobileThinRadius;
+  const mobileBlueDasharray = `${(blueSegmentRate / 100) * mobileThinCircumference} ${mobileThinCircumference}`;
+  const mobileBlueRotation = -90 + (recoveryRate / 100) * 360;
+  const mobileRedDasharray = `${(redSegmentRate / 100) * mobileThinCircumference} ${mobileThinCircumference}`;
+  const mobileRedRotation = -90 + ((recoveryRate + blueSegmentRate) / 100) * 360;
+
+  const mobileRadius = 58;
   const mobileCircumference = 2 * Math.PI * mobileRadius;
   const mobileStrokeDashoffset = mobileCircumference - (recoveryRate / 100) * mobileCircumference;
+
+  // Géométrie du cercle de progression desktop
+  const desktopThinRadius = 30;
+  const desktopThinCircumference = 2 * Math.PI * desktopThinRadius;
+  const desktopBlueDasharray = `${(blueSegmentRate / 100) * desktopThinCircumference} ${desktopThinCircumference}`;
+  const desktopBlueRotation = -90 + (recoveryRate / 100) * 360;
+  const desktopRedDasharray = `${(redSegmentRate / 100) * desktopThinCircumference} ${desktopThinCircumference}`;
+  const desktopRedRotation = -90 + ((recoveryRate + blueSegmentRate) / 100) * 360;
+
+  const desktopRadius = 33.5;
+  const desktopCircumference = 2 * Math.PI * desktopRadius;
+  const desktopStrokeDashoffset = desktopCircumference - (recoveryRate / 100) * desktopCircumference;
 
   if (loading && stats.totalExpected === 0) {
     return (
@@ -262,20 +288,22 @@ export default function Dashboard() {
       <div className="block md:hidden w-full px-4 pt-6 pb-24 space-y-6">
         
         {/* En-tête Application avec sélecteur intégré */}
-        <div className="flex justify-between items-center w-full">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight">Vue d'ensemble</h1>
+        <div className="flex justify-between items-center gap-2 w-full">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 flex-nowrap">
+              <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight whitespace-nowrap">
+                Vue d'ensemble
+              </h1>
               
-              <div className="relative" ref={dropdownRef}>
+              <div className="relative shrink-0" ref={dropdownRef}>
                 {isLoading ? (
-                  <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-xl animate-pulse">
+                  <div className="flex items-center gap-2 px-2.5 py-1 bg-slate-100 rounded-xl animate-pulse">
                     <div className="h-3.5 w-3.5 bg-slate-200 rounded"></div>
-                    <div className="h-3.5 w-16 bg-slate-200 rounded"></div>
+                    <div className="h-3.5 w-14 bg-slate-200 rounded"></div>
                   </div>
                 ) : !selectedYear || years.length === 0 ? (
-                  <div className="flex items-center gap-2 px-3 py-1.5 text-slate-400 text-xs font-bold uppercase tracking-wider">
-                    <Calendar size={14} />
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-slate-400 text-[11px] font-bold uppercase tracking-wider">
+                    <Calendar size={13} />
                     <span>Aucune année</span>
                   </div>
                 ) : (
@@ -283,7 +311,7 @@ export default function Dashboard() {
                     <button
                       onClick={() => setIsOpen(!isOpen)}
                       className={`
-                        flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-wide
+                        flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wide
                         transition-all duration-200 ease-in-out shrink-0 select-none
                         ${isReadOnly 
                           ? 'bg-amber-50 text-amber-700 border border-amber-200/60 hover:bg-amber-100/80 active:scale-95' 
@@ -291,9 +319,9 @@ export default function Dashboard() {
                         }
                       `}
                     >
-                      {isReadOnly ? <Lock size={12} className="shrink-0 text-amber-600" /> : <Calendar size={12} className="shrink-0" />}
-                      <span className="truncate max-w-20 sm:max-w-none">{selectedYear.label}</span>
-                      <ChevronDown size={12} className={`transition-transform duration-200 opacity-60 ${isOpen ? 'rotate-180' : ''}`} />
+                      {isReadOnly ? <Lock size={11} className="shrink-0 text-amber-600" /> : <Calendar size={11} className="shrink-0" />}
+                      <span className="truncate max-w-[76px]">{selectedYear.label}</span>
+                      <ChevronDown size={11} className={`transition-transform duration-200 opacity-60 ${isOpen ? 'rotate-180' : ''}`} />
                     </button>
 
                     {isOpen && (
@@ -344,80 +372,160 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
-            <p className="text-sm font-bold text-slate-500">KalanNyetaa Structure</p>
+            <p className="text-xs font-bold text-slate-500 mt-0.5">KalanNyetaa Structure</p>
           </div>
-          <button className="w-11 h-11 bg-white rounded-xl flex items-center justify-center shadow-none border border-slate-200 relative active:scale-95 transition-transform">
+          <button className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-none border border-slate-200 relative active:scale-95 transition-transform shrink-0">
             <Bell className="w-5 h-5 text-slate-700" />
-            <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-rose-500 rounded-full"></span>
+            <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full"></span>
           </button>
         </div>
 
-        {/* STATISTIQUES RAPIDES 2x2 (CARDS PLATES) */}
+        {/* STATISTIQUES RAPIDES 2x2 CLIQUABLES AVEC FLÈCHE INDICATEUR */}
         <div className="grid grid-cols-2 gap-3.5 w-full">
-          <div className="bg-white p-4.5 rounded-2xl border border-slate-200/80 shadow-none flex flex-col justify-between">
-            <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600 mb-3">
-              <Users size={22} />
+          <Link
+            href="/students"
+            className="bg-white p-4.5 rounded-2xl border border-slate-200/80 shadow-none flex flex-col justify-between active:scale-[0.97] active:bg-slate-50/70 transition-all group"
+          >
+            <div className="flex items-start justify-between w-full mb-3">
+              <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
+                <Users size={22} />
+              </div>
+              <div className="w-7 h-7 rounded-full bg-slate-50 border border-slate-200/70 flex items-center justify-center text-slate-400 group-active:text-emerald-600 group-active:border-emerald-200 transition-colors">
+                <ArrowUpRight size={15} />
+              </div>
             </div>
             <div>
               <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Élèves</p>
               <p className="text-2xl font-black text-slate-900">{stats.totalStudents}</p>
             </div>
-          </div>
+          </Link>
 
-          <div className="bg-white p-4.5 rounded-2xl border border-slate-200/80 shadow-none flex flex-col justify-between">
-            <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600 mb-3">
-              <BookOpen size={22} />
+          <Link
+            href="/classes"
+            className="bg-white p-4.5 rounded-2xl border border-slate-200/80 shadow-none flex flex-col justify-between active:scale-[0.97] active:bg-slate-50/70 transition-all group"
+          >
+            <div className="flex items-start justify-between w-full mb-3">
+              <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center text-purple-600">
+                <BookOpen size={22} />
+              </div>
+              <div className="w-7 h-7 rounded-full bg-slate-50 border border-slate-200/70 flex items-center justify-center text-slate-400 group-active:text-purple-600 group-active:border-purple-200 transition-colors">
+                <ArrowUpRight size={15} />
+              </div>
             </div>
             <div>
               <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Classes</p>
               <p className="text-2xl font-black text-slate-900">{stats.totalClasses}</p>
             </div>
-          </div>
+          </Link>
 
-          <div className="bg-white p-4.5 rounded-2xl border border-slate-200/80 shadow-none flex flex-col justify-between">
-            <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 mb-3">
-              <UserCheck size={22} />
+          <Link
+            href="/teachers"
+            className="bg-white p-4.5 rounded-2xl border border-slate-200/80 shadow-none flex flex-col justify-between active:scale-[0.97] active:bg-slate-50/70 transition-all group"
+          >
+            <div className="flex items-start justify-between w-full mb-3">
+              <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600">
+                <UserCheck size={22} />
+              </div>
+              <div className="w-7 h-7 rounded-full bg-slate-50 border border-slate-200/70 flex items-center justify-center text-slate-400 group-active:text-blue-600 group-active:border-blue-200 transition-colors">
+                <ArrowUpRight size={15} />
+              </div>
             </div>
             <div>
               <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Enseignants</p>
               <p className="text-2xl font-black text-slate-900">{stats.totalTeachers}</p>
             </div>
-          </div>
+          </Link>
 
-          <div className="bg-white p-4.5 rounded-2xl border border-slate-200/80 shadow-none flex flex-col justify-between">
-            <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center text-orange-500 mb-3">
-              <Clock size={22} />
+          <Link
+            href="/finances"
+            className="bg-white p-4.5 rounded-2xl border border-slate-200/80 shadow-none flex flex-col justify-between active:scale-[0.97] active:bg-slate-50/70 transition-all group"
+          >
+            <div className="flex items-start justify-between w-full mb-3">
+              <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center text-orange-500">
+                <Clock size={22} />
+              </div>
+              <div className="w-7 h-7 rounded-full bg-slate-50 border border-slate-200/70 flex items-center justify-center text-slate-400 group-active:text-orange-500 group-active:border-orange-200 transition-colors">
+                <ArrowUpRight size={15} />
+              </div>
             </div>
             <div>
               <p className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-1">Période</p>
               <p className="text-lg font-black text-slate-900 truncate">{formattedMonth}</p>
             </div>
-          </div>
+          </Link>
         </div>
 
-        {/* CARTE FINANCIÈRE PLATE */}
+        {/* CARTE FINANCIÈRE PLATE AVEC CERCLE DE PROGRESSION HAUTE PRÉCISION */}
         <div className="bg-white rounded-2xl p-5 shadow-none border border-slate-200/80 flex flex-col items-center w-full">
-          <h2 className="text-sm font-extrabold text-slate-800 uppercase tracking-widest mb-6 flex items-center gap-2">
+          <h2 className="text-sm font-extrabold text-slate-800 uppercase tracking-widest mb-5 flex items-center gap-2">
             <TrendingUp size={16} className="text-emerald-500" />
             Recouvrement Global
           </h2>
           
-          <div className="relative w-36 h-36 flex items-center justify-center mb-6">
-            <svg viewBox="0 0 144 144" preserveAspectRatio="xMidYMid meet" className="w-full h-full block transform origin-center -rotate-90">
-              <circle cx="72" cy="72" r={mobileRadius} stroke="currentColor" strokeWidth="14" fill="transparent" className="text-slate-100" />
-              <circle 
-                cx="72" cy="72" r={mobileRadius} 
-                stroke="currentColor" 
-                strokeWidth="14" 
-                fill="transparent" 
-                strokeDasharray={mobileCircumference} 
-                strokeDashoffset={mobileStrokeDashoffset} 
-                strokeLinecap="round" 
-                className="text-emerald-500 transition-all duration-1000 ease-out" 
+          <div className="relative w-40 h-40 flex items-center justify-center mb-5">
+            <svg viewBox="0 0 152 152" preserveAspectRatio="xMidYMid meet" className="w-full h-full block overflow-visible">
+              <defs>
+                <filter id="mobileRingGlow" x="-30%" y="-30%" width="160%" height="160%">
+                  <feDropShadow dx="0" dy="0" stdDeviation="4.5" floodColor="#4ade80" floodOpacity="0.65" />
+                </filter>
+              </defs>
+
+              {/* Segment fin bleu pervenche */}
+              {remainingRate > 0 && (
+                <circle
+                  cx="76"
+                  cy="76"
+                  r={mobileThinRadius}
+                  stroke="#8b9cf6"
+                  strokeWidth="6"
+                  fill="transparent"
+                  strokeDasharray={mobileBlueDasharray}
+                  strokeLinecap="butt"
+                  transform={`rotate(${mobileBlueRotation} 76 76)`}
+                  className="transition-all duration-1000 ease-out"
+                />
+              )}
+
+              {/* Segment fin rouge poudré */}
+              {remainingRate > 0 && (
+                <circle
+                  cx="76"
+                  cy="76"
+                  r={mobileThinRadius}
+                  stroke="#c47c7c"
+                  strokeWidth="6"
+                  fill="transparent"
+                  strokeDasharray={mobileRedDasharray}
+                  strokeLinecap="butt"
+                  transform={`rotate(${mobileRedRotation} 76 76)`}
+                  className="transition-all duration-1000 ease-out"
+                />
+              )}
+
+              {/* Arc principal vert épais lumineux à extrémités droites */}
+              <circle
+                cx="76"
+                cy="76"
+                r={mobileRadius}
+                stroke="#52d669"
+                strokeWidth="18"
+                fill="transparent"
+                strokeDasharray={mobileCircumference}
+                strokeDashoffset={mobileStrokeDashoffset}
+                strokeLinecap="butt"
+                transform="rotate(-90 76 76)"
+                filter="url(#mobileRingGlow)"
+                className="transition-all duration-1000 ease-out"
               />
             </svg>
+
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-3xl leading-none font-black text-slate-900">{recoveryRate}%</span>
+              <span className="text-3xl leading-none font-black text-[#4cd163] tracking-tight">
+                {recoveryRate}<span className="text-lg font-extrabold text-[#4cd163] ml-0.5">%</span>
+              </span>
+              <span className="text-xs font-medium text-slate-400 mt-1">
+                Recouvré
+              </span>
             </div>
           </div>
 
@@ -439,7 +547,10 @@ export default function Dashboard() {
 
         {/* ALERTE FONDS DEHORS PLATE */}
         {remaining > 0 && (
-          <div className="bg-rose-500 p-5 rounded-2xl text-white shadow-none flex justify-between items-center w-full">
+          <Link
+            href="/finances"
+            className="bg-rose-500 p-5 rounded-2xl text-white shadow-none flex justify-between items-center w-full active:scale-[0.98] transition-transform"
+          >
             <div className="min-w-0">
               <p className="text-rose-100 font-bold text-xs uppercase tracking-widest mb-1">Reste à recouvrer</p>
               <h3 className="text-2xl font-black truncate">
@@ -449,14 +560,14 @@ export default function Dashboard() {
             <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center shrink-0 ml-3">
               <ArrowDownRight className="w-5 h-5 text-white" />
             </div>
-          </div>
+          </Link>
         )}
 
         {/* LISTES PLATES */}
-        {/* 1. Flux Financiers */}
+        {/* 1. Flux Financiers (Sans signe dollar) */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-none w-full space-y-4">
           <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
-            <DollarSign className="w-5 h-5 text-emerald-500" /> Flux Financiers
+            <ArrowLeftRight className="w-5 h-5 text-emerald-500" /> Flux Financiers
           </h3>
           <div className="space-y-3">
             {recentPayments.length === 0 ? (
@@ -474,7 +585,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <span className="font-black text-sm text-emerald-600 shrink-0">
-                    {shouldHideFinancials ? '••••••' : `+${new Intl.NumberFormat('fr-FR').format(p.amount)}F`}
+                    {shouldHideFinancials ? '••••••' : `+${new Intl.NumberFormat('fr-FR').format(p.amount)} F`}
                   </span>
                 </div>
               ))
@@ -503,7 +614,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <span className="font-black text-sm text-rose-600 shrink-0">
-                    {shouldHideFinancials ? '••••••' : `${new Intl.NumberFormat('fr-FR').format(d.debt)}F`}
+                    {shouldHideFinancials ? '••••••' : `${new Intl.NumberFormat('fr-FR').format(d.debt)} F`}
                   </span>
                 </div>
               ))
@@ -554,10 +665,10 @@ export default function Dashboard() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          <StatCard title="Élèves Inscrits" value={stats.totalStudents} icon={<Users />} color="bg-green-600" />
-          <StatCard title="Classes Actives" value={stats.totalClasses} icon={<BookOpen />} color="bg-purple-600" />
-          <StatCard title="Enseignants" value={stats.totalTeachers} icon={<UserCheck />} color="bg-blue-600" />
-          <StatCard title="Taux Recouvrement" value={`${recoveryRate}%`} icon={<TrendingUp />} color="bg-emerald-500" />
+          <StatCard title="Élèves Inscrits" value={stats.totalStudents} icon={<Users />} color="bg-green-600" href="/students" />
+          <StatCard title="Classes Actives" value={stats.totalClasses} icon={<BookOpen />} color="bg-purple-600" href="/classes" />
+          <StatCard title="Enseignants" value={stats.totalTeachers} icon={<UserCheck />} color="bg-blue-600" href="/teachers" />
+          <StatCard title="Taux Recouvrement" value={`${recoveryRate}%`} icon={<TrendingUp />} color="bg-emerald-500" href="/finances" />
           <StatCard title="Mois en cours" value={formattedMonth} icon={<Clock />} color="bg-orange-500" />
         </div>
 
@@ -580,12 +691,57 @@ export default function Dashboard() {
               </div>
 
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/70 flex items-center gap-4 shrink-0 w-full sm:w-auto">
-                <div className="relative flex items-center justify-center">
-                  <svg viewBox="0 0 80 80" preserveAspectRatio="xMidYMid meet" className="w-20 h-20 block transform origin-center -rotate-90">
-                    <circle cx="40" cy="40" r="32" className="text-slate-200/60" strokeWidth="8" stroke="currentColor" fill="transparent" />
-                    <circle cx="40" cy="40" r="32" className="text-emerald-500 transition-all duration-1000" strokeWidth="8" strokeDasharray={2 * Math.PI * 32} strokeDashoffset={(2 * Math.PI * 32) - (recoveryRate / 100) * (2 * Math.PI * 32)} strokeLinecap="round" stroke="currentColor" fill="transparent" />
+                <div className="relative flex items-center justify-center w-22 h-22">
+                  <svg viewBox="0 0 84 84" preserveAspectRatio="xMidYMid meet" className="w-full h-full block overflow-visible">
+                    <defs>
+                      <filter id="desktopRingGlow" x="-30%" y="-30%" width="160%" height="160%">
+                        <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#4ade80" floodOpacity="0.65" />
+                      </filter>
+                    </defs>
+                    {remainingRate > 0 && (
+                      <circle
+                        cx="42"
+                        cy="42"
+                        r={desktopThinRadius}
+                        stroke="#8b9cf6"
+                        strokeWidth="4"
+                        fill="transparent"
+                        strokeDasharray={desktopBlueDasharray}
+                        strokeLinecap="butt"
+                        transform={`rotate(${desktopBlueRotation} 42 42)`}
+                        className="transition-all duration-1000"
+                      />
+                    )}
+                    {remainingRate > 0 && (
+                      <circle
+                        cx="42"
+                        cy="42"
+                        r={desktopThinRadius}
+                        stroke="#c47c7c"
+                        strokeWidth="4"
+                        fill="transparent"
+                        strokeDasharray={desktopRedDasharray}
+                        strokeLinecap="butt"
+                        transform={`rotate(${desktopRedRotation} 42 42)`}
+                        className="transition-all duration-1000"
+                      />
+                    )}
+                    <circle
+                      cx="42"
+                      cy="42"
+                      r={desktopRadius}
+                      stroke="#52d669"
+                      strokeWidth="11"
+                      strokeDasharray={desktopCircumference}
+                      strokeDashoffset={desktopStrokeDashoffset}
+                      strokeLinecap="butt"
+                      transform="rotate(-90 42 42)"
+                      fill="transparent"
+                      filter="url(#desktopRingGlow)"
+                      className="transition-all duration-1000"
+                    />
                   </svg>
-                  <span className="absolute text-sm font-black text-slate-900">{recoveryRate}%</span>
+                  <span className="absolute text-sm font-black text-[#4cd163]">{recoveryRate}%</span>
                 </div>
                 <div>
                   <p className="text-xs font-black text-slate-800">Recouvrement</p>
@@ -607,7 +763,10 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="bg-rose-500 p-6 sm:p-7 rounded-2xl text-white shadow-none flex flex-col justify-between">
+          <Link
+            href="/finances"
+            className="bg-rose-500 hover:bg-rose-600 p-6 sm:p-7 rounded-2xl text-white shadow-none flex flex-col justify-between transition-colors"
+          >
             <div>
               <div className="h-11 w-11 bg-white/20 rounded-xl flex items-center justify-center mb-6">
                 <ArrowDownRight className="w-5 h-5" />
@@ -618,7 +777,7 @@ export default function Dashboard() {
                 <span className="text-sm block text-rose-200 font-medium mt-1 uppercase">FCFA à recouvrer</span>
               </h2>
             </div>
-          </div>
+          </Link>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
@@ -719,16 +878,27 @@ export default function Dashboard() {
   );
 }
 
-function StatCard({ title, value, icon, color }: any) {
-  return (
-    <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-none flex items-center gap-4 transition-all">
-      <div className={`h-10 w-10 sm:h-11 sm:w-11 ${color} text-white rounded-xl flex items-center justify-center shrink-0`}>
-        {cloneElement(icon, { className: "w-5 h-5" })}
+function StatCard({ title, value, icon, color, href }: any) {
+  const cardContent = (
+    <div className={`bg-white p-4 sm:p-5 rounded-2xl border border-slate-200/80 shadow-none flex items-center justify-between gap-3 transition-all ${href ? 'hover:border-slate-300 hover:bg-slate-50/40 active:scale-[0.98] cursor-pointer group' : ''}`}>
+      <div className="flex items-center gap-4 min-w-0">
+        <div className={`h-10 w-10 sm:h-11 sm:w-11 ${color} text-white rounded-xl flex items-center justify-center shrink-0`}>
+          {cloneElement(icon, { className: "w-5 h-5" })}
+        </div>
+        <div className="min-w-0">
+          <p className="text-slate-400 text-[10px] sm:text-xs font-bold uppercase tracking-wider truncate">{title}</p>
+          <p className="text-lg sm:text-xl font-black text-slate-950 truncate mt-0.5">{value}</p>
+        </div>
       </div>
-      <div className="min-w-0">
-        <p className="text-slate-400 text-[10px] sm:text-xs font-bold uppercase tracking-wider truncate">{title}</p>
-        <p className="text-lg sm:text-xl font-black text-slate-950 truncate mt-0.5">{value}</p>
-      </div>
+      {href && (
+        <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-slate-600 transition-colors shrink-0" />
+      )}
     </div>
   );
+
+  if (href) {
+    return <Link href={href} className="block">{cardContent}</Link>;
+  }
+
+  return cardContent;
 }
