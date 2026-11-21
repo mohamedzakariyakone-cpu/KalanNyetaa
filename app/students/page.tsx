@@ -3,15 +3,21 @@
 import { Suspense, useState, useEffect, useCallback, useMemo, useRef, type ChangeEvent } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { supabase } from '@/utils/supabase';
-import { offlineWrite } from '@/utils/offlineApi';
+import { offlineFetch, offlineWrite } from '@/utils/offlineApi';
 import { getLocalCache, setLocalCache } from '@/utils/offlineStorage';
 import { useYear } from '@/context/YearContext';
 import { useCacheRefresh } from '@/hooks/useCacheRefresh';
 import {
   Search, Loader2, Phone, X, Trash2, Plus, Lock,
-  AlertCircle, DollarSign, ArrowLeft, FileDown
+  AlertCircle, DollarSign, ArrowLeft, FileDown, Eye,
+  CheckCircle2, ExternalLink
 } from 'lucide-react';
 import NumericInput from '@/components/NumericInput';
+
+const SCHOOL_MONTHS = [
+  'Octobre', 'Novembre', 'Décembre', 'Janvier', 'Février', 'Mars',
+  'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre',
+];
 
 export default function StudentsPage() {
   return (
@@ -38,6 +44,9 @@ type StudentRecord = {
   address?: string | null;
   birth_date?: string | null;
   last_exam_avg?: number | string | null;
+  payment_plan_tranches?: number | null;
+  academic_year_id?: string | number | null;
+  school_id?: string | number | null;
   classes?: { name?: string | null };
 };
 
@@ -78,12 +87,18 @@ function StudentsPageContent() {
     parentPhone: '', address: '', birthDate: '', lastExamAvg: '0'
   });
 
+  // États mobiles : Appui long sur le nom pour supprimer + Panneau "Coup d'œil"
+  const [longPressedStudentId, setLongPressedStudentId] = useState<string | null>(null);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const longPressTriggeredRef = useRef(false);
+  const [quickViewStudent, setQuickViewStudent] = useState<StudentRecord | null>(null);
+
   const hasRestoredScrollRef = useRef(false);
   const { selectedYearId, selectedYear, years, isReadOnly, isLoading: yearLoading } = useYear();
 
   const scrollStoragePrefix = `students_scroll:${selectedYearId || 'default'}:${classFilter || 'all'}`;
 
-  // Réinitialiser le verrou de restauration si le filtre de classe ou l'année change
   useEffect(() => {
     hasRestoredScrollRef.current = false;
   }, [scrollStoragePrefix]);
@@ -128,7 +143,6 @@ function StudentsPageContent() {
     return () => cancelAnimationFrame(raf);
   }, [loading, students, scrollStoragePrefix]);
 
-  // Réinitialiser l'état de navigation si l'utilisateur revient via le bouton retour du navigateur (bfcache)
   useEffect(() => {
     const handlePageShow = () => setNavigatingStudentId(null);
     window.addEventListener('pageshow', handlePageShow);
@@ -407,6 +421,10 @@ function StudentsPageContent() {
 
     if (!error) {
       setConfirmDeleteId(null);
+      setLongPressedStudentId(null);
+      if (quickViewStudent && String(quickViewStudent.id) === id) {
+        setQuickViewStudent(null);
+      }
       await fetchData();
     }
   };
@@ -636,6 +654,10 @@ function StudentsPageContent() {
   // Navigation sécurisée anti double-clic + sauvegarde précise de l'URL de provenance, du scroll et de l'élève
   const goToStudentDetail = (studentId: string | number) => {
     if (navigatingStudentId !== null) return;
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      return;
+    }
     const idStr = String(studentId);
     setNavigatingStudentId(idStr);
     sessionStorage.setItem('students_return_url', `${window.location.pathname}${window.location.search}`);
@@ -643,6 +665,52 @@ function StudentsPageContent() {
     sessionStorage.setItem(`${scrollStoragePrefix}:y`, String(window.scrollY));
     router.push(`/students/${idStr}`);
   };
+
+  // Gestion de l'appui long natif sur le nom de l'élève (mobile)
+  const startNameLongPress = (studentId: string | number, clientX: number, clientY: number) => {
+    if (isReadOnly) return;
+    longPressTriggeredRef.current = false;
+    longPressStartPosRef.current = { x: clientX, y: clientY };
+
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      setLongPressedStudentId(String(studentId));
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(35);
+      }
+    }, 520);
+  };
+
+  const moveNameLongPress = (clientX: number, clientY: number) => {
+    if (!longPressStartPosRef.current || !longPressTimerRef.current) return;
+    const dx = Math.abs(clientX - longPressStartPosRef.current.x);
+    const dy = Math.abs(clientY - longPressStartPosRef.current.y);
+    if (dx > 10 || dy > 10) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const cancelNameLongPress = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressStartPosRef.current = null;
+  };
+
+  // Synchronisation locale immédiate lorsqu'un paiement est enregistré depuis le panneau "Coup d'œil"
+  const handleStudentUpdatedFromQuickView = useCallback((updatedPartial: Partial<StudentRecord> & { id: string | number }) => {
+    setStudents((prev) =>
+      prev.map((item) =>
+        String(item.id) === String(updatedPartial.id) ? { ...item, ...updatedPartial } : item
+      )
+    );
+    setQuickViewStudent((prev) =>
+      prev && String(prev.id) === String(updatedPartial.id) ? { ...prev, ...updatedPartial } : prev
+    );
+  }, []);
 
   if (yearLoading) {
     return (
@@ -1121,31 +1189,41 @@ function StudentsPageContent() {
         </div>
       </div>
 
-      {/* AFFICHAGE CARTES MOBILES AVEC ANTI DOUBLE-CLIC ET ANCRE SCROLL */}
+      {/* AFFICHAGE CARTES MOBILES : BOUTON COUP D'ŒIL + APPUI LONG NATIF SUR LE NOM POUR SUPPRIMER */}
       <div className="md:hidden space-y-3">
         {loading ? (
           <div className="p-8 text-center"><Loader2 className="animate-spin mx-auto text-blue-600" size={24} /></div>
         ) : filteredStudents.length === 0 ? (
           <div className="p-8 text-center text-xs font-bold text-slate-400 bg-white rounded-2xl border border-slate-200">Aucun élève trouvé.</div>
         ) : filteredStudents.map((s: StudentRecord) => {
+          const idStr = String(s.id);
           const totalFee = Number(s.scolarite_totale || s.annual_fee || 0);
           const paidFee = Number(s.scolarite_payee || 0);
           const examAvg = Number(s.last_exam_avg ?? 0);
           const isSettled = paidFee >= totalFee && totalFee > 0;
-          const isOpening = navigatingStudentId === String(s.id);
+          const isOpening = navigatingStudentId === idStr;
           const isLockedByOther = navigatingStudentId !== null && !isOpening;
+          const isLongPressed = longPressedStudentId === idStr;
 
           return (
             <div 
               key={s.id} 
-              data-student-item={String(s.id)}
-              onClick={() => goToStudentDetail(s.id)}
+              data-student-item={idStr}
+              onClick={() => {
+                if (isLongPressed) {
+                  setLongPressedStudentId(null);
+                  return;
+                }
+                goToStudentDetail(s.id);
+              }}
               className={`bg-white p-4 rounded-2xl border space-y-3.5 transition-all duration-300 ${
                 isOpening
                   ? 'border-blue-400 bg-blue-50/40 cursor-wait'
-                  : isLockedByOther
-                    ? 'border-slate-200/80 opacity-50 pointer-events-none'
-                    : 'border-slate-200/80 cursor-pointer active:bg-slate-50'
+                  : isLongPressed
+                    ? 'border-rose-300 bg-rose-50/20'
+                    : isLockedByOther
+                      ? 'border-slate-200/80 opacity-50 pointer-events-none'
+                      : 'border-slate-200/80 cursor-pointer active:bg-slate-50'
               }`}
             >
               <div className="flex items-start justify-between gap-3">
@@ -1153,8 +1231,8 @@ function StudentsPageContent() {
                   {classFilter && isSelectionMode && (
                     <input 
                       type="checkbox" 
-                      checked={selectedStudentIds.includes(String(s.id))} 
-                      onChange={() => toggleStudentSelection(String(s.id))} 
+                      checked={selectedStudentIds.includes(idStr)} 
+                      onChange={() => toggleStudentSelection(idStr)} 
                       onClick={(e) => e.stopPropagation()}
                       className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer shrink-0" 
                     />
@@ -1166,7 +1244,27 @@ function StudentsPageContent() {
                       <>{s.first_name?.[0]}{s.last_name?.[0]}</>
                     )}
                   </div>
-                  <div className="min-w-0">
+
+                  {/* Bloc Nom : Appui long pour révéler l'option native de suppression */}
+                  <div
+                    className="min-w-0 flex-1 select-none"
+                    onTouchStart={(e) => {
+                      const t = e.touches[0];
+                      if (t) startNameLongPress(s.id, t.clientX, t.clientY);
+                    }}
+                    onTouchMove={(e) => {
+                      const t = e.touches[0];
+                      if (t) moveNameLongPress(t.clientX, t.clientY);
+                    }}
+                    onTouchEnd={cancelNameLongPress}
+                    onTouchCancel={cancelNameLongPress}
+                    onContextMenu={(e) => {
+                      if (!isReadOnly) {
+                        e.preventDefault();
+                        setLongPressedStudentId(idStr);
+                      }
+                    }}
+                  >
                     <p className="font-bold text-slate-900 text-sm truncate capitalize">{s.first_name} {s.last_name}</p>
                     <p className="text-xs font-semibold text-slate-400 mt-0.5">
                       {isOpening ? 'Ouverture du dossier...' : (s.classes?.name || 'Inconnu')}
@@ -1178,23 +1276,57 @@ function StudentsPageContent() {
                   {s.parent_phone && (
                     <a 
                       href={`tel:${s.parent_phone}`} 
-                      className="h-9 w-9 bg-slate-50 text-blue-600 rounded-xl flex items-center justify-center border border-slate-200"
+                      className="h-9 w-9 bg-slate-50 text-blue-600 rounded-xl flex items-center justify-center border border-slate-200 active:scale-95 transition"
                       title="Appeler"
                     >
                       <Phone size={15} />
                     </a>
                   )}
-                  {!isReadOnly && (
-                    <button 
-                      onClick={() => setConfirmDeleteId(String(s.id))} 
-                      className="h-9 w-9 bg-slate-50 text-slate-400 hover:text-rose-600 rounded-xl flex items-center justify-center border border-slate-200"
-                      title="Supprimer"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLongPressedStudentId(null);
+                      setQuickViewStudent(s);
+                    }}
+                    className="h-9 w-9 bg-slate-50 text-blue-600 hover:bg-blue-50 rounded-xl flex items-center justify-center border border-slate-200 active:scale-95 transition"
+                    title="Coup d'œil financier"
+                  >
+                    <Eye size={16} />
+                  </button>
                 </div>
               </div>
+
+              {/* Barre contextuelle native révélée par appui long sur le nom */}
+              {isLongPressed && !isReadOnly && (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex items-center justify-between gap-2 pt-2.5 border-t border-rose-100 animate-in fade-in duration-150"
+                >
+                  <span className="text-[11px] font-bold text-slate-500">
+                    Option élève
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setLongPressedStudentId(null)}
+                      className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-600 text-xs font-bold active:scale-95 transition"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLongPressedStudentId(null);
+                        setConfirmDeleteId(idStr);
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-bold active:scale-95 transition"
+                    >
+                      <Trash2 size={13} />
+                      <span>Supprimer</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100 text-center">
                 <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
@@ -1225,9 +1357,25 @@ function StudentsPageContent() {
         }
       `}</style>
 
+      {/* PANNEAU MOBILE "COUP D'ŒIL" FINANCIER (AU-DESSUS DE LA BARRE DE NAVIGATION) */}
+      {quickViewStudent && (
+        <StudentQuickViewSheet
+          student={quickViewStudent}
+          isReadOnly={isReadOnly}
+          selectedYearId={selectedYearId}
+          onClose={() => setQuickViewStudent(null)}
+          onOpenFullProfile={() => {
+            const targetId = quickViewStudent.id;
+            setQuickViewStudent(null);
+            goToStudentDetail(targetId);
+          }}
+          onStudentUpdated={handleStudentUpdatedFromQuickView}
+        />
+      )}
+
       {/* MODAL SUPPRESSION */}
       {confirmDeleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-xs print:hidden">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-xs print:hidden">
           <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-xs text-center border border-slate-200 space-y-4">
             <p className="font-bold text-slate-900 text-sm">Confirmer la suppression de cet élève ?</p>
             <div className="grid grid-cols-2 gap-2.5">
@@ -1285,6 +1433,401 @@ function StudentsPageContent() {
         </div>
       )}
 
+    </div>
+  );
+}
+
+/* ============================================================================ */
+/* COUP D'ŒIL FINANCIER : ENCAISSEMENT RAPIDE & HISTORIQUE DES PAIEMENTS        */
+/* ============================================================================ */
+function StudentQuickViewSheet({
+  student,
+  isReadOnly,
+  selectedYearId,
+  onClose,
+  onOpenFullProfile,
+  onStudentUpdated,
+}: {
+  student: StudentRecord;
+  isReadOnly: boolean;
+  selectedYearId?: string | number | null;
+  onClose: () => void;
+  onOpenFullProfile: () => void;
+  onStudentUpdated: (updated: Partial<StudentRecord> & { id: string | number }) => void;
+}) {
+  const id = String(student.id);
+
+  const [detailStudent, setDetailStudent] = useState<any>(student);
+  const [payments, setPayments] = useState<any[]>([]);
+  const [extraPayments, setExtraPayments] = useState<any[]>([]);
+  const [loadingDetails, setLoadingDetails] = useState(true);
+
+  const [paymentMode, setPaymentMode] = useState<'tranche' | 'mensualite'>('tranche');
+  const [amount, setAmount] = useState('');
+  const [month, setMonth] = useState('');
+  const [isRecordingPay, setIsRecordingPay] = useState(false);
+
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
+  const loadFinanceData = useCallback(async () => {
+    setLoadingDetails(true);
+    try {
+      const [stRes, payRes, exPayRes] = await Promise.all([
+        offlineFetch<any>(`student:${id}`, async () =>
+          await supabase.from('students').select('*, classes(name)').eq('id', id).single()
+        ),
+        offlineFetch<any[]>(`payments:${id}`, async () =>
+          await supabase.from('payments').select('*').eq('student_id', id).order('created_at', { ascending: false })
+        ),
+        offlineFetch<any[]>(`extra_payments:${id}`, async () =>
+          await supabase
+            .from('student_extra_payments')
+            .select('*, extra_fee_types(name)')
+            .eq('student_id', id)
+            .order('payment_date', { ascending: false })
+        ),
+      ]);
+
+      if (stRes.data) setDetailStudent(stRes.data);
+      setPayments(payRes.data || []);
+      setExtraPayments(exPayRes.data || []);
+    } catch (err) {
+      console.error('Erreur chargement finances :', err);
+    } finally {
+      setLoadingDetails(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    loadFinanceData();
+  }, [loadFinanceData]);
+
+  const fmt = (n: number) => new Intl.NumberFormat('fr-FR').format(n);
+  const formatInputDisplay = (val: string) => {
+    const clean = val.replace(/\s/g, '');
+    if (!clean) return '';
+    const num = parseInt(clean, 10);
+    if (isNaN(num)) return val;
+    return new Intl.NumberFormat('fr-FR').format(num).replace(/,/g, ' ');
+  };
+
+  const annualFee = Number(detailStudent?.scolarite_totale || detailStudent?.annual_fee || 0);
+  const totalPaid = Number(detailStudent?.scolarite_payee || 0);
+  const remaining = Math.max(0, annualFee - totalPaid);
+  const isSolded = remaining === 0;
+  const paidPct = annualFee > 0 ? Math.min(100, Math.round((Math.min(totalPaid, annualFee) / annualFee) * 100)) : 0;
+  const numTranches = detailStudent?.payment_plan_tranches || 1;
+  const amountPerTranche = numTranches > 0 ? Math.round(annualFee / numTranches) : 0;
+
+  const dynamicTrancheOptions = Array.from({ length: numTranches }, (_, idx) =>
+    idx === 0 ? '1ère Tranche' : `${idx + 1}ème Tranche`
+  );
+
+  const activePayments = useMemo(
+    () => payments.filter((p) => !String(p.month || '').includes('[SUPPRIMÉ') && Number(p.amount || 0) > 0),
+    [payments]
+  );
+
+  const paidMonthsSet = useMemo(() => {
+    const set = new Set<string>();
+    activePayments.forEach((p) => {
+      const cleanLabel = String(p.month || '').split(' (Modifié')[0].trim();
+      if (SCHOOL_MONTHS.includes(cleanLabel)) set.add(cleanLabel);
+    });
+    return set;
+  }, [activePayments]);
+
+  const handleQuickPayment = async (designation: string) => {
+    if (isReadOnly || !designation || isRecordingPay) return;
+
+    const rawNumeric = parseFloat(amount.replace(/\s/g, ''));
+    const payAmount = !isNaN(rawNumeric) && rawNumeric > 0 ? rawNumeric : amountPerTranche;
+
+    if (!payAmount || payAmount <= 0) {
+      alert('Veuillez saisir un montant valide.');
+      return;
+    }
+
+    setIsRecordingPay(true);
+    const newCollectedTotal = totalPaid + payAmount;
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    setDetailStudent((prev: any) => ({
+      ...prev,
+      scolarite_payee: newCollectedTotal,
+      dernier_paiement: todayStr,
+    }));
+    onStudentUpdated({ id, scolarite_payee: newCollectedTotal });
+
+    setPayments((prev) => [
+      {
+        id: `temp-${Date.now()}`,
+        student_id: id,
+        amount: payAmount,
+        month: designation,
+        created_at: new Date().toISOString(),
+      },
+      ...prev,
+    ]);
+
+    setAmount('');
+    setMonth('');
+
+    const { error: payError } = await offlineWrite({
+      table: 'payments',
+      action: 'INSERT',
+      payload: {
+        student_id: id,
+        amount: payAmount,
+        month: designation,
+        academic_year_id: detailStudent?.academic_year_id || selectedYearId,
+        school_id: detailStudent?.school_id,
+      },
+      cacheKey: `payments:${id}`,
+      optimisticUpdate: () => {},
+    });
+
+    if (!payError) {
+      await offlineWrite({
+        table: 'students',
+        action: 'UPDATE',
+        payload: {
+          scolarite_payee: newCollectedTotal,
+          dernier_paiement: todayStr,
+        },
+        options: { keyColumn: 'id', keyValue: id },
+        cacheKey: `student:${id}`,
+        optimisticUpdate: () => {},
+      });
+      await loadFinanceData();
+    }
+    setIsRecordingPay(false);
+  };
+
+  return (
+    <div className="md:hidden fixed inset-0 z-[110] flex flex-col justify-end print:hidden">
+      {/* Fond assombri au-dessus de la barre de navigation */}
+      <div
+        onClick={onClose}
+        className="fixed inset-0 bg-slate-950/45 backdrop-blur-xs transition-opacity"
+      />
+
+      {/* Fenêtre Coup d'œil aérée et placée au-dessus du navbar */}
+      <div className="relative z-10 w-full bg-white rounded-t-[2rem] border-t border-slate-200 shadow-2xl max-h-[86dvh] flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200">
+        
+        {/* Poignée supérieure */}
+        <div className="pt-3 pb-1 shrink-0">
+          <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto" />
+        </div>
+
+        {/* En-tête élève */}
+        <div className="px-5 pt-2 pb-4 border-b border-slate-100 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs uppercase shrink-0">
+              {detailStudent?.first_name?.[0]}{detailStudent?.last_name?.[0]}
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-extrabold text-slate-900 capitalize truncate">
+                {detailStudent?.first_name} {detailStudent?.last_name}
+              </h2>
+              <p className="text-xs font-semibold text-slate-400 truncate">
+                {detailStudent?.classes?.name || 'Classe'} • {paidPct}% réglé
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={onOpenFullProfile}
+              className="h-9 px-3 rounded-xl bg-slate-50 hover:bg-blue-50 border border-slate-200 text-blue-600 text-xs font-bold flex items-center gap-1.5 active:scale-95 transition"
+              title="Ouvrir la fiche complète"
+            >
+              <span>Complet</span>
+              <ExternalLink size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center active:scale-95 transition"
+              aria-label="Fermer"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Contenu financier aéré */}
+        <div className="px-5 py-5 overflow-y-auto overscroll-contain space-y-5 flex-1 pb-8">
+          
+          {/* 3 indicateurs financiers clés */}
+          <div className="grid grid-cols-3 gap-2.5 text-center">
+            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
+              <span className="text-[10px] font-bold text-slate-400 uppercase block">Scolarité</span>
+              <span className="text-xs font-black text-slate-900 mt-1 block">{fmt(annualFee)} F</span>
+            </div>
+            <div className="p-3 rounded-2xl bg-emerald-50/60 border border-emerald-100">
+              <span className="text-[10px] font-bold text-emerald-700/70 uppercase block">Payé</span>
+              <span className="text-xs font-black text-emerald-700 mt-1 block">{fmt(totalPaid)} F</span>
+            </div>
+            <div className={`p-3 rounded-2xl border ${isSolded ? 'bg-emerald-50/60 border-emerald-100' : 'bg-blue-50/50 border-blue-100'}`}>
+              <span className="text-[10px] font-bold text-slate-400 uppercase block">
+                {isSolded ? 'Statut' : 'Reste'}
+              </span>
+              <span className={`text-xs font-black mt-1 block ${isSolded ? 'text-emerald-700' : 'text-blue-600'}`}>
+                {isSolded ? 'Soldé ✓' : `${fmt(remaining)} F`}
+              </span>
+            </div>
+          </div>
+
+          {/* Barre de progression */}
+          <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+            <div
+              className={`h-full transition-all duration-300 ${isSolded ? 'bg-emerald-600' : 'bg-blue-600'}`}
+              style={{ width: `${paidPct}%` }}
+            />
+          </div>
+
+          {/* Encaissement rapide */}
+          {!isReadOnly && (
+            <div className="p-4 rounded-2xl border border-slate-200/80 bg-white space-y-3.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-900">Nouveau paiement</span>
+                <div className="flex bg-slate-100 p-0.5 rounded-lg text-[11px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => { setPaymentMode('tranche'); setMonth(''); }}
+                    className={`px-2.5 py-1 rounded-md transition ${paymentMode === 'tranche' ? 'bg-white text-blue-600 shadow-2xs' : 'text-slate-600'}`}
+                  >
+                    Tranches
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setPaymentMode('mensualite'); setMonth(''); }}
+                    className={`px-2.5 py-1 rounded-md transition ${paymentMode === 'mensualite' ? 'bg-white text-blue-600 shadow-2xs' : 'text-slate-600'}`}
+                  >
+                    Mois
+                  </button>
+                </div>
+              </div>
+
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder={amountPerTranche > 0 ? `Montant (défaut : ${fmt(amountPerTranche)} F)` : 'Montant en FCFA...'}
+                value={formatInputDisplay(amount)}
+                onChange={(e) => setAmount(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-blue-600 transition"
+              />
+
+              {paymentMode === 'tranche' ? (
+                <div className="flex gap-2">
+                  <select
+                    value={month}
+                    onChange={(e) => setMonth(e.target.value)}
+                    className="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-blue-600 transition"
+                  >
+                    <option value="">Choisir la tranche...</option>
+                    {dynamicTrancheOptions.map((tr) => (
+                      <option key={tr} value={tr}>
+                        {tr} ({fmt(amountPerTranche)} F)
+                      </option>
+                    ))}
+                    <option value="Solde global">Solde global</option>
+                  </select>
+                  <button
+                    type="button"
+                    disabled={!month || isRecordingPay}
+                    onClick={() => handleQuickPayment(month)}
+                    className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold disabled:opacity-40 shrink-0 transition"
+                  >
+                    {isRecordingPay ? '...' : 'Encaisser'}
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2 pt-0.5">
+                  {SCHOOL_MONTHS.map((mName) => {
+                    const isPaid = paidMonthsSet.has(mName);
+                    return (
+                      <button
+                        key={mName}
+                        type="button"
+                        disabled={isRecordingPay}
+                        onClick={() => handleQuickPayment(mName)}
+                        className={`py-2 px-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1 transition ${
+                          isPaid
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                            : 'border-slate-200 bg-slate-50 text-slate-800 active:bg-blue-50'
+                        }`}
+                      >
+                        {isPaid && <CheckCircle2 size={12} className="text-emerald-600 shrink-0" />}
+                        <span className="truncate">{mName}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Historique des paiements */}
+          <div className="rounded-2xl border border-slate-200/80 bg-white overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-900">Historique des paiements</span>
+              <span className="text-xs font-bold text-slate-400">
+                {payments.length + extraPayments.length}
+              </span>
+            </div>
+
+            {loadingDetails ? (
+              <div className="p-6 flex justify-center">
+                <Loader2 className="animate-spin text-blue-600" size={20} />
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 max-h-56 overflow-y-auto">
+                {[...payments, ...extraPayments].length === 0 ? (
+                  <p className="p-5 text-center text-xs text-slate-400 font-medium">
+                    Aucun paiement enregistré.
+                  </p>
+                ) : (
+                  [...payments, ...extraPayments]
+                    .sort(
+                      (a, b) =>
+                        new Date(b.payment_date || b.created_at).getTime() -
+                        new Date(a.payment_date || a.created_at).getTime()
+                    )
+                    .map((p, idx) => {
+                      const amt = p.amount ?? p.amount_paid ?? 0;
+                      const lbl = p.extra_fee_types ? p.extra_fee_types.name : p.month;
+                      const deleted = String(lbl || '').includes('[SUPPRIMÉ');
+                      return (
+                        <div key={p.id || idx} className="px-4 py-3 flex items-center justify-between gap-3 text-xs">
+                          <div className="min-w-0">
+                            <p className={`font-bold truncate ${deleted ? 'text-rose-600 line-through' : 'text-slate-900'}`}>
+                              {lbl}
+                            </p>
+                            <span className="text-[11px] text-slate-400 font-medium block mt-0.5">
+                              {new Date(p.payment_date || p.created_at).toLocaleDateString('fr-FR')}
+                            </span>
+                          </div>
+                          <span className={`font-extrabold shrink-0 ${deleted ? 'text-rose-600' : 'text-slate-900'}`}>
+                            {deleted ? '0 F' : `${fmt(Number(amt))} F`}
+                          </span>
+                        </div>
+                      );
+                    })
+                )}
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
     </div>
   );
 }
