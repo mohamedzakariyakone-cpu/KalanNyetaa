@@ -43,6 +43,7 @@ CREATE TABLE class_subjects (
   class_id INTEGER REFERENCES classes(id),
   subject_name VARCHAR(100) NOT NULL,
   coefficient INTEGER DEFAULT 1,
+  language VARCHAR(10) NOT NULL DEFAULT 'fr' CHECK (language IN ('fr', 'ar')),
   created_at TIMESTAMP DEFAULT NOW()
 );
 
